@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* types.h - fixed size integer types of MK09 (kernel, servers, applications) */
 #ifndef MK_TYPES_H
 #define MK_TYPES_H

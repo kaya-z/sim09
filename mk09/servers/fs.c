@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /*
  * fs.c - the file system server (TASK 3): the message interface to fs_core.c
  *

@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /*
  * arch.h - the machine dependent interface of the MK09 kernel (MC6809)
  *

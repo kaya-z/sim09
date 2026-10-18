@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /*
  * fstest - a test of the file system server from the inside (it is not needed to use MK09)
  *

@@ -1,4 +1,5 @@
 * SPDX-License-Identifier: MIT
+* Copyright (c) 2026 YUKARI Semiconductor Devices
 * bootrom.s - MK09 boot ROM (256 bytes at $FF00-$FFFF, the hardware vectors included)
 *
 * Loads the system image from drive 0 (SD card), 256 byte sectors starting at sector 2 (the

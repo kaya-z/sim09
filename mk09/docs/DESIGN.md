@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 YUKARI Semiconductor Devices -->
+
    # MK09 設計書
 
 Copyright (c) 2026 YUKARI Semiconductor Devices

@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 YUKARI Semiconductor Devices -->
+
 # tests/hw - checks on the real Tang Nano 9K
 
 `diag.s` / `diag.img`: a boot stream that replaces the MK09 boot image on the card (it is written to

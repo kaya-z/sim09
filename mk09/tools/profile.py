@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 YUKARI Semiconductor Devices
 """profile.py - where does the time go?  Runs sim09 with a script and counts the executed
 instructions per function (from the link maps of the modules), without writing a trace file.
 

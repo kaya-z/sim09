@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 YUKARI Semiconductor Devices
 """MK09 on the Verilated RTL of the Tang Nano 9K system (fpga/tn9k): the same boot ROM (the FUZIX
 boot ROM, which is byte for byte the ROM of MK09), the MC6809 core, the UART, the timer and the SD
 card in SPI mode.  Boots the disk image, lists the root directory, makes a directory and a file

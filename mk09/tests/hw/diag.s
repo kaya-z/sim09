@@ -1,4 +1,5 @@
 * SPDX-License-Identifier: MIT
+* Copyright (c) 2026 YUKARI Semiconductor Devices
 * diag.s - hardware check for the Tang Nano 9K: replaces the MK09 boot image on the card
 * (tests/hw/README.md).  Prints a banner on the ACIA, then the first 16 bytes and the bytes
 * 510/511 of some sectors that it reads with the disk registers, so that the UART and the

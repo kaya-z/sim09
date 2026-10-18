@@ -1,4 +1,5 @@
 * SPDX-License-Identifier: MIT
+* Copyright (c) 2026 YUKARI Semiconductor Devices
 * kernel.s - the MK09 kernel in MC6809 assembler
 *
 * The same kernel as kernel/kernel.c + arch/m6809/entry.s (tasks, synchronous messages,

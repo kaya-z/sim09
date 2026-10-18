@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 YUKARI Semiconductor Devices
 # MK09 - a microkernel for the MC6809 (sim09 / Tang Nano 9K).  Build:  make   (needs CMOC and lwtools:
 # tools/install_cmoc.sh PREFIX in the parent directory installs both;  make CMOC_BIN=PREFIX/bin)
 #

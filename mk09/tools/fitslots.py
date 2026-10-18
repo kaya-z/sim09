@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 YUKARI Semiconductor Devices
 """fitslots.py - set the code and data slot sizes of memmap.mk to what the modules need now.
 
     fitslots.py [BUILD_DIR]      (after a successful build; then run make again)

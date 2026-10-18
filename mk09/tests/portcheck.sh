@@ -1,5 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 YUKARI Semiconductor Devices
 # Portability check: the machine independent C of MK09 (the kernel, the servers, the file system
 # code, the library) must compile with an ordinary C compiler, without CMOC and without the
 # 6809 headers; only arch/<cpu>/arch.h, bsp/<board>/bsp.h and memmap.h are board / CPU specific.

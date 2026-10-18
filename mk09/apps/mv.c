@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* mv - rename a file or directory: mv from to  (to may be a directory) */
 #include "types.h"
 #include "mklib.h"

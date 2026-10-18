@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* mkstr.h - the few string and memory functions that MK09 programs use */
 #ifndef MKSTR_H
 #define MKSTR_H

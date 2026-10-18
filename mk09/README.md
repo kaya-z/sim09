@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 YUKARI Semiconductor Devices -->
+
 # MK09 — MC6809 のマイクロカーネル
 
 MK09 は、MC6809 (`sim09` と Tang Nano 9K の FPGA) で動く小さなマイクロカーネルです。**64KB のメモリだけ**で動き (MMU は使わない)、

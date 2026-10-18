@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /*
  * stk - how deep did the stacks of the system tasks go?  (a diagnostic tool)
  *

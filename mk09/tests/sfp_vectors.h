@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* made by the PC: a b a+b a*b a/b long(a) float(long(a)) int(a) (see apps/sfptest.c) */
 static const u32 tv[][8] = {
 {0x3d52bd89UL,0x43efe7e4UL,0x43efee7aUL,0x41c57dd8UL,0x38e0e0c3UL,0x00000000UL,0x00000000UL,0x00000000UL},

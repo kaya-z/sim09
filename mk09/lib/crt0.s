@@ -1,4 +1,5 @@
 * SPDX-License-Identifier: MIT
+* Copyright (c) 2026 YUKARI Semiconductor Devices
 * crt0.s - start of a system server (TTY, DISK, FS, PM): clear the bss, initialise the
 * globals, run main().  The kernel starts the task here with the stack already set.
 *

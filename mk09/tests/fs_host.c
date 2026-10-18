@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /*
  * fs_host.c - the FAT16 code of the FS server (servers/fs_core.c) on the host
  *

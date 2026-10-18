@@ -1,4 +1,5 @@
 * SPDX-License-Identifier: MIT
+* Copyright (c) 2026 YUKARI Semiconductor Devices
 * entry.s - MC6809 part of the MK09 kernel: start, trap entries, task switch, idle loop
 *
 * A task is always suspended with its registers on its own stack (the 12 byte frame that

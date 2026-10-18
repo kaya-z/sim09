@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* sfptest - checks the soft floating point of the BASIC on the target against results made on the PC
  * (tests/sfp_vectors.h: the C float of the PC; see tests/mk09_test.py) */
 #include "types.h"

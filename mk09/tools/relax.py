@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 YUKARI Semiconductor Devices
 """relax.py - make the short branches of an lwasm source that do not reach into long branches.
 
     relax.py file.s [lwasm options]

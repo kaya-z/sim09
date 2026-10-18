@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /*
  * fs_core.c - FAT16 file system (8.3 names, directories, read/write)
  *

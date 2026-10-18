@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* wc - count lines, words and bytes of a file (or the standard input) */
 #include "types.h"
 #include "mklib.h"

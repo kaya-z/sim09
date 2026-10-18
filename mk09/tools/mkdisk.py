@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 YUKARI Semiconductor Devices
 """mkdisk.py - make an MK09 disk image (the content of the SD card).
 
     mkdisk.py -o disk.img [--boot boot.img] [--size-mb 16] [--spc 4] [--label MK09] TREE

@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* rtc.c - sbc09 board: the real time clock */
 #include "bsp.h"
 

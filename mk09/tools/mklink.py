@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 YUKARI Semiconductor Devices
 """mklink.py - write an lwlink script for an MK09 module.
 
     mklink.py CODE_BASE [DATA_BASE] > module.link

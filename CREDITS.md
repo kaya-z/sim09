@@ -44,6 +44,9 @@
 `jwp.c` 自体は MIT です (LICENSES.md)。OS-9 のシステムコールの呼び出し方は CMOC のマニュアル (インラインアセンブラと OS-9 の節) に
 従っています。コードの複製はありません。
 
+MK09 (`mk09/`) も、CMOC と LWTOOLS でビルドします。ビルドしたプログラムには CMOC の実行時ライブラリが入ります (GPL v3。LICENSES.md の 3 章)。
+MK09 のソースは、このプロジェクトで書いたもの (YUKARI Semiconductor Devices、MIT) で、第三者のコードは入っていません。
+
 ## BASIC09 / RunB (Motorola, Microware Systems Corp. / ライセンスは不明確)
 <https://github.com/nitros9project/nitros9-languages> (`basic09/microware`、commit `c05f23c`)
 

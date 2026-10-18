@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 YUKARI Semiconductor Devices
 """chkmap.py - check that a linked module fits its slots.
 
     chkmap.py NAME MAPFILE CODE_BASE CODE_SIZE [DATA_BASE DATA_SIZE MIN_STACK]

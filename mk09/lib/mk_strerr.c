@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* lib/mk_strerr.c - part of the MK09 C library: the text of an error code */
 #include "types.h"
 #include "mklib.h"

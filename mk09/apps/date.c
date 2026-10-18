@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* date - show the date and time of the clock */
 #include "types.h"
 #include "mklib.h"

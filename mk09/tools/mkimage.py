@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 YUKARI Semiconductor Devices
 """mkimage.py - make the boot image that the boot ROM loads from the disk.
 
     mkimage.py -o boot.img  entry-symbol-address  module.s19 [module.s19 ...]

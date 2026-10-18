@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* hd - hexadecimal dump of a file */
 #include "types.h"
 #include "mklib.h"

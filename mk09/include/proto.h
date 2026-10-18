@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /*
  * proto.h - request codes of the MK09 servers (TTY, DISK, FS, PM)
  *

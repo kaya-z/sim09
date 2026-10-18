@@ -1,4 +1,5 @@
 * SPDX-License-Identifier: MIT
+* Copyright (c) 2026 YUKARI Semiconductor Devices
 * mksys.s - MK09 system call stubs (C callable, CMOC calling convention: arguments on the
 * stack, 16 bit each, the first one nearest to the top; result in B / D).
 *

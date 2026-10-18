@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* sfp_test.c - compare apps/basic/sfp.h with the float of the C compiler (host test, make sfptest) */
 #define MK_HOST
 #include <stdio.h>

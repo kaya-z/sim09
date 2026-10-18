@@ -1,4 +1,5 @@
 * SPDX-License-Identifier: MIT
+* Copyright (c) 2026 YUKARI Semiconductor Devices
 * mem.s - memcpy, memmove, memset for the 6809 (faster than the CMOC library versions).
 * C calling convention of CMOC: arguments on the stack (16 bit, first nearest), result in D.
 * Assembled once per function (-DFUNC_memcpy etc.), so that a program links what it uses.

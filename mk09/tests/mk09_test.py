@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 YUKARI Semiconductor Devices
 """Tests of MK09 on the simulator (mk09/, docs: mk09/docs).
 
 Builds nothing: run `make` in mk09/ first.  Boots build/mk09.img with the boot ROM, drives the

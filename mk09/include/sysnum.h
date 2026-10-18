@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* sysnum.h - system call numbers (also turned into an assembler include by the Makefile) */
 #ifndef SYSNUM_H
 #define SYSNUM_H

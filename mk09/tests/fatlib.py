@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 YUKARI Semiconductor Devices
 """fatlib.py - read an MK09 disk image (MBR + FAT16 volume) from Python, for the tests."""
 import struct
 

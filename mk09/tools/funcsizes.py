@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 YUKARI Semiconductor Devices
 """funcsizes.py - list the code size of every function of an lwlink map (from the symbol addresses)."""
 import re, sys
 syms = []

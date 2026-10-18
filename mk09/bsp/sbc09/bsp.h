@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /*
  * bsp.h - board support: the sbc09 machine (sim09, and the Tang Nano 9K implementation)
  *

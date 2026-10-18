@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /*
  * mk09.h - the MK09 kernel interface (system calls, IPC messages, task ids)
  *

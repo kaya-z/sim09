@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /*
  * faults - what the kernel does with wrong system calls (a test; it ends by trashing its own stack
  * pointer, which stops the program and leaves the system alone)

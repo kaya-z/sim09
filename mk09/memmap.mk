@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 YUKARI Semiconductor Devices
 # memmap.mk - the memory map of the sbc09 machine (64KB, flat, no MMU): the SIZES of the slots.
 # tools/genmap.py lays the slots out one after the other and writes build/memmap.h (C and lwasm)
 # and build/memmap.gen.mk (the addresses for this Makefile).

@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* arch.c - MC6809: the first frame of a new task */
 #include "arch.h"
 

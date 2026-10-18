@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT AND LicenseRef-Weicker-Dhrystone (see LICENSES.md, 4.2) */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /*
  * dhry - the Dhrystone 2.1 benchmark for MK09 (built with CMOC like the other programs).
  *

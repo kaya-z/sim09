@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* bsp.c - sbc09 board: timer, power control, RTC */
 #include "bsp.h"
 

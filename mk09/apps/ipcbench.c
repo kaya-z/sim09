@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* ipcbench - how long does a message round trip take?  (client -> FS server -> client) */
 #include "types.h"
 #include "mklib.h"

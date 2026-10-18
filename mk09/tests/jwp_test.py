@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 YUKARI Semiconductor Devices
 """Tests of the Japanese word processor jwp (mk09/apps/jwp) running on MK09 in the simulator.
 
 jwp is driven through the simulator's expect/send script engine; its escape

@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* ls - list a directory: ls [-l] [-a] [path ...] */
 #include "types.h"
 #include "mklib.h"

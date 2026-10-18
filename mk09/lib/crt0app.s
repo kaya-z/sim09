@@ -1,4 +1,5 @@
 * SPDX-License-Identifier: MIT
+* Copyright (c) 2026 YUKARI Semiconductor Devices
 * crt0app.s - start of an MK09 program (an MX executable)
 *
 * The file starts with this 16 byte header (read by PM):

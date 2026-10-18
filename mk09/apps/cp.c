@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* cp - copy a file: cp from to  (to may be a directory) */
 #include "types.h"
 #include "mklib.h"
