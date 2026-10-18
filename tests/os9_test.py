@@ -104,14 +104,19 @@ for level in (1, 2):
     check(s.rc == 0 and 'Directory of' in s.text(), '%s OS-9 names are case insensitive on /v0' % tag)
     s.close()
 
-    # --- BASIC09: write a procedure and run it (the editor, the compiler and RunB) ---
-    s = Session(level)
-    s.run(['send "basic09\\r"', 'expect "B:"', 'send "edit hi\\r"', 'expect "E:"', 'send "10 PRINT 6*7\\r"', 'expect "E:"',
-           'send "20 PRINT SQRT(2.0)\\r"', 'expect "E:"', 'send "q\\r"', 'expect "B:"', 'send "run hi\\r"', 'expect "B:"',
-           'send "bye\\r"', 'expect "OS9:"'])
-    t = s.text()
-    check('BASIC09' in t and '42' in t.replace('\r', '') and '1.41421356' in t, '%s BASIC09 edits and runs a procedure (42, SQRT(2))' % tag, t[-500:])
-    s.close()
+    # --- BASIC09: write a procedure and run it (the editor, the compiler and RunB); not in the repository: make -C os9/basic09 ---
+    b09 = [os.path.join(ROOT, 'os9', 'basic09', n) for n in ('basic09', 'runb')]
+    if not all(os.path.isfile(m) for m in b09):
+        print('SKIP %s BASIC09 test: make -C os9/basic09 builds basic09 and runb (it is not in the repository)' % tag)
+    else:
+      s = Session(level)
+      for m in b09: shutil.copy(m, os.path.join(s.v0, 'cmds'))
+      s.run(['send "basic09\\r"', 'expect "B:"', 'send "edit hi\\r"', 'expect "E:"', 'send "10 PRINT 6*7\\r"', 'expect "E:"',
+             'send "20 PRINT SQRT(2.0)\\r"', 'expect "E:"', 'send "q\\r"', 'expect "B:"', 'send "run hi\\r"', 'expect "B:"',
+             'send "bye\\r"', 'expect "OS9:"'])
+      t = s.text()
+      check('BASIC09' in t and '42' in t.replace('\r', '') and '1.41421356' in t, '%s BASIC09 edits and runs a procedure (42, SQRT(2))' % tag, t[-500:])
+      s.close()
 
     # --- real time clock ---
     s = Session(level)

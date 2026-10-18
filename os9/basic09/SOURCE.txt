@@ -6,4 +6,5 @@ microware/   NOT in this repository (fetch.sh puts it here; .gitignore): the mod
              original Tandy-distributed Basic09 and RunB.  Original notices are kept in the files.  The upstream
              repository states no license of its own for them ("keep their original notices and licensing terms").
 ReadMe2      the note of the upstream package about where these programs come from.
-basic09 runb the 6809 modules, built from microware/ with lwasm (make; needs lwtools and python3) - prebuilt in the repository.
+basic09 runb the 6809 modules, built from microware/ with lwasm (make; needs lwtools and python3).  Not in the repository either
+             (.gitignore): tools/addbasic09.py puts them on a copy of the disk image.

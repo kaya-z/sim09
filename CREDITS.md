@@ -47,7 +47,7 @@
 ## BASIC09 / RunB (Motorola, Microware Systems Corp. / ライセンスは不明確)
 <https://github.com/nitros9project/nitros9-languages> (`basic09/microware`、commit `c05f23c`)
 
-OS-9 の構造化 BASIC です。ソースはリポジトリに入れず (`os9/basic09/fetch.sh` で取得して `os9/basic09/microware/` に置く)、原本のまま `lwasm` で `basic09` `runb` を作っています。起動時の表示は
+OS-9 の構造化 BASIC です。ソースはリポジトリに入れず (`os9/basic09/fetch.sh` で取得して `os9/basic09/microware/` に置く)、原本のまま `lwasm` で `basic09` `runb` を作る手順だけをリポジトリに置いています (ビルド済みのモジュールも入れていません)。起動時の表示は
 「COPYRIGHT 1980 BY MOTOROLA INC. AND MICROWARE SYSTEMS CORP. REPRODUCED UNDER LICENSE TO TANDY CORP.」です。
 元の権利は Motorola と Microware にあり、上流にもライセンス文がないので、扱いは LICENSES.md の 4.3 に書きました。
 
