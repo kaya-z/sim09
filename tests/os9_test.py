@@ -104,6 +104,15 @@ for level in (1, 2):
     check(s.rc == 0 and 'Directory of' in s.text(), '%s OS-9 names are case insensitive on /v0' % tag)
     s.close()
 
+    # --- BASIC09: write a procedure and run it (the editor, the compiler and RunB) ---
+    s = Session(level)
+    s.run(['send "basic09\\r"', 'expect "B:"', 'send "edit hi\\r"', 'expect "E:"', 'send "10 PRINT 6*7\\r"', 'expect "E:"',
+           'send "20 PRINT SQRT(2.0)\\r"', 'expect "E:"', 'send "q\\r"', 'expect "B:"', 'send "run hi\\r"', 'expect "B:"',
+           'send "bye\\r"', 'expect "OS9:"'])
+    t = s.text()
+    check('BASIC09' in t and '42' in t.replace('\r', '') and '1.41421356' in t, '%s BASIC09 edits and runs a procedure (42, SQRT(2))' % tag, t[-500:])
+    s.close()
+
     # --- real time clock ---
     s = Session(level)
     s.run(cmds('date'))

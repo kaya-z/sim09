@@ -44,6 +44,13 @@
 `jwp.c` 自体は MIT です (LICENSES.md)。OS-9 のシステムコールの呼び出し方は CMOC のマニュアル (インラインアセンブラと OS-9 の節) に
 従っています。コードの複製はありません。
 
+## BASIC09 / RunB (Motorola, Microware Systems Corp. / ライセンスは不明確)
+<https://github.com/nitros9project/nitros9-languages> (`basic09/microware`、commit `c05f23c`)
+
+OS-9 の構造化 BASIC です。`os9/basic09/microware/` に原本のまま入れ、`lwasm` で `basic09` `runb` を作っています。起動時の表示は
+「COPYRIGHT 1980 BY MOTOROLA INC. AND MICROWARE SYSTEMS CORP. REPRODUCED UNDER LICENSE TO TANDY CORP.」です。
+元の権利は Motorola と Microware にあり、上流にもライセンス文がないので、扱いは LICENSES.md の 4.3 に書きました。
+
 ## SKK (Masahiko Sato, Hironobu Takahashi ほか SKK 開発チーム / GPL v2 以降)
 <https://github.com/skk-dev/dict> <https://ddskk.readthedocs.io/>
 

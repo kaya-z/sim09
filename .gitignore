@@ -7,3 +7,4 @@ __pycache__/
 # SKK dictionary disks (built from SKK-JISYO.L, GPL: not distributed; make skk)
 os9/skk/SKK_*.dsk
 os9/skk/skk_*.dic
+.modular-build/

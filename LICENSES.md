@@ -131,7 +131,18 @@ FPGA のビットストリームは、この 3 つと自作の RTL (MIT)、載�
 
 結論: **原作者の著作物で、明示のライセンスがありません**。広く再配布されている (netlib、Linux、U-Boot など) 事実はありますが、条件は示されていないので、MIT にはできず、再配布が許されると断言もできません。時間の計測と OS-9 の呼び出しの部分 (`now()`、`main()` の計測部分、`checks()` の書式など) だけが、このプロジェクトの MIT です。
 
-### 4.3 そのほか
+### 4.3 BASIC09 と RunB (`os9/basic09/`、`os9/level1/cmds/basic09` ほか)
+
+Microware と Motorola の BASIC09 のソースです。**著作権は、元の権利者 (Motorola、Microware、Tandy へのライセンス) にあります。**
+
+* 取得元: [nitros9project/nitros9-languages](https://github.com/nitros9project/nitros9-languages) の `basic09/microware` (commit `c05f23c`)。`os9/basic09/microware/` に**原本のまま**入れてあります。出所は `os9/basic09/SOURCE.txt` にあります。
+* 上流の README は、これらのパッケージが NitrOS-9 の `3rdparty/packages` から移されたもので、「元の表記とライセンスの条件を引き継ぐ」、「ライセンスを持たないパッケージには、リポジトリ全体のライセンスを主張しない」と書いています。**この部分には、`LICENSE` などのライセンス文がありません。**
+* ソースの中には、「COPYRIGHT 1980 BY MOTOROLA INC. AND MICROWARE SYSTEMS CORP. REPRODUCED UNDER LICENSE TO TANDY CORP.」という表示 (起動時に出る文) があるだけで、再配布の条件は書かれていません。
+* 上流の README によると、このソースは Tandy が配布していた Basic09 と RunB のバイナリに、1 バイトも違わずにアセンブルされます。つまり、**Tandy 版の BASIC09 そのもの**です。
+* このプロジェクトでは、NitrOS-9 と同じ扱い (4.1) で、**第三者の著作物として原本のまま保ち、このプロジェクトの MIT は適用しません**。再配布が可能かどうかは、元の権利者との関係で不明確です。配布物に含めたくない場合は、`os9/basic09/`、`os9/level1/cmds/basic09` `runb`、`os9/level2/cmds/basic09` `runb` を取り除き (`tools/mkl2disk.py` の `have` の一覧からも外す)、ディスクイメージを作り直してください。
+* ビルド済みのモジュール (`os9/basic09/basic09` `runb`) は、そのソースから `lwasm` で作ったもので、ここで書き加えた部分はありません。
+
+### 4.4 そのほか
 
 | 場所 | 状況 |
 |---|---|
