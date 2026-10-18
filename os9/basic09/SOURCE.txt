@@ -1,6 +1,6 @@
 BASIC09 and RunB (Microware / Motorola / Tandy), third-party, kept as distributed.
 
-microware/   the modular Microware source layout, copied unchanged from
+microware/   NOT in this repository (fetch.sh puts it here; .gitignore): the modular Microware source layout, copied unchanged from
              https://github.com/nitros9project/nitros9-languages  (basic09/microware, commit c05f23c3ea4f934c54b185035e98eae34e73565b)
              The README of that directory (microware/README.md) says that these sources assemble byte-for-byte to the
              original Tandy-distributed Basic09 and RunB.  Original notices are kept in the files.  The upstream

@@ -239,7 +239,7 @@ os9/        OS-9 の ROM / モジュール / コマンドのビルド (make で 
   level1/ level2/   sbc09 用モジュール (pty, pdisk, vrbf, clock, boot, sysgo ...)
   kanji/    日本語対応 SCF (行編集)、dir、kmode
   dhry/     Dhrystone 2.1 (dhry.c: C 言語 / CMOC、ビルド済みモジュール)
-  basic09/  BASIC09 と RunB (Microware のソース、原本のまま。第三者の著作物: LICENSES.md の 4.3。ビルド済みモジュール)
+  basic09/  BASIC09 と RunB (Microware のソースは、リポジトリに入れず fetch.sh で取得。第三者の著作物: LICENSES.md の 4.3。ビルド済みモジュール)
   jwp/      日本語ワードプロセッサ (jwp.c, skk.c: C 言語 / CMOC、genmsgs.py、ビルド済みモジュール)
   skk/      SKK 辞書ディスクを作る Makefile (SKK-JISYO.L → RBF イメージ)
   net/      OS-9 Net: npty ドライバ, n1..n3 デスクリプタ, nc, login
