@@ -158,6 +158,11 @@ int main(void)
             r.b = clusters;
             r.c = freec;
             break;
+        case FS_TIME:
+            fsx_now(&date, &r.b);
+            r.a = date;
+            r.op = E_OK;
+            break;
         case FS_CHOWN:
             r.op = fs_chown((u8)m.a, (u8)m.b);
             break;

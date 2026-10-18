@@ -15,6 +15,7 @@
 #include "types.h"
 #include "mklib.h"
 #include "mkstr.h"
+#include "version.h"
 
 #define LINEMAX     100
 #define MAXARG      9
@@ -40,6 +41,8 @@ static void err(const char *what, int e)
 }
 
 /* split the line in place: words in args[], redirections in the output parameters */
+static u8 bg;                                       /* the command ends with & (it runs in the background) */
+
 static int parse(char *s, char **args, char **in, char **out, u8 *append)
 {
     int n = 0;
@@ -47,9 +50,11 @@ static int parse(char *s, char **args, char **in, char **out, u8 *append)
     char c, q;
     *in = *out = NULL;
     *append = 0;
+    bg = 0;
     for (;;) {
         while (*s == ' ' || *s == '\t') s++;
         if (!*s || *s == '\n') break;
+        if (*s == '&') { bg = 1; s++; continue; }
         if (*s == '>' || *s == '<') {
             c = *s++;
             if (c == '>' && *s == '>') { *append = 1; s++; }
@@ -66,7 +71,7 @@ static int parse(char *s, char **args, char **in, char **out, u8 *append)
         args[n++] = w;
         q = 0;
         while (*s && *s != '\n') {                  /* the word, with quotes taken out */
-            if (!q && (*s == ' ' || *s == '\t' || *s == '>' || *s == '<')) break;
+            if (!q && (*s == ' ' || *s == '\t' || *s == '>' || *s == '<' || *s == '&')) break;
             if (!q && (*s == '"' || *s == '\'')) { q = *s++; continue; }
             if (q && *s == q) { q = 0; s++; continue; }
             *w++ = *s++;
@@ -127,7 +132,11 @@ static int run(int n, char **args, char *in, char *out, u8 append)
         if (fout < 0) { err(out, fout); if (fin >= 0) close(fin); return 1; }
         hout = fout - 3;
     }
-    r = spawn(blk, len, hin, hout);
+    r = bg ? spawn_bg(blk, len, hin, hout) : spawn(blk, len, hin, hout);
+    if (r >= 0 && bg) {
+        printf("[%d]\n", r);
+        return 0;
+    }
     if (r < 0) {
         err(args[0], r);
         if (fin >= 0) close(fin);                   /* (PM closes the files of a program that ran) */
@@ -211,12 +220,12 @@ static int execute(char *s)
         shutdown();
         return 0;
     case 9:
-        puts("MK09 microkernel 1.0 (MC6809)\n(c) 2026 YUKARI Semiconductor Devices");
+        puts("MK09 microkernel " MK09_VERSION " (MC6809)\n(c) 2026 YUKARI Semiconductor Devices");
         return 0;
     case 10:
         puts("cd [dir]  pwd  source file  sync  shutdown  exit  ver\n"
              "other commands are programs: ls cat cp mv rm mkdir date ps df stty jwp ... (/BIN)\n"
-             "name > file   name >> file   name < file");
+             "name > file   name >> file   name < file   name &  (in the background: ps, kill, mem)");
         return 0;
     }
     return run(n, args, in, out, append);
@@ -235,7 +244,7 @@ int main(int argc, char **argv)
              "| |  | | . \\ | |_| |\\__, |\n"
              "|_|  |_|_|\\_\\ \\___/   /_/\n"
              "\n"
-             " MC6809 microkernel 1.0  --  64KB flat, no MMU\n"
+             " MC6809 microkernel " MK09_VERSION "  --  64KB flat, no MMU\n"
              " TTY + DISK + FS(FAT16) + PM  /  type help\n"
              " (c) 2026 YUKARI Semiconductor Devices\n");
         do_source("/ETC/RC.SH");

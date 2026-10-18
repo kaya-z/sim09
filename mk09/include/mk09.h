@@ -24,7 +24,7 @@
 #define TID_FS      3       /* file system server                        */
 #define TID_PM      4       /* process manager / init                    */
 #define TID_USER0   5       /* first id for tasks created by PM          */
-#define NTASK       8       /* number of task slots (incl. idle)         */
+#define NTASK       10      /* number of task slots (incl. idle)         */
 
 #define TID_ANY     0xFF    /* receive: from anybody (and notifications) */
 #define TID_HW      0xFE    /* message source of a notification          */

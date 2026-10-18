@@ -25,7 +25,7 @@
 
 KDP	equ	K_DATA/256
 
-NTASK	equ	8
+NTASK	equ	10
 TSZ	equ	36
 FRAME	equ	12
 QUANTUM	equ	2
@@ -121,6 +121,7 @@ kmsg	rmb	MSGSZ			a message being built (also the taskinfo)
 tcb	rmb	11			the block of a task creation
 kernel_dp_end equ *
 tasks	rmb	NTASK*TSZ
+rrlast	rmb	8			the task that ran last, for each priority (round robin)
 idlestk	rmb	64
 kstack	rmb	96
 kstk_top equ	*
@@ -380,44 +381,64 @@ chkstack
 	orcc	#1
 	rts
 
-* pick: -> B = the task to run: the best priority among the READY tasks, round robin from the
-* one after the current one; the current one stays while its slice lasts and nothing more urgent waits
-pick	ldb	#NTASK
-	stb	<pbest
-	lda	#$FF
-	sta	<pbp
+* pick: -> B = the task to run: the best priority among the READY tasks; among the tasks of that
+* priority round robin from the one that ran last at this priority (rrlast: a server that wakes at every
+* tick must not restart the rotation); the current one stays while its slice lasts and nothing more urgent waits
+pick	ldy	#tasks
 	lda	#NTASK
 	sta	<cnt
-	ldy	<curp
-	ldb	<cur
-@l	leay	TSZ,y
-	incb
-	cmpb	#NTASK
-	blo	@w
-	ldy	#tasks
-	clrb
-@w	lda	T_STATE,y
-	cmpa	#TS_READY
-	bne	@n
-	lda	T_PRIO,y
-	cmpa	<pbp
-	bhs	@n
-	sta	<pbp
-	stb	<pbest
-@n	dec	<cnt
-	bne	@l
+	lda	#$FF
+	sta	<pbp			the best priority of a READY task
+@p1	ldb	T_STATE,y
+	cmpb	#TS_READY
+	bne	@n1
+	ldb	T_PRIO,y
+	cmpb	<pbp
+	bhs	@n1
+	stb	<pbp
+@n1	leay	TSZ,y
+	dec	<cnt
+	bne	@p1
 	ldy	<curp
 	lda	T_STATE,y
 	cmpa	#TS_READY
-	bne	@best
+	bne	@rr
 	tst	<slice
-	beq	@best
+	beq	@rr
 	lda	T_PRIO,y
 	cmpa	<pbp
-	bhi	@best
+	bhi	@rr
 	ldb	<cur
 	rts
-@best	ldb	<pbest
+@rr	ldx	#rrlast
+	ldb	<pbp
+	abx				X = &rrlast[priority]
+	ldb	,x			the task that ran last at this priority
+	pshs	b
+	lda	#TSZ
+	mul
+	addd	#tasks
+	tfr	d,y
+	puls	b
+	lda	#NTASK
+	sta	<cnt
+@l2	leay	TSZ,y
+	incb
+	cmpb	#NTASK
+	blo	@w2
+	ldy	#tasks
+	clrb
+@w2	lda	T_STATE,y
+	cmpa	#TS_READY
+	bne	@n2
+	lda	T_PRIO,y
+	cmpa	<pbp
+	beq	@got
+@n2	dec	<cnt
+	bne	@l2
+	ldb	<cur			(cannot happen: the idle task is always READY)
+	rts
+@got	stb	,x
 	rts
 
 * ------------------------------------------------------------------------ helpers

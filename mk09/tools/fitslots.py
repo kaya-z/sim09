@@ -5,7 +5,8 @@
 
     fitslots.py [BUILD_DIR]      (after a successful build; then run make again)
 
-The slot sizes are the size of the module rounded up to 16 bytes plus 16 bytes of room; the data
+The code slot is the size of the module rounded up to 4 bytes (no room to spare: what the system code does not use is
+for the programs); the data slot is the size of the data rounded up to 16 bytes; the data
 slot is bss + data + the stack room that the Makefile asks for (tty: B4, disk: 82, fs: 140, pm: C8)."""
 import re, sys
 
@@ -26,7 +27,7 @@ for m, k in key.items():
         elif n in ('rwdata', 'bss'):
             data += ln
     up = lambda v: (v + 15) // 16 * 16
-    new[k + '_CSZ'] = up(code) + 16
+    new[k + '_CSZ'] = (code + 3) // 4 * 4         # no room to spare: the low memory belongs to the programs
     new[k + '_DSZ'] = up(data + room[m]) + (0 if m == 'kernel' else 0)
 src = open('memmap.mk', encoding='utf-8').read()
 for name, v in new.items():

@@ -16,8 +16,8 @@ int gettime(u16 *date, u16 *time)
 {
     msg_t m;
     int r;
-    m.op = PM_TIME;
-    r = mk_rpc(TID_PM, &m, 0);
+    m.op = FS_TIME;
+    r = mk_rpc(TID_FS, &m, 0);
     if (r) return r;
     *date = m.a;
     *time = m.b;

@@ -23,6 +23,7 @@
                                else d = cols << 8 | rows */
 #define TTYC_READY   3      /* -> a = bytes that can be read without waiting */
 #define TTYC_FLUSH   4      /* discard the input */
+#define TTYC_SETFG   5      /* b = task id that may read (PM only); the others get E_BUSY; 0 = everybody */
 
 #define TM_RAW      0x01    /* no line editing; read returns what is there */
 #define TM_ECHO     0x02    /* echo the input */
@@ -61,6 +62,7 @@
 #define FS_STATFS   15      /* -> a = sectors per cluster, b = clusters, c = free clusters (low 16 bits) */
 #define FS_FSTAT    16      /* a = handle -> c:b = size, a = attr */
 #define FS_CHOWN    17      /* a = handle, b = new owner tid (PM) */
+#define FS_TIME     18      /* -> a = date, b = time (FAT format) */
 
 #define FO_READ     0x01
 #define FO_WRITE    0x02
@@ -92,7 +94,12 @@ typedef struct dirent {
                                b = "prog\0arg1\0...\0\0", c = len (GR_READ)
                                The reply comes when the program has exited: a = exit code. */
 #define PM_SHUTDOWN 2       /* power off */
-#define PM_TIME     3       /* -> a = date, b = time (FAT format) */
+#define PM_TIME     3       /* (removed in 1.1: the time is asked from FS, FS_TIME) */
+#define PM_SPAWNBG  4       /* like PM_SPAWN, but the answer comes at once: a = the task id (the program runs in the
+                               background; the console is read by the foreground program or the shell only) */
+#define PM_KILL     5       /* a = task id of a program started by PM (not the shell): stop it */
+#define PM_MEMINFO  6       /* -> a = pages of the transient area (256 bytes each), b = free pages,
+                               c = the biggest piece of free pages, d = programs running */
 
 #define ARGMAX      128     /* bytes of the argument block */
 

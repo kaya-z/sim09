@@ -22,11 +22,11 @@ CFLAGS  := --lwasm=$(LWASM) --void-target --no-relocate -O2 -fomit-frame-pointer
 ASFLAGS := -fobj -I$(B) -Iinclude
 
 vpath %.c kernel arch/m6809 bsp/sbc09 servers lib apps apps/jwp apps/basic
-vpath %.s arch/m6809 lib apps/basic
+vpath %.s arch/m6809 lib apps/basic servers
 
 # the addresses of the memory map (computed from the slot sizes in memmap.mk)
 -include $(B)/memmap.gen.mk
-HDRS := $(wildcard include/*.h arch/m6809/*.h bsp/sbc09/*.h) $(B)/memmap.h $(B)/memmap.inc $(B)/sysnum.inc
+HDRS := $(wildcard include/*.h arch/m6809/*.h bsp/sbc09/*.h) $(B)/memmap.h $(B)/memmap.inc $(B)/sysnum.inc $(B)/version.inc
 
 all: $(B)/boot.img $(B)/bootrom.bin $(B)/mk09.img
 
@@ -35,6 +35,9 @@ $(B):
 
 $(B)/memmap.h $(B)/memmap.inc $(B)/memmap.gen.mk: memmap.mk tools/genmap.py | $(B)
 	$(PYTHON) tools/genmap.py memmap.mk $(B) $(MAPOVER)
+
+$(B)/version.inc: include/version.h | $(B)
+	sed -n 's/^\#define \(MX_VERSION\)[ \t]*\([0-9]*\).*/\1\tequ\t\2/p' $< > $@
 
 $(B)/sysnum.inc: include/sysnum.h | $(B)
 	sed -n 's/^\#define \(SYS_[A-Z]*\)[ \t]*\(.*\)/\1\tequ\t\2/p' $< > $@
@@ -66,7 +69,7 @@ $(B)/libmk.a: $(LIBMK_OBJS)
 # KERNEL=asm (default): the kernel in 6809 assembler; KERNEL=c: the portable C kernel
 KERNEL ?= asm
 ifneq ($(KERNEL),asm)
-MAPOVER := K_CSZ=0F40 K_DSZ=0280
+MAPOVER := K_CSZ=0F60 K_DSZ=02F0 HIGH=PM
 endif
 ifeq ($(KERNEL),asm)
 KERNEL_OBJS := $(B)/kernel_asm.o
@@ -78,7 +81,7 @@ endif
 TTY_OBJS    := $(B)/crt0.o $(B)/tty.o
 DISK_OBJS   := $(B)/crt0.o $(B)/disk.o
 FS_OBJS     := $(B)/crt0.o $(B)/fs.o $(B)/fs_core.o $(B)/rtc.o
-PM_OBJS     := $(B)/crt0.o $(B)/pm.o $(B)/rtc.o
+PM_OBJS     := $(B)/crt0.o $(B)/pm.o $(B)/mm.o
 
 LINK = $(LWLINK) --format=srec --script=$(B)/$(1).link --map=$(B)/$(1).map -o $$@ $$($(2)_OBJS) -L$(B) -lmk -L$(CMOCLIB) -lcmoc-crt-void -lcmoc-std-void
 
@@ -104,8 +107,7 @@ $(eval $(call SYSMOD,pm,PM,C8))
 SYSMODS := kernel tty disk fs pm
 
 # ---- programs (MX executables): apps/NAME.c -> build/NAME.mx ----
-APPS      := sh ls cat echo stty cp mv rm mkdir date df ps hd wc spin stk fstest faults ipcbench dhry more grep life basic sfptest jwp
-BASE_sh   := $(SH_BASE)
+APPS      := sh ls cat echo stty cp mv rm mkdir date df ps hd wc spin stk fstest faults ipcbench dhry more grep life basic kill mem sfptest jwp
 STACK_sh  := 640
 STACK_jwp := 1200
 STACK_basic := 2300
@@ -125,9 +127,14 @@ define APP
 $(B)/crt0app_$(1).o: crt0app.s $(HDRS)
 	$(LWASM) $(ASFLAGS) -DSTACKSZ=$(call APPSTACK,$(1)) -DMXFLAGS=$(or $(FLAGS_$(1)),0) -o $$@ $$<
 $(B)/$(1).link: memmap.mk tools/mklink.py | $(B)
-	$(PYTHON) tools/mklink.py $(call APPBASE,$(1)) > $$@
-$(B)/$(1).mx: $(B)/crt0app_$(1).o $(B)/$(1).o $(OBJS_$(1)) $(B)/libmk.a $(B)/$(1).link
-	$(LWLINK) --format=raw --script=$(B)/$(1).link --map=$(B)/$(1).map -o $$@ $(B)/crt0app_$(1).o $(B)/$(1).o $(OBJS_$(1)) $(APPLIBS)
+	$(PYTHON) tools/mklink.py $(TPA_BASE) > $$@
+$(B)/$(1).link2: memmap.mk tools/mklink.py | $(B)
+	$(PYTHON) tools/mklink.py $$$$(printf '%X' $$$$((0x$(TPA_BASE) + 256))) > $$@
+# the program is linked twice, 256 bytes apart; tools/mkmx.py makes the relocation table from the difference
+$(B)/$(1).mx: $(B)/crt0app_$(1).o $(B)/$(1).o $(OBJS_$(1)) $(B)/libmk.a $(B)/$(1).link $(B)/$(1).link2 tools/mkmx.py
+	$(LWLINK) --format=raw --script=$(B)/$(1).link --map=$(B)/$(1).map -o $(B)/$(1).raw1 $(B)/crt0app_$(1).o $(B)/$(1).o $(OBJS_$(1)) $(APPLIBS)
+	$(LWLINK) --format=raw --script=$(B)/$(1).link2 -o $(B)/$(1).raw2 $(B)/crt0app_$(1).o $(B)/$(1).o $(OBJS_$(1)) $(APPLIBS)
+	$(PYTHON) tools/mkmx.py $(B)/$(1).raw1 $(B)/$(1).raw2 -o $$@ > /dev/null
 endef
 $(foreach a,$(APPS),$(eval $(call APP,$(a))))
 

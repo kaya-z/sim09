@@ -8,9 +8,9 @@
 #   $0100-$010F  interrupt vector jump table (the boot ROM vectors point here)
 #   $0200-$02FF  sector buffer of the boot ROM (free after the boot)
 #   $0300-       system code: kernel, TTY, DISK, FS, PM (one slot each, read from the boot image)
-#   TPA_BASE-    transient program area: the programs started by the shell; the shell itself
-#                sits at the top of it (SH_BASE .. TPA_END) and is taken out of memory by PM
-#                when a bigger program needs the room
+#   TPA_BASE-    transient program area: the memory that the memory manager (servers/mm.c, in PM)
+#                hands out in pages of 256 bytes to the programs and to the shell (the shell is
+#                taken out of memory by PM when a bigger program needs the room)
 #   $E000-$E1FF  I/O page
 #   $E200-$FEFF  data, bss and stacks of the system modules (one slot each)
 #   $FF00-$FFFF  boot ROM and hardware vectors
@@ -22,22 +22,20 @@ DATA_BASE  = E200
 TPA_END    = E000
 
 # size of the code slots (the build checks that the code fits)
-K_CSZ      = 0840
-TTY_CSZ    = 08A0
-DISK_CSZ   = 02B0
-FS_CSZ     = 27D0
-PM_CSZ     = 0A50
+K_CSZ      = 084C
+TTY_CSZ    = 08CC
+DISK_CSZ   = 029C
+FS_CSZ     = 27D4
+PM_CSZ     = 0B38
 
 # size of the data slots (rwdata + bss + stack)
-K_DSZ      = 0200
+K_DSZ      = 0250
 TTY_DSZ    = 01C0
 DISK_DSZ   = 0190
 FS_DSZ     = 0780
-PM_DSZ     = 0260
+PM_DSZ     = 01A0
 
 # The memory above the I/O page has more room than the data need: the code of these modules is
 # put there (behind the data slots) instead of into the low memory, which the programs need.
 HIGH       = DISK PM
 
-# the shell slot at the top of the transient area (file + bss + stack + start-up block)
-SH_SIZE    = 1800

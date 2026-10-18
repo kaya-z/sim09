@@ -20,8 +20,15 @@ VERBOSE = '-v' in sys.argv
 fails = total = 0
 
 
+# the BASIC needs the whole TPA of the standard build; the C kernel build (make KERNEL=c) has less room for programs
+SKIP_BASIC = False
+
+
 def check(cond, what, detail=''):
     global fails, total
+    if SKIP_BASIC and what.startswith('BASIC'):
+        print('SKIP ' + what + ' (not enough room in this build)')
+        return
     total += 1
     fails += not cond
     print(('PASS ' if cond else 'FAIL ') + what)
@@ -36,6 +43,10 @@ if not (os.path.exists(ROM) and os.path.exists(IMG) and os.path.exists(SIM)):
     print('SKIP: run make in mk09/ (and in the top directory for sim09) first')
     sys.exit(0)
 
+try:
+    SKIP_BASIC = int(re.search(r'TPA_BASE\s+0x([0-9A-Fa-f]+)', open(os.path.join(BUILD, 'memmap.h')).read()).group(1), 16) > 0x3C00
+except (OSError, AttributeError):
+    pass
 work = tempfile.mkdtemp(prefix='mk09t_')
 
 
@@ -114,6 +125,31 @@ out, rc = run(disk, steps)
 check(out.count('-- more --') >= 3 and '\x1b[' not in out.split('more /doc/guide.txt')[1].split('life')[0], 'more stops after a screen, goes on with Space and Enter and ends with q', out[-800:])
 check('gen 6  alive' in out and '\x1b[2J' in out, 'life runs 6 generations on the screen and shows the status line')
 check('utf8 cooked' in out.split('gen 6')[1], 'life and more give the console its mode back')
+
+# ---- several programs at the same time (relocatable programs, the memory manager, & kill mem)
+out, rc = run(disk, BOOT + sh('mem', 'spin &', 'spin &', 'spin &', 'echo hello', 'mem', 'ps', 'kill 6', 'kill 99', 'ps',
+                              'kill 7', 'kill 8', 'mem', prompt=P) + OFF)
+m0 = re.search(r'mem\n(\d+) pages of 256 bytes: (\d+) free .*; (\d+) programs', out)
+check(m0 is not None and m0.group(3) == '1', 'mem: the programs that run (only mem itself) and the pages', out[-2500:])
+check(re.search(r'spin &\n(spinning[^\n]*\n)?\[6\]', out) is not None and re.search(r'spin &\n(spinning[^\n]*\n)?\[7\]', out) is not None and re.search(r'spin &\n(spinning[^\n]*\n)?\[8\]', out) is not None,
+      '& starts programs in the background and prints their task ids')
+check(re.search(r'echo hello\nhello\n', out) is not None, 'a foreground program runs and exits while others run in the background')
+ps1 = out.split('/> ps')[1].split('/> ')[0]
+regs = re.findall(r'^\s*([6-9]) (?:ready|running|receive|sleep)\s+4\s+([0-9a-f]{4})-([0-9a-f]{4})', ps1, re.M)
+check(len(regs) >= 4, 'ps lists the programs that run together', out[-1800:])
+check(len({r[1] for r in regs}) == len(regs), 'the programs are loaded at different addresses (relocation)', str(regs))
+m1 = re.findall(r'(\d+) pages of 256 bytes: (\d+) free [^;]*; (\d+) programs', out)
+check(len(m1) >= 3 and int(m1[1][2]) >= 4 and int(m1[1][1]) < int(m1[0][1]) - 10, 'mem: programs running and fewer free pages while they run', str(m1))
+check('kill: 99: ' in out, 'kill of a task that is not a program is refused')
+check(len(m1) >= 3 and m1[2][2] == '1' and int(m1[2][1]) == int(m1[0][1]), 'kill gives the memory back (all pages free again)', str(m1))
+
+steps = BOOT + ['send "spin &\\r"', 'expect "[6]"', 'send "spin\\r"', 'expect "spinning (^C stops)"', 'sleep 300', 'send "\\x03"', 'expect "%s"' % P,
+                'send "ps\\r"', 'expect "%s"' % P, 'send "cat &\\r"', 'expect "%s"' % P, 'send "echo typed\\r"', 'expect "typed"', 'expect "%s"' % P] + OFF
+out, rc = run(disk, steps)
+ps2 = out.split('/> ps')[1].split('/> ')[0]
+check(re.search(r'^\s*6 ready\s+4\s', ps2, re.M) is not None and re.search(r'^\s*7 running\s+4\s', ps2, re.M) is not None and re.search(r'^\s*8 ', ps2, re.M) is None,
+      '^C stops the foreground program only; the background one goes on', ps2)
+check(out.count('typed') >= 2 and 'cat:' not in out, 'a background program cannot read the console (the shell keeps the keyboard)', out[-500:])
 
 # ---- the soft floating point and the BASIC
 out, rc = run(disk, BOOT + sh('sfptest', prompt=P) + OFF)

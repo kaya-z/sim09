@@ -38,6 +38,7 @@ static u8 lready;                   /* the line is complete (llen may be 0: end 
 static u8 esc;                      /* swallowing an escape sequence: 1 after ESC, 2 inside */
 static u8 lastcr;
 
+static u8 owner;                    /* the only task that may read (set by PM; 0 = everybody) */
 static u8 rd_tid;                   /* client waiting in TTY_READ (0 = none) */
 static u16 rd_len;
 
@@ -311,6 +312,9 @@ static void do_ioctl(msg_t *m)
         qh = qt = 0;
         reset_line();
         break;
+    case TTYC_SETFG:
+        if (m->src == TID_PM) owner = (u8)m->b; else r.op = E_PERM;
+        break;
     default:
         r.op = E_INVAL;
     }
@@ -335,6 +339,7 @@ int main(void)
             do_write(&m);
             break;
         case TTY_READ:
+            if (owner && m.src != owner) { reply(m.src, E_BUSY, 0); break; }      /* a background program */
             if (rd_tid && rd_tid != m.src) {        /* is the previous reader still waiting? */
                 if (!mk_tinfo(rd_tid, &ti) && ti.state == TS_RECV) {
                     reply(m.src, E_BUSY, 0);

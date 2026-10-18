@@ -274,19 +274,25 @@ static void boot_task(u8 tid, u16 entry, u16 lo, u16 hi, u8 prio, u8 priv)
 /* ------------------------------------------------------------------ */
 /* scheduler                                                           */
 /* ------------------------------------------------------------------ */
+static u8 rrlast[8];            /* the task that ran last, for each priority (round robin) */
+
+/* the best priority among the READY tasks; among the tasks of that priority round robin from the one that
+ * ran last at this priority (a server that wakes at every tick must not restart the rotation); the current
+ * task stays while its slice lasts and nothing more urgent waits */
 static u8 pick(void)
 {
-    u8 best = NTASK, bp = 255, i;
-    task_t *t;
+    u8 bp = 255, i, n;
     task_t *c = &tasks[cur];
 
-    /* round robin: the tasks after the current one first, then the ones before it and it */
-    for (i = cur + 1, t = c + 1; i < NTASK; i++, t++)
-        if (t->state == TS_READY && t->prio < bp) { best = i; bp = t->prio; }
-    for (i = 0, t = tasks; i <= cur; i++, t++)
-        if (t->state == TS_READY && t->prio < bp) { best = i; bp = t->prio; }
+    for (i = 0; i < NTASK; i++)
+        if (tasks[i].state == TS_READY && tasks[i].prio < bp) bp = tasks[i].prio;
     if (c->state == TS_READY && slice && c->prio <= bp) return cur;
-    return best;
+    n = rrlast[bp & 7];
+    for (i = 0; i < NTASK; i++) {
+        if (++n >= NTASK) n = 0;
+        if (tasks[n].state == TS_READY && tasks[n].prio == bp) { rrlast[bp & 7] = n; return n; }
+    }
+    return cur;
 }
 
 u16 k_schedule(void)
