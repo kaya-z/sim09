@@ -18,7 +18,7 @@ int main(void)
     const u8 *p;
 
     puts("TID REGION         UNUSED STACK (bytes)");
-    for (t = 1; t < NTASK; t++) {
+    for (t = 1; t < TID_USER0; t++) {                  /* (the system servers: only they fill their stack with $A5) */
         if (mk_tinfo(t, &ti) || ti.state == TS_FREE) continue;
         p = (const u8 *)ti.lo;
         run = best = bestend = 0;

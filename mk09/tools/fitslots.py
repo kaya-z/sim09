@@ -11,8 +11,8 @@ slot is bss + data + the stack room that the Makefile asks for (tty: B4, disk: 8
 import re, sys
 
 b = sys.argv[1] if len(sys.argv) > 1 else 'build'
-room = {'kernel': 0, 'tty': 0xB4, 'disk': 0x82, 'fs': 0x140, 'pm': 0xC8}
-key = {'kernel': 'K', 'tty': 'TTY', 'disk': 'DISK', 'fs': 'FS', 'pm': 'PM'}
+room = {'kernel': 0, 'tty': 0xB4, 'disk': 0x82, 'fs': 0x140, 'pm': 0xC8, 'mm': 0x30}
+key = {'kernel': 'K', 'tty': 'TTY', 'disk': 'DISK', 'fs': 'FS', 'pm': 'PM', 'mm': 'MM'}
 new = {}
 for m, k in key.items():
     code = data = 0

@@ -25,7 +25,7 @@
 
 KDP	equ	K_DATA/256
 
-NTASK	equ	10
+NTASK	equ	11
 TSZ	equ	36
 FRAME	equ	12
 QUANTUM	equ	2
@@ -33,7 +33,7 @@ PRIO_IDLE equ	7
 STACKGUARD equ	16
 MAXCOPY	equ	1024
 TID_PM	equ	4
-TID_USER0 equ	5
+TID_USER0 equ	6
 TID_ANY	equ	$FF
 TID_HW	equ	$FE
 OP_NOTIFY equ	$FF
@@ -213,6 +213,8 @@ boottab	fcb	1,1,1
 	fdb	FS_CODE,FS_DATA,FS_DATA+FS_DSZ
 	fcb	4,1,1
 	fdb	PM_CODE,PM_DATA,PM_DATA+PM_DSZ
+	fcb	5,1,0
+	fdb	MM_CODE,MM_DATA,MM_DATA+MM_DSZ
 	fcb	0
 	endsection
 

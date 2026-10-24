@@ -23,8 +23,9 @@
 #define TID_DISK    2       /* disk (block device) server                */
 #define TID_FS      3       /* file system server                        */
 #define TID_PM      4       /* process manager / init                    */
-#define TID_USER0   5       /* first id for tasks created by PM          */
-#define NTASK       10      /* number of task slots (incl. idle)         */
+#define TID_MM      5       /* memory manager (pages of the transient area) */
+#define TID_USER0   6       /* first id for tasks created by PM          */
+#define NTASK       11      /* number of task slots (incl. idle)         */
 
 #define TID_ANY     0xFF    /* receive: from anybody (and notifications) */
 #define TID_HW      0xFE    /* message source of a notification          */

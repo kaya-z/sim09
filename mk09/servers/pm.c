@@ -48,6 +48,26 @@ static u8 owner;                        /* the task that TTY lets read the conso
 static u8 nproc;                        /* programs running (not counting the shell) */
 static u8 respawn;                      /* start the shell again when everything is done */
 
+/* the memory manager is a task of its own (mm.s): PM asks it for the pages of a program and gives them back */
+static int mm_alloc(u8 n, u8 top)                   /* the first page of n pages in a row, or -1 */
+{
+    msg_t m;
+    m.op = MM_ALLOC;
+    m.a = n;
+    m.d = top;
+    if (mk_call(TID_MM, &m) || m.op) return -1;
+    return (int)m.a;
+}
+
+static void mm_free(u8 first, u8 n)
+{
+    msg_t m;
+    m.op = MM_FREE;
+    m.a = first;
+    m.b = n;
+    mk_call(TID_MM, &m);
+}
+
 static msg_t rm;                        /* the answer of the last call to FS */
 
 static u8 fsc(u8 op, u16 a, u16 b)      /* FS request without a buffer */
@@ -295,10 +315,9 @@ static void do_kill(msg_t *m)
 int main(void)
 {
     msg_t m;
-    u8 a, b, c;
+    u8 c;
 
-    mm_init();
-    say("MK09 " MK09_VERSION "\r\n");
+    say("MK09 " MK09_VERSION ": kernel TTY DISK FS PM MM\r\n");
     if (fsc(FS_SYNC, 0, 0)) say("MK09: no FAT16 volume\r\n");        /* the first FS call mounts the volume */
     start_shell();
     for (;;) {
@@ -318,14 +337,12 @@ int main(void)
         case PM_KILL:
             do_kill(&m);
             break;
-        case PM_MEMINFO:
-            mm_info(&a, &b, &c);
-            m.op = E_OK;
-            m.a = a;
-            m.b = b;
-            m.c = c;
+        case PM_MEMINFO:                                /* the answer of MM, and the programs that run */
+            c = m.src;
+            m.op = MM_INFO;
+            if (mk_call(TID_MM, &m)) m.op = E_NOTASK;
             m.d = nproc;
-            mk_reply(m.src, &m);
+            mk_reply(c, &m);
             break;
         case PM_SHUTDOWN:
             fsc(FS_SYNC, 0, 0);

@@ -29,6 +29,12 @@ int main(void)
     printf("hook the tick: %d\n", mk_hook(1));
     printf("reply to nobody: %d\n", mk_reply(TID_FS, &m));
     printf("receive from task 99: %d\n", mk_recv(99, &m));
+    m.op = MM_ALLOC;                                /* only PM may take pages from the memory manager */
+    m.a = 1;
+    m.d = 0;
+    printf("pages from MM (not PM): %d\n", mk_call(TID_MM, &m) ? -1 : (int)m.op);
+    m.op = MM_INFO;
+    printf("memory info from MM: %d\n", mk_call(TID_MM, &m) ? -1 : (int)m.op);
     fflush();
     {
         asm {

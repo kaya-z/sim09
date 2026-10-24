@@ -13,6 +13,7 @@ src, out = sys.argv[1], sys.argv[2]
 over = dict(a.split('=') for a in sys.argv[3:])         # NAME=hex overrides (the C kernel needs a bigger data slot)
 v = {}
 high = []
+lowdata = []
 for line in open(src, encoding='utf-8'):
     line = line.split('#')[0].strip()
     m = re.match(r'(\w+)\s*=\s*([0-9A-Fa-f]+)$', line)
@@ -21,6 +22,9 @@ for line in open(src, encoding='utf-8'):
     m = re.match(r'HIGH\s*=\s*(.*)$', line)
     if m:
         high = m.group(1).split()
+    m = re.match(r'LOWDATA\s*=\s*(.*)$', line)
+    if m:
+        lowdata = m.group(1).split()
 
 for k, x in over.items():
     if k == 'HIGH':
@@ -33,18 +37,25 @@ for k in ('VEC_BASE', 'SYS_BASE', 'DATA_BASE', 'TPA_END'):
 pc, pd = v['SYS_BASE'], v['DATA_BASE']
 code = {}
 data = {}
-for m in ('K', 'TTY', 'DISK', 'FS', 'PM'):
-    data[m] = pd
-    pd += v[m + '_DSZ']
+ld = v['VEC_BASE'] + 0x10                   # $0110: behind the vector table; the pages $0110-$02FF are free once the system is up
+for m in ('K', 'TTY', 'DISK', 'FS', 'PM', 'MM'):
+    if m in lowdata:
+        data[m] = ld
+        ld += v[m + '_DSZ']
+    else:
+        data[m] = pd
+        pd += v[m + '_DSZ']
     if m not in high:
         code[m] = pc
         pc += v[m + '_CSZ']
 for m in high:                          # these modules' code goes behind the data slots
     code[m] = pd
     pd += v[m + '_CSZ']
+if ld > v['SYS_BASE']:
+    sys.exit('genmap: the data slots of LOWDATA do not fit below $%04X (end %04X)' % (v['SYS_BASE'], ld))
 if pd > 0xFF00:
     sys.exit('genmap: data and high code do not fit below $FF00 (end %04X)' % pd)
-for m in ('K', 'TTY', 'DISK', 'FS', 'PM'):
+for m in ('K', 'TTY', 'DISK', 'FS', 'PM', 'MM'):
     res += [(m + '_CODE', code[m]), (m + '_CSZ', v[m + '_CSZ']), (m + '_DATA', data[m]), (m + '_DSZ', v[m + '_DSZ'])]
 tpa = (pc + 0xFF) & ~0xFF
 res += [('TPA_BASE', tpa)]

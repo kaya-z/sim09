@@ -126,16 +126,26 @@ check(out.count('-- more --') >= 3 and '\x1b[' not in out.split('more /doc/guide
 check('gen 6  alive' in out and '\x1b[2J' in out, 'life runs 6 generations on the screen and shows the status line')
 check('utf8 cooked' in out.split('gen 6')[1], 'life and more give the console its mode back')
 
+# ---- the memory manager is a task of its own (TID_MM = 5)
+out, rc = run(disk, BOOT + sh('ps', prompt=P) + OFF)
+check(re.search(r'^\s*5 receive\s+1\s+[0-9a-f]{4}-[0-9a-f]{4}', out, re.M) is not None, 'ps lists the memory manager as task 5 (a server, waiting for requests)', out[-900:])
+
+# ---- stk: the unused stack of the system servers (they fill it with $A5 when they start; MM does it too)
+out, rc = run(disk, BOOT + sh('stk', prompt=P) + OFF)
+rows = re.findall(r'^\s*([1-5]) [0-9a-f]{4}-[0-9a-f]{4}\s+(\d+) \(the run ends', out, re.M)
+check(len(rows) == 5 and all(int(r[1]) >= 10 for r in rows), 'stk: the five servers (TTY DISK FS PM MM) have some unused stack left', out[-600:])
+check('MK09 1.3: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
+
 # ---- several programs at the same time (relocatable programs, the memory manager, & kill mem)
-out, rc = run(disk, BOOT + sh('mem', 'spin &', 'spin &', 'spin &', 'echo hello', 'mem', 'ps', 'kill 6', 'kill 99', 'ps',
-                              'kill 7', 'kill 8', 'mem', prompt=P) + OFF)
+out, rc = run(disk, BOOT + sh('mem', 'spin &', 'spin &', 'spin &', 'echo hello', 'mem', 'ps', 'kill 7', 'kill 99', 'ps',
+                              'kill 8', 'kill 9', 'mem', prompt=P) + OFF)
 m0 = re.search(r'mem\n(\d+) pages of 256 bytes: (\d+) free .*; (\d+) programs', out)
 check(m0 is not None and m0.group(3) == '1', 'mem: the programs that run (only mem itself) and the pages', out[-2500:])
-check(re.search(r'spin &\n(spinning[^\n]*\n)?\[6\]', out) is not None and re.search(r'spin &\n(spinning[^\n]*\n)?\[7\]', out) is not None and re.search(r'spin &\n(spinning[^\n]*\n)?\[8\]', out) is not None,
+check(re.search(r'spin &\n(spinning[^\n]*\n)?\[7\]', out) is not None and re.search(r'spin &\n(spinning[^\n]*\n)?\[8\]', out) is not None and re.search(r'spin &\n(spinning[^\n]*\n)?\[9\]', out) is not None,
       '& starts programs in the background and prints their task ids')
 check(re.search(r'echo hello\nhello\n', out) is not None, 'a foreground program runs and exits while others run in the background')
 ps1 = out.split('/> ps')[1].split('/> ')[0]
-regs = re.findall(r'^\s*([6-9]) (?:ready|running|receive|sleep)\s+4\s+([0-9a-f]{4})-([0-9a-f]{4})', ps1, re.M)
+regs = re.findall(r'^\s*([7-9]|10) (?:ready|running|receive|sleep)\s+4\s+([0-9a-f]{4})-([0-9a-f]{4})', ps1, re.M)
 check(len(regs) >= 4, 'ps lists the programs that run together', out[-1800:])
 check(len({r[1] for r in regs}) == len(regs), 'the programs are loaded at different addresses (relocation)', str(regs))
 m1 = re.findall(r'(\d+) pages of 256 bytes: (\d+) free [^;]*; (\d+) programs', out)
@@ -143,11 +153,11 @@ check(len(m1) >= 3 and int(m1[1][2]) >= 4 and int(m1[1][1]) < int(m1[0][1]) - 10
 check('kill: 99: ' in out, 'kill of a task that is not a program is refused')
 check(len(m1) >= 3 and m1[2][2] == '1' and int(m1[2][1]) == int(m1[0][1]), 'kill gives the memory back (all pages free again)', str(m1))
 
-steps = BOOT + ['send "spin &\\r"', 'expect "[6]"', 'send "spin\\r"', 'expect "spinning (^C stops)"', 'sleep 300', 'send "\\x03"', 'expect "%s"' % P,
+steps = BOOT + ['send "spin &\\r"', 'expect "[7]"', 'send "spin\\r"', 'expect "spinning (^C stops)"', 'sleep 300', 'send "\\x03"', 'expect "%s"' % P,
                 'send "ps\\r"', 'expect "%s"' % P, 'send "cat &\\r"', 'expect "%s"' % P, 'send "echo typed\\r"', 'expect "typed"', 'expect "%s"' % P] + OFF
 out, rc = run(disk, steps)
 ps2 = out.split('/> ps')[1].split('/> ')[0]
-check(re.search(r'^\s*6 ready\s+4\s', ps2, re.M) is not None and re.search(r'^\s*7 running\s+4\s', ps2, re.M) is not None and re.search(r'^\s*8 ', ps2, re.M) is None,
+check(re.search(r'^\s*7 ready\s+4\s', ps2, re.M) is not None and re.search(r'^\s*8 running\s+4\s', ps2, re.M) is not None and re.search(r'^\s*9 ', ps2, re.M) is None,
       '^C stops the foreground program only; the background one goes on', ps2)
 check(out.count('typed') >= 2 and 'cat:' not in out, 'a background program cannot read the console (the shell keeps the keyboard)', out[-500:])
 
@@ -259,9 +269,9 @@ check(jv.read('/' + 'メモ.TXT'.encode('utf-8').decode('latin-1')) == '日本�
 out, rc = run(disk, BOOT + sh('faults', 'ps', 'echo alive', prompt='/> ') + OFF)
 want = ['send to task 99: 2', 'send to a task that is not there: 2', 'send to myself: 2', 'message outside my memory: 4',
         'grant outside my memory: 4', 'copyto without a client: 1', 'create a task: 1', 'kill a task: 1', 'hook the tick: 1',
-        'receive from task 99: 2']
+        'receive from task 99: 2', 'pages from MM (not PM): 1', 'memory info from MM: 0']
 check(all(w in out for w in want), 'the kernel returns the right errors for wrong system calls (bad task, bad address, no right)', out[-900:])
-check('alive' in out and re.search(r'\n\s*6\s+running', out) is not None, 'a wild stack pointer stops that program only: the system goes on', out[-400:])
+check('alive' in out and re.search(r'\n\s*7\s+running', out) is not None, 'a wild stack pointer stops that program only: the system goes on', out[-400:])
 
 # ---- the file system server as compiled for the 6809, with random operations (apps/fstest.c)
 disk3 = os.path.join(work, 'disk3.img')

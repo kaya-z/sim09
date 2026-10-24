@@ -473,6 +473,7 @@ u16 kmain(void)
     boot_task(TID_DISK, DISK_CODE, DISK_DATA, DISK_DATA + DISK_DSZ, PRIO_SERVER, 0);
     boot_task(TID_FS,   FS_CODE,   FS_DATA,   FS_DATA + FS_DSZ,     PRIO_SERVER, 0);
     boot_task(TID_PM,   PM_CODE,   PM_DATA,   PM_DATA + PM_DSZ,     PRIO_SERVER, 1);
+    boot_task(TID_MM,   MM_CODE,   MM_DATA,   MM_DATA + MM_DSZ,     PRIO_SERVER, 0);
 
     bsp_timer_start();
     cur = 0;

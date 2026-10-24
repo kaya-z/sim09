@@ -101,6 +101,12 @@ typedef struct dirent {
 #define PM_MEMINFO  6       /* -> a = pages of the transient area (256 bytes each), b = free pages,
                                c = the biggest piece of free pages, d = programs running */
 
+/* ---- MM: memory manager (a task of its own, TID_MM) -------------------- */
+#define MM_ALLOC    1       /* a = n pages (256 bytes), d = 0: the first fit from the bottom of the transient area, 1: from the top; PM only.
+                               -> a = the first page (MM_ADDR(page) = TPA_BASE + page * 256), or E_NOMEM */
+#define MM_FREE     2       /* a = first page, b = n pages; PM only */
+#define MM_INFO     3       /* -> a = pages of the transient area, b = free pages, c = the biggest piece of free pages; anybody may ask */
+
 #define ARGMAX      128     /* bytes of the argument block */
 
 #endif

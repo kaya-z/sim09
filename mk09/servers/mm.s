@@ -1,31 +1,52 @@
 * SPDX-License-Identifier: MIT
 * Copyright (c) 2026 YUKARI Semiconductor Devices
-* mm.s - the memory manager (part of PM, see mm.h): a bitmap of the pages of the transient program area
+* mm.s - the memory manager (TASK 5, see mm.h): the books of the pages of the transient program area
 *
-* Programs are allocated from the bottom of the area, the shell from the top, so that the free
-* memory stays in one piece in the middle (like the command processor of CP/M, which sat at the
-* top of the memory).  There is no other state: the caller (pm.c) remembers what it was given.
-* (In assembler because the C version needed 400 bytes, and the high memory in which PM lives is full.)
-* The C interface is mm.h; CMOC passes every argument as a 16 bit word, the first nearest, and the
-* result of an int function is in D.  The work variables are static (PM is one task, no re-entrancy).
+* A server task like the others, but written in assembler: the C version needed 400 bytes of code and a C start-up, and
+* the high memory in which the servers live is full.  PM is its client (MM_ALLOC and MM_FREE come from PM only; MM_INFO from
+* anybody, protocol MM_* in proto.h).  A bitmap of the pages (256 bytes each) of TPA_BASE .. TPA_END.
+*
+* Programs are allocated from the bottom of the area, the shell from the top (PM says which), so that the free memory stays in
+* one piece in the middle (like the command processor of CP/M, which sat at the top of the memory).  MM does not know who has
+* which pages: PM remembers what it was given and gives it back.  The kernel protects the regions.
+*
+* The task starts with its stack at the end of its data slot (the kernel made the first frame).  It uses the system calls
+* directly (A = number, B = task, X = message; see lib/mksys.s) and needs no C library.
 
 	include memmap.inc
+	include sysnum.inc
 
 NP	equ	(TPA_END-TPA_BASE)/256		pages
 
-	export	_mm_init
-	export	_mm_alloc
-	export	_mm_free
-	export	_mm_info
+TID_ANY	equ	$FF
+TID_HW	equ	$FE
+TID_PM	equ	4
+E_OK	equ	0
+E_PERM	equ	1
+E_INVAL	equ	8
+E_NOMEM	equ	6
+E_NOSYS	equ	22
+MM_ALLOC equ	1
+MM_FREE	equ	2
+MM_INFO	equ	3
+
+	export	_start
+
+	section start			(the kernel starts the task at the first byte of its code)
+_start	lbra	init
+	endsection
 
 	section bss
 used	rmb	(NP+7)/8
+msg	rmb	10			src op a(2) b(2) c(2) d(2)
+m_src	rmb	1
 m_n	rmb	1
 m_run	rmb	1
 m_i	rmb	1
 m_first	rmb	1
 m_free	rmb	1
 m_big	rmb	1
+endbss	rmb	0
 
 	section code
 
@@ -62,22 +83,12 @@ clrpg	bsr	bitx
 	stb	,x
 	rts
 
-* void mm_init(void)
-_mm_init
-	ldx	#used
-	ldb	#(NP+7)/8
-mi0	clr	,x+
-	decb
-	bne	mi0
-	rts
-
-* int mm_alloc(u8 n, u8 top): the first page of n free pages in a row, or -1
-_mm_alloc
-	ldb	3,s
+* alloc: B = n pages, A = 0 (from the bottom) or not (from the top) -> carry clear and B = the first page, or carry set
+alloc	tstb
 	beq	fail
 	stb	m_n
 	clr	m_run
-	tst	5,s
+	tsta
 	bne	fromtop
 	clr	m_i			from the bottom
 bu	lda	m_i
@@ -121,17 +132,14 @@ cl1	lda	m_i
 	inc	m_i
 	dec	m_run
 	bne	cl1
-	clra
 	ldb	m_first
+	andcc	#$FE
 	rts
-fail	ldd	#$FFFF
+fail	orcc	#1
 	rts
 
-* void mm_free(u8 first, u8 n)
-_mm_free
-	lda	3,s
-	sta	m_i
-	ldb	5,s
+* free: A = first page, B = n
+free	sta	m_i
 	stb	m_run
 	beq	fr9
 fr1	lda	m_i
@@ -141,9 +149,8 @@ fr1	lda	m_i
 	bne	fr1
 fr9	rts
 
-* void mm_info(u8 *total, u8 *free, u8 *largest)
-_mm_info
-	clr	m_free
+* info: -> msg a = pages, b = free pages, c = the biggest piece of free pages
+info	clr	m_free
 	clr	m_run
 	clr	m_big
 	clr	m_i
@@ -162,13 +169,87 @@ mn_next	inc	m_i
 	lda	m_i
 	cmpa	#NP
 	blo	mn1
-	ldx	2,s
+	clr	msg+2
 	lda	#NP
-	sta	,x
-	ldx	4,s
+	sta	msg+3
+	clr	msg+4
 	lda	m_free
-	sta	,x
-	ldx	6,s
+	sta	msg+5
+	clr	msg+6
 	lda	m_big
-	sta	,x
+	sta	msg+7
 	rts
+
+* ---- the server
+init	ldx	#used			clear the books
+	ldb	#(NP+7)/8
+st0	clr	,x+
+	decb
+	bne	st0
+	ldx	#endbss			fill the unused stack with $A5 (the tool stk measures it)
+	lda	#$A5
+st1	sta	,x+
+	cmpx	#MM_DATA+MM_DSZ-32
+	blo	st1
+mmloop	ldb	#TID_ANY
+	ldx	#msg
+	lda	#SYS_RECV
+	swi
+	tstb
+	bne	mmloop
+	lda	msg
+	sta	m_src
+	cmpa	#TID_HW
+	beq	mmloop
+	lda	msg+1
+	cmpa	#MM_INFO
+	beq	do_info
+	cmpa	#MM_ALLOC
+	beq	do_alloc
+	cmpa	#MM_FREE
+	beq	do_free
+	ldb	#E_NOSYS
+	bra	rep0
+do_info	lbsr	info
+	ldb	#E_OK
+	bra	rep
+do_alloc ldb	#E_PERM
+	lda	m_src
+	cmpa	#TID_PM
+	bne	rep0
+	ldb	#E_INVAL
+	lda	msg+2			a = n must fit a byte
+	bne	rep0
+	lda	msg+9			d = from the top?
+	ldb	msg+3
+	lbsr	alloc
+	bcs	nomem
+	clr	msg+2
+	stb	msg+3
+	ldb	#E_OK
+	bra	rep
+nomem	ldb	#E_NOMEM
+	bra	rep0
+do_free	ldb	#E_PERM
+	lda	m_src
+	cmpa	#TID_PM
+	bne	rep0
+	lda	msg+3			first
+	ldb	msg+5			n
+	lbsr	free
+	ldb	#E_OK
+	bra	rep0
+rep0	clr	msg+2			no values
+	clr	msg+3
+	clr	msg+4
+	clr	msg+5
+	clr	msg+6
+	clr	msg+7
+rep	stb	msg+1			the status
+	clr	msg+8
+	clr	msg+9
+	ldb	m_src
+	ldx	#msg
+	lda	#SYS_REPLY
+	swi
+	lbra	mmloop

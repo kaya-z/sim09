@@ -22,20 +22,26 @@ DATA_BASE  = E200
 TPA_END    = E000
 
 # size of the code slots (the build checks that the code fits)
-K_CSZ      = 084C
+K_CSZ      = 0854
 TTY_CSZ    = 08CC
 DISK_CSZ   = 029C
 FS_CSZ     = 27D4
-PM_CSZ     = 0B38
+MM_CSZ     = 01C4
+PM_CSZ     = 0A70
 
 # size of the data slots (rwdata + bss + stack)
-K_DSZ      = 0250
+K_DSZ      = 0270
 TTY_DSZ    = 01C0
 DISK_DSZ   = 0190
 FS_DSZ     = 0780
-PM_DSZ     = 01A0
+MM_DSZ     = 0060
+PM_DSZ     = 0190
 
 # The memory above the I/O page has more room than the data need: the code of these modules is
 # put there (behind the data slots) instead of into the low memory, which the programs need.
-HIGH       = DISK PM
+HIGH       = DISK PM MM
+
+# The pages $0110-$02FF are free once the system is up (the boot ROM used $0200 for its sector buffer): the data of these modules
+# (only bss and a little initialised data below $0200) goes there, which leaves room in the high memory.
+LOWDATA    = DISK
 

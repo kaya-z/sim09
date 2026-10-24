@@ -45,6 +45,12 @@ $(B)/sysnum.inc: include/sysnum.h | $(B)
 $(B)/%.o: %.c $(HDRS) $(wildcard apps/basic/*.h)
 	$(CMOC) -c $(CFLAGS) -o $@ $<
 
+# BASIC without SIN COS TAN ATN EXP LOG SQR and non-integer powers (about 3.5 KB of code): room for a bigger program and bigger arrays
+#   make BASIC_NOMATH=1
+ifdef BASIC_NOMATH
+$(B)/basic.o: CFLAGS += -DNOMATH -DPGM=6000 -DAPOOL=700
+endif
+
 $(B)/%.o: %.s $(HDRS)
 	$(LWASM) $(ASFLAGS) -o $@ $<
 
@@ -81,7 +87,8 @@ endif
 TTY_OBJS    := $(B)/crt0.o $(B)/tty.o
 DISK_OBJS   := $(B)/crt0.o $(B)/disk.o
 FS_OBJS     := $(B)/crt0.o $(B)/fs.o $(B)/fs_core.o $(B)/rtc.o
-PM_OBJS     := $(B)/crt0.o $(B)/pm.o $(B)/mm.o
+PM_OBJS     := $(B)/crt0.o $(B)/pm.o
+MM_OBJS     := $(B)/mm.o
 
 LINK = $(LWLINK) --format=srec --script=$(B)/$(1).link --map=$(B)/$(1).map -o $$@ $$($(2)_OBJS) -L$(B) -lmk -L$(CMOCLIB) -lcmoc-crt-void -lcmoc-std-void
 
@@ -103,14 +110,15 @@ $(eval $(call SYSMOD,tty,TTY,B4))
 $(eval $(call SYSMOD,disk,DISK,82))
 $(eval $(call SYSMOD,fs,FS,140))
 $(eval $(call SYSMOD,pm,PM,C8))
+$(eval $(call SYSMOD,mm,MM,30))
 
-SYSMODS := kernel tty disk fs pm
+SYSMODS := kernel tty disk fs pm mm
 
 # ---- programs (MX executables): apps/NAME.c -> build/NAME.mx ----
 APPS      := sh ls cat echo stty cp mv rm mkdir date df ps hd wc spin stk fstest faults ipcbench dhry more grep life basic kill mem sfptest jwp
 STACK_sh  := 640
 STACK_jwp := 1200
-STACK_basic := 2300
+STACK_basic := 1500
 OBJS_basic := $(B)/sfpa.o
 OBJS_sfptest := $(B)/sfpa.o
 
