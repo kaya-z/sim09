@@ -26,7 +26,7 @@ SKIP_BASIC = False
 
 def check(cond, what, detail=''):
     global fails, total
-    if SKIP_BASIC and what.startswith('BASIC'):
+    if SKIP_BASIC and what.startswith(('BASIC', 'as ')):
         print('SKIP ' + what + ' (not enough room in this build)')
         return
     total += 1
@@ -134,7 +134,7 @@ check(re.search(r'^\s*5 receive\s+1\s+[0-9a-f]{4}-[0-9a-f]{4}', out, re.M) is no
 out, rc = run(disk, BOOT + sh('stk', prompt=P) + OFF)
 rows = re.findall(r'^\s*([1-5]) [0-9a-f]{4}-[0-9a-f]{4}\s+(\d+) \(the run ends', out, re.M)
 check(len(rows) == 5 and all(int(r[1]) >= 10 for r in rows), 'stk: the five servers (TTY DISK FS PM MM) have some unused stack left', out[-600:])
-check('MK09 1.6: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
+check('MK09 1.7: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
 
 # ---- several programs at the same time (relocatable programs, the memory manager, & kill mem)
 out, rc = run(disk, BOOT + sh('mem', 'spin &', 'spin &', 'spin &', 'echo hello', 'mem', 'ps', 'kill 7', 'kill 99', 'ps',
@@ -283,6 +283,36 @@ check(re.search(r'\| more\nhello world\nsecond', out) is not None, 'a pipe into 
 check(re.search(r'\| wc\n2 3 ', out) is not None and 'PIPE' not in out.split('| wc')[1].split('echo piped')[0], 'a pipe of three programs; the temporary files are gone afterwards', out[-2500:])
 check('nosuch: command not found' in out and 'sh: ambiguous <' in out, 'a pipe with an unknown program or a second redirection is reported', out[-2500:])
 check(re.search(r'echo 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15\n1 2 3 4 5 6 7 8 9 10 11 12 13 14 15\n', out) is not None, 'a program gets up to 16 arguments', out[-500:])
+
+# ---- the assembler (as) runs on MK09: all instructions against lwasm, a program with the runtime, arguments, a bss, errors
+adisk = os.path.join(work, 'adisk.img')
+atree = os.path.join(work, 'atree')
+shutil.copytree(os.path.join(BUILD, 'tree'), atree, ignore=shutil.ignore_patterns('skk'))
+for f in ('all.s', 'argc.s', 'bad.s'):
+    shutil.copy(os.path.join(HERE, 'asm', f), os.path.join(atree, f))
+subprocess.run([sys.executable, '-X', 'utf8', os.path.join(MK, 'tools', 'mkdisk.py'), '-o', adisk, '--boot', os.path.join(BUILD, 'boot.img'),
+                '--size-mb', '16', atree], check=True, stdout=subprocess.DEVNULL)
+out, rc = run(adisk, ['timeout 900000'] + BOOT + sh('as -r /all.s', 'as /asm/hello.s -o /hello.mx', '/hello.mx', 'as /asm/cat.s -o /cat2.mx',
+              'echo pipe works | /cat2.mx', 'as /argc.s', '/argc.mx a b', 'as /bad.s', 'cat /bad.mx', 'as -s /asm/hello.s -o /h2.mx', prompt=P) + OFF, timeout=1200)
+lwasm = shutil.which('lwasm') or os.path.join(os.environ.get('CMOC_BIN', ''), 'lwasm')
+avol = fatlib.Volume(adisk)
+if os.path.exists(lwasm):
+    ref = os.path.join(work, 'all.ref')
+    subprocess.run([lwasm, '--format=raw', '-o', ref, os.path.join(HERE, 'asm', 'all.s')], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        got = avol.read('/ALL.BIN')
+    except Exception:
+        got = b''
+    check(got == open(ref, 'rb').read(), 'as -r: the 1800 instructions of all.s give the bytes that lwasm gives (%d bytes)' % len(got), out[-600:])
+else:
+    print('SKIP as -r against lwasm (no lwasm)')
+check('/hello.mx: ' in out and 'relocations' in out, 'as assembles a program', out[-1200:])
+check('hello from an assembler program!\n' in out, 'the assembled program runs: relocated, bss cleared, puts and putc of the runtime', out[-1200:])
+check('pipe works\n' in out.split('| /cat2.mx')[-1], 'a program with a bss buffer and read/write copies its standard input (cat in assembler, in a pipe)', out[-900:])
+check(re.search(r'/argc.mx a b\n3\n', out) is not None, 'the start-up block gives the program its arguments (argc 3)', out[-700:])
+check('/bad.s:2: undefined name' in out and '/bad.s:3: unknown instruction' in out and 'as: 2 error(s)' in out, 'as reports the lines of the errors (the undefined name too)', out[-700:])
+check('cat: /bad.mx: not found' in out, 'as writes no file when there are errors', out[-700:])
+check(re.search(r'^[0-9a-f]{4} A msg$', out, re.M) is not None, 'as -s prints the symbol table', out[-500:])
 
 # ---- the file system server as compiled for the 6809, with random operations (apps/fstest.c)
 disk3 = os.path.join(work, 'disk3.img')

@@ -115,10 +115,12 @@ $(eval $(call SYSMOD,mm,MM,30))
 SYSMODS := kernel tty disk fs pm mm
 
 # ---- programs (MX executables): apps/NAME.c -> build/NAME.mx ----
-APPS      := sh ls cat echo stty cp mv rm mkdir date df ps hd wc spin stk fstest faults ipcbench dhry more grep life basic kill mem sfptest jwp
+APPS      := sh as ls cat echo stty cp mv rm mkdir date df ps hd wc spin stk fstest faults ipcbench dhry more grep life basic kill mem sfptest jwp
 STACK_sh  := 640
 STACK_jwp := 1200
 STACK_basic := 1500
+STACK_as := 700
+$(B)/as.o: apps/as_text.h
 OBJS_basic := $(B)/sfpa.o
 OBJS_sfptest := $(B)/sfpa.o
 
@@ -166,10 +168,10 @@ $(B)/skk_$(CHARSET).dic: ../tools/mkskkdic.py $(SKKJISYO)
 	$(PYTHON) ../tools/mkskkdic.py -e $(CHARSET) -b $(SKK_KB) -o $@ $(SKKJISYO)
 
 TREE := $(B)/tree
-$(B)/tree.stamp: $(foreach a,$(APPS),$(B)/$(a).mx) $(wildcard disk/etc/* disk/doc/* disk/bas/*) $(if $(HAVE_SKK),$(B)/skk_$(CHARSET).dic) Makefile
-	rm -rf $(TREE); mkdir -p $(TREE)/bin $(TREE)/etc $(TREE)/doc $(TREE)/bas $(TREE)/skk
+$(B)/tree.stamp: $(foreach a,$(APPS),$(B)/$(a).mx) $(wildcard disk/etc/* disk/doc/* disk/bas/* disk/asm/*) $(if $(HAVE_SKK),$(B)/skk_$(CHARSET).dic) Makefile
+	rm -rf $(TREE); mkdir -p $(TREE)/bin $(TREE)/etc $(TREE)/doc $(TREE)/bas $(TREE)/asm $(TREE)/skk
 	for a in $(APPS); do cp $(B)/$$a.mx $(TREE)/bin/$$a.mx; done
-	for d in etc doc bas; do if [ -d disk/$$d ] && [ -n "$$(ls disk/$$d)" ]; then cp disk/$$d/* $(TREE)/$$d/; fi; done
+	for d in etc doc bas asm; do if [ -d disk/$$d ] && [ -n "$$(ls disk/$$d)" ]; then cp disk/$$d/* $(TREE)/$$d/; fi; done
 	printf '# /ETC/RC.SH - run by the shell when the system starts\nstty $(CHARSET)\n' > $(TREE)/etc/rc.sh
 	if [ -n "$(HAVE_SKK)" ]; then cp $(B)/skk_$(CHARSET).dic $(TREE)/skk/skk.dic; fi
 	iconv -f UTF-8 -t $(ICONV_$(CHARSET)) disk/doc/guide.txt > $(TREE)/doc/guide.txt
