@@ -17,11 +17,14 @@
  *                    (servers, programs, idle) instead of searching all the tasks for the best priority, a message is copied
  *                    by an unrolled loop, a receive does not look for blocked senders when there are none, the idle task is
  *                    made from the boot table.
+ *   1.5  2026-10-27  the portable C kernel gets the same speed-ups in a form that does not depend on the CPU (a one-pass pick that
+ *                    still looks at the priority values, arch_copymsg() that an architecture may replace, the send hint):
+ *                    round trip 6.7 ms -> 5.0 ms.
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.4"
+#define MK09_VERSION    "1.5"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

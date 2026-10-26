@@ -30,6 +30,11 @@
 #define BLOCKED     0xFF        /* internal: the system call has not completed */
 #define STACKGUARD  16
 
+/* a message (MSG_SIZE bytes) between the kernel and a task: an architecture may define arch_copymsg() as something faster than arch_copy() */
+#ifndef arch_copymsg
+#define arch_copymsg(d, s)  arch_copy((d), (s), MSG_SIZE)
+#endif
+
 typedef struct task {
     u8  state;                  /* TS_* */
     u8  prio;
@@ -50,6 +55,7 @@ typedef struct task {
 } task_t;
 
 static task_t tasks[NTASK];
+static u8 sendhint;             /* not 0: a task may be blocked in a send (set when one blocks, cleared by a receive that finds none) */
 u16 cur_sp;                     /* used by entry.s */
 static u8  cur;                 /* the running task */
 static u8  slice;               /* ticks left of its time slice */
@@ -83,7 +89,7 @@ static void wake(u8 t, u8 status, u16 value)
 
 static void deliver(u8 dst, const msg_t *m)
 {
-    arch_copy((void *)tasks[dst].ubuf, m, MSG_SIZE);
+    arch_copymsg((void *)tasks[dst].ubuf, m);
     wake(dst, E_OK, 0);
 }
 
@@ -104,7 +110,7 @@ static u8 ipc_send(u8 me, u8 dst, u16 ubuf, u8 mode, u8 gfl)
     if (d->state == TS_FREE || d->state == TS_NEW) return E_NOTASK;
     if (d->state == TS_ZOMBIE) return E_DEAD;
     if (!uok(s, ubuf, MSG_SIZE)) return E_FAULT;
-    arch_copy(&s->m, (void *)ubuf, MSG_SIZE);
+    arch_copymsg(&s->m, (void *)ubuf);
     s->m.src = me;
     s->gfl = 0;
     if (mode == M_CALL && gfl) {
@@ -125,6 +131,7 @@ static u8 ipc_send(u8 me, u8 dst, u16 ubuf, u8 mode, u8 gfl)
     }
     if (mode == M_REPLY) return E_NOTWAIT;
     s->state = TS_SEND;
+    sendhint = 1;
     s->peer = dst;
     s->call = (mode == M_CALL);
     s->ubuf = ubuf;
@@ -145,13 +152,16 @@ static u8 ipc_recv(u8 me, u8 from, u16 ubuf)
         m.a = r->nbits;
         m.b = m.c = m.d = 0;
         r->nbits = 0;
-        arch_copy((void *)ubuf, &m, MSG_SIZE);
+        arch_copymsg((void *)ubuf, &m);
         return E_OK;
     }
+    if (sendhint) {                             /* (nobody blocked in a send: no need to look at the 10 tasks) */
+    u8 seen = 0;
     for (i = 0; i < NTASK; i++) {
         s = &tasks[i];
+        if (s->state == TS_SEND) seen = 1;
         if (s->state == TS_SEND && s->peer == me && (from == TID_ANY || from == i)) {
-            arch_copy((void *)ubuf, &s->m, MSG_SIZE);
+            arch_copymsg((void *)ubuf, &s->m);
             if (s->call) {                      /* a call: it waits for the reply now */
                 s->state = TS_RECV;
                 s->peer = me;
@@ -161,6 +171,8 @@ static u8 ipc_recv(u8 me, u8 from, u16 ubuf)
             }
             return E_OK;
         }
+    }
+    if (!seen) sendhint = 0;
     }
     if (from != TID_ANY) {
         if (from >= NTASK) return E_NOTASK;
@@ -278,21 +290,26 @@ static u8 rrlast[8];            /* the task that ran last, for each priority (ro
 
 /* the best priority among the READY tasks; among the tasks of that priority round robin from the one that
  * ran last at this priority (a server that wakes at every tick must not restart the rotation); the current
- * task stays while its slice lasts and nothing more urgent waits */
+ * task stays while its slice lasts and nothing more urgent waits.  One pass: a task is better than the best so
+ * far if its priority is better, or the same and it comes sooner after the one that ran last. */
 static u8 pick(void)
 {
-    u8 bp = 255, i, n;
-    task_t *c = &tasks[cur];
+    u8 best = NTASK, bp = 255, bd = 255, i, p, d;
+    task_t *t = tasks;
 
-    for (i = 0; i < NTASK; i++)
-        if (tasks[i].state == TS_READY && tasks[i].prio < bp) bp = tasks[i].prio;
-    if (c->state == TS_READY && slice && c->prio <= bp) return cur;
-    n = rrlast[bp & 7];
-    for (i = 0; i < NTASK; i++) {
-        if (++n >= NTASK) n = 0;
-        if (tasks[n].state == TS_READY && tasks[n].prio == bp) { rrlast[bp & 7] = n; return n; }
+    for (i = 0; i < NTASK; i++, t++) {
+        if (t->state != TS_READY) continue;
+        p = t->prio;
+        if (p > bp) continue;
+        d = (u8)(i - rrlast[p & 7] - 1);
+        if (i <= rrlast[p & 7]) d += NTASK;
+        if (p < bp || d < bd) { best = i; bp = p; bd = d; }
     }
-    return cur;
+    if (best == NTASK) return cur;                  /* (cannot happen: the idle task is always READY) */
+    t = &tasks[cur];
+    if (t->state == TS_READY && slice && t->prio <= bp) return cur;
+    rrlast[bp & 7] = best;
+    return best;
 }
 
 u16 k_schedule(void)

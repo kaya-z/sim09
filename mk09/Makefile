@@ -75,7 +75,7 @@ $(B)/libmk.a: $(LIBMK_OBJS)
 # KERNEL=asm (default): the kernel in 6809 assembler; KERNEL=c: the portable C kernel
 KERNEL ?= asm
 ifneq ($(KERNEL),asm)
-MAPOVER := K_CSZ=0F60 K_DSZ=02F0 HIGH=PM
+MAPOVER := K_CSZ=1000 K_DSZ=02F0 HIGH=PM
 endif
 ifeq ($(KERNEL),asm)
 KERNEL_OBJS := $(B)/kernel_asm.o

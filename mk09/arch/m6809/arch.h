@@ -40,6 +40,8 @@ struct frame {
 u16  arch_frame_init(u16 stack_top, u16 entry, u16 arg);
 
 void arch_copy(void *dst, const void *src, u16 n);
+/* a message of MSG_SIZE (10) bytes: five words (the 6809 needs no alignment) instead of the loop of arch_copy() */
+#define arch_copymsg(d, s)  do { u16 *_d = (u16 *)(d); const u16 *_s = (const u16 *)(s); _d[0] = _s[0]; _d[1] = _s[1]; _d[2] = _s[2]; _d[3] = _s[3]; _d[4] = _s[4]; } while (0)
 
 /* assembler */
 extern u16 cur_sp;                  /* sp of the interrupted task (set by the trap entry) */
