@@ -33,6 +33,7 @@ PRIO_IDLE equ	7
 STACKGUARD equ	16
 MAXCOPY	equ	1024
 TID_PM	equ	4
+TID_MM	equ	5
 TID_USER0 equ	6
 TID_ANY	equ	$FF
 TID_HW	equ	$FE
@@ -106,8 +107,8 @@ mode	rmb	1			ipc: 0 send, 1 call, 2 reply; grant: GR_READ / GR_WRITE
 gfl	rmb	1			ipc: grant flags of a call
 dstid	rmb	1
 cnt	rmb	1
-pbest	rmb	1
-pbp	rmb	1
+sendhint rmb	1			not 0: a task may be blocked in a send (set when one blocks, cleared by a receive that finds none)
+sseen	rmb	1			(sc_recv: a task in SEND state was seen)
 hookbits rmb	2
 ticks	rmb	2
 curp	rmb	2			&tasks[cur]
@@ -121,7 +122,7 @@ kmsg	rmb	MSGSZ			a message being built (also the taskinfo)
 tcb	rmb	11			the block of a task creation
 kernel_dp_end equ *
 tasks	rmb	NTASK*TSZ
-rrlast	rmb	8			the task that ran last, for each priority (round robin)
+rrlast	rmb	2			the server / the program that ran last (round robin)
 idlestk	rmb	64
 kstack	rmb	96
 kstk_top equ	*
@@ -150,22 +151,10 @@ _start	orcc	#$50
 	std	,x++
 	cmpy	#vectab+12
 	bne	@vec
-* the idle task (task 0)
-	ldx	#tasks
-	lda	#TS_READY
-	sta	T_STATE,x
-	lda	#PRIO_IDLE
-	sta	T_PRIO,x
-	ldd	#idlestk
-	std	T_LO,x
-	addd	#64
-	std	T_HI,x
-	ldy	#idle
-	ldu	#0
-	lbsr	mkframe			(D = top of the stack)
-* the system tasks
+* the idle task and the system tasks
 	ldy	#boottab
 @bt	ldb	,y
+	cmpb	#$FF
 	beq	@btdone
 	lda	#TSZ
 	mul
@@ -205,7 +194,9 @@ vectab	fdb	trap_ret		SWI3
 	fdb	trap_ret		FIRQ
 
 * tid, prio, priv, entry, lo, hi
-boottab	fcb	1,1,1
+boottab	fcb	0,PRIO_IDLE,0
+	fdb	idle,idlestk,idlestk+64
+	fcb	1,1,1
 	fdb	TTY_CODE,TTY_DATA,TTY_DATA+TTY_DSZ
 	fcb	2,1,0
 	fdb	DISK_CODE,DISK_DATA,DISK_DATA+DISK_DSZ
@@ -215,7 +206,7 @@ boottab	fcb	1,1,1
 	fdb	PM_CODE,PM_DATA,PM_DATA+PM_DSZ
 	fcb	5,1,0
 	fdb	MM_CODE,MM_DATA,MM_DATA+MM_DSZ
-	fcb	0
+	fcb	$FF
 	endsection
 
 * ================================================================================ code
@@ -383,65 +374,70 @@ chkstack
 	orcc	#1
 	rts
 
-* pick: -> B = the task to run: the best priority among the READY tasks; among the tasks of that
-* priority round robin from the one that ran last at this priority (rrlast: a server that wakes at every
-* tick must not restart the rotation); the current one stays while its slice lasts and nothing more urgent waits
-pick	ldy	#tasks
-	lda	#NTASK
-	sta	<cnt
-	lda	#$FF
-	sta	<pbp			the best priority of a READY task
-@p1	ldb	T_STATE,y
-	cmpb	#TS_READY
-	bne	@n1
-	ldb	T_PRIO,y
-	cmpb	<pbp
-	bhs	@n1
-	stb	<pbp
-@n1	leay	TSZ,y
-	dec	<cnt
-	bne	@p1
-	ldy	<curp
+* pick: -> B = the task to run.  The scheduling classes are given by the task number: the servers 1 .. TID_MM (priority
+* 1) first, then the programs TID_USER0 .. NTASK-1 (priority 4, PM makes them all so), then the idle task 0.  Inside a class
+* round robin from the one that ran last (rrlast: a server that wakes at every tick must not restart the rotation of the
+* programs).  The current task stays while its slice lasts and nothing more urgent waits.  (Two short scans instead of a
+* search for the best priority over all the tasks: the scheduler runs twice in every message round trip.)
+pick	ldy	<curp
 	lda	T_STATE,y
 	cmpa	#TS_READY
-	bne	@rr
+	bne	@srv
 	tst	<slice
-	beq	@rr
-	lda	T_PRIO,y
-	cmpa	<pbp
-	bhi	@rr
+	beq	@srv
 	ldb	<cur
+	beq	@srv			the idle task does not stay: something may have become READY
+	cmpb	#TID_MM
+	bls	@stay			a server stays while its slice lasts: nothing is more urgent
+	bsr	srvscan			a program stays unless a server waits
+	bcc	@ret
+@stay	ldb	<cur
+@ret	rts
+@srv	bsr	srvscan
+	bcc	@ret
+	bsr	usrscan
+	bcc	@ret
+	clrb				the idle task
 	rts
-@rr	ldx	#rrlast
-	ldb	<pbp
-	abx				X = &rrlast[priority]
-	ldb	,x			the task that ran last at this priority
-	pshs	b
+
+* srvscan / usrscan: the next READY server / program after the one that ran last -> carry clear and B = it, or carry set
+srvscan	ldx	#rrlast
+	ldd	#TID_MM*256+1		(the servers 1 .. TID_MM: A = the last one, B = the first)
+	bra	scan
+usrscan	ldx	#rrlast+1
+	ldd	#(NTASK-1)*256+TID_USER0	(the programs TID_USER0 .. NTASK-1)
+scan	std	<tmpw			A = the last task of the class, B = the first
+	suba	<tmpw+1
+	inca
+	sta	<cnt			the number of tasks in it
+	ldb	,x			the one that ran last
+	cmpb	<tmpw+1
+	bhs	@ok
+	ldb	<tmpw+1
+	decb
+@ok	bsr	@ty
+@l	leay	TSZ,y
+	incb
+	cmpb	<tmpw
+	bls	@w
+	ldb	<tmpw+1
+	bsr	@ty
+@w	lda	T_STATE,y
+	cmpa	#TS_READY
+	beq	@got
+	dec	<cnt
+	bne	@l
+	orcc	#1
+	rts
+@got	stb	,x
+	andcc	#$FE
+	rts
+@ty	pshs	b			Y = &tasks[B]
 	lda	#TSZ
 	mul
 	addd	#tasks
 	tfr	d,y
-	puls	b
-	lda	#NTASK
-	sta	<cnt
-@l2	leay	TSZ,y
-	incb
-	cmpb	#NTASK
-	blo	@w2
-	ldy	#tasks
-	clrb
-@w2	lda	T_STATE,y
-	cmpa	#TS_READY
-	bne	@n2
-	lda	T_PRIO,y
-	cmpa	<pbp
-	beq	@got
-@n2	dec	<cnt
-	bne	@l2
-	ldb	<cur			(cannot happen: the idle task is always READY)
-	rts
-@got	stb	,x
-	rts
+	puls	b,pc
 
 * ------------------------------------------------------------------------ helpers
 * uok: D = address, X = length, Y = a task.  Carry clear if [D, D+X) is inside the task's region.
@@ -459,6 +455,19 @@ uok	pshs	d
 	rts
 @bad	leas	2,s
 	orcc	#1
+	rts
+
+* copymsg: a message (MSGSZ = 10 bytes) from X to U; D is clobbered
+copymsg	ldd	,x++
+	std	,u++
+	ldd	,x++
+	std	,u++
+	ldd	,x++
+	std	,u++
+	ldd	,x++
+	std	,u++
+	ldd	,x++
+	std	,u++
 	rts
 
 * copy: D bytes from X to U (forward; the blocks do not overlap).  Y is kept.
@@ -504,8 +513,7 @@ wake	ldu	T_SP,x
 deliver	pshs	x,y
 	ldu	T_UBUF,x
 	tfr	y,x
-	ldd	#MSGSZ
-	bsr	copy
+	lbsr	copymsg
 	ldx	,s
 	ldb	#0
 	ldy	#0
@@ -673,8 +681,7 @@ ipc_send
 	lbcs	@fault
 	ldx	<ubuf			copy the message to this task's msg
 	leau	T_MSG,y
-	ldd	#MSGSZ
-	lbsr	copy
+	lbsr	copymsg
 	ldy	<curp
 	lda	<cur
 	sta	T_MSG+M_SRC,y
@@ -721,6 +728,7 @@ ipc_send
 	beq	@notwait
 	lda	#TS_SEND
 	sta	T_STATE,y
+	sta	<sendhint
 	lda	<dstid
 	sta	T_PEER,y
 	lda	<mode
@@ -764,14 +772,17 @@ sc_recv	ldu	<frm
 	std	T_NBITS,y
 	ldx	#kmsg
 	ldu	<ubuf
-	ldd	#MSGSZ
-	lbsr	copy
+	lbsr	copymsg
 	lbra	okret
-@scan	ldx	#tasks			a blocked sender?
+@scan	tst	<sendhint		is a sender blocked at all?
+	beq	@nosend
+	clr	<sseen
+	ldx	#tasks			a blocked sender?
 	clrb
 @l	lda	T_STATE,x
 	cmpa	#TS_SEND
 	bne	@n
+	sta	<sseen
 	lda	T_PEER,x
 	cmpa	<cur
 	bne	@n
@@ -784,8 +795,7 @@ sc_recv	ldu	<frm
 @take	pshs	x
 	leax	T_MSG,x
 	ldu	<ubuf
-	ldd	#MSGSZ
-	lbsr	copy
+	lbsr	copymsg
 	puls	x
 	tst	T_CALL,x
 	beq	@plain
@@ -803,7 +813,10 @@ sc_recv	ldu	<frm
 	incb
 	cmpb	#NTASK
 	blo	@l
-	ldb	<dstid
+	tst	<sseen
+	bne	@nosend
+	clr	<sendhint		nobody waits to send: the next receive need not look
+@nosend	ldb	<dstid
 	cmpb	#TID_ANY
 	beq	@block
 	cmpb	#NTASK

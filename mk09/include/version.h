@@ -13,11 +13,15 @@
  *                    YSD9000 port, MK09 1.2.  The version is the one of the whole system, not of a server.)
  *   1.3  2026-10-25  the start-up message lists MM.  (YSD9000 1.3 also gave mk_tinfo the figures of the unused stack:
  *                    here the memory is flat and `stk` reads it itself, so that stays as it is.)
+ *   1.4  2026-10-27  faster message round trip (3.1 ms -> 2.2 ms): the scheduler picks within the classes of the task numbers
+ *                    (servers, programs, idle) instead of searching all the tasks for the best priority, a message is copied
+ *                    by an unrolled loop, a receive does not look for blocked senders when there are none, the idle task is
+ *                    made from the boot table.
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.3"
+#define MK09_VERSION    "1.4"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif
