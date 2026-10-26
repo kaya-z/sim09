@@ -3,7 +3,8 @@
 /*
  * sh - the MK09 command interpreter
  *
- * Reads a line, splits it into words (quotes group; > file, >> file and < file redirect)
+ * Reads a line, splits it into words (quotes group; > file, >> file and < file redirect; a | b runs the programs one after the other,
+ * the output of a in the file /PIPE0.TMP or /PIPE1.TMP that is the input of b: the files are removed at the end)
  * and either does a built-in command (cd pwd exit sync source shutdown ver help) or asks PM
  * to run the program NAME.MX, looked for in the current directory and in /BIN.
  * The shell sits at the top of the transient program area; PM takes it out of memory
@@ -18,7 +19,7 @@
 #include "version.h"
 
 #define LINEMAX     100
-#define MAXARG      9
+#define MAXARG      16
 
 static char blk[ARGMAX];
 static char path[MAXPATH + 8];
@@ -143,10 +144,60 @@ static int run(int n, char **args, char *in, char *out, u8 append)
         if (fout >= 0) close(fout);
         return 126;
     }
+    if (r == 0xFC || r == 0xFD)                     /* the kernel stopped it: a fault, or the stack left its region */
+        printf("%s: stopped by the system (%s)\n", args[0], r == 0xFC ? "fault" : "stack overflow");
     return r;
 }
 
 static int execute(char *s);
+
+/* a | b | c: every stage runs to its end, the next one reads what it wrote (two files in turn).  (The pipes of the YSD9000 port of MK09.) */
+#define MAXSTAGE    4
+static const char pipef[2][12] = { "/PIPE0.TMP", "/PIPE1.TMP" };
+
+static char *find_bar(char *s)
+{
+    char q = 0;
+    for (; *s; s++) {
+        if (q) { if (*s == q) q = 0; }
+        else if (*s == '"' || *s == '\'') q = *s;
+        else if (*s == '|') return s;
+    }
+    return NULL;
+}
+
+static int pipeline(char *s)
+{
+    char *st[MAXSTAGE], *args[MAXARG + 1], *in, *out, *p;
+    u8 append;
+    int ns = 0, i, n, r = 0;
+
+    st[ns++] = s;
+    while ((p = find_bar(st[ns - 1])) != NULL) {
+        if (ns >= MAXSTAGE) { puts("sh: too many |"); return 1; }
+        *p = 0;
+        st[ns++] = p + 1;
+    }
+    for (i = 0; i < ns; i++) {
+        n = parse(st[i], args, &in, &out, &append);
+        if (n <= 0) { puts("sh: syntax error"); r = 1; break; }
+        bg = 0;                                     /* (a pipeline runs in the foreground) */
+        if (i > 0) {
+            if (in) { puts("sh: ambiguous <"); r = 1; break; }
+            in = (char *)pipef[(i - 1) & 1];
+        }
+        if (i < ns - 1) {
+            if (out) { puts("sh: ambiguous >"); r = 1; break; }
+            out = (char *)pipef[i & 1];
+            append = 0;
+        }
+        r = run(n, args, in, out, append);
+        if (r == 126 || r == 127) break;            /* (the program did not start) */
+    }
+    unlink(pipef[0]);
+    unlink(pipef[1]);
+    return r;
+}
 
 static int do_source(const char *file)
 {
@@ -186,6 +237,7 @@ static int execute(char *s)
 
     while (*s == ' ' || *s == '\t') s++;
     if (*s == '#' || *s == 0) return 0;
+    if (find_bar(s)) return pipeline(s);
     n = parse(s, args, &in, &out, &append);
     if (n < 0) { puts("sh: syntax error"); return 1; }
     if (n == 0) return 0;
@@ -225,7 +277,8 @@ static int execute(char *s)
     case 10:
         puts("cd [dir]  pwd  source file  sync  shutdown  exit  ver\n"
              "other commands are programs: ls cat cp mv rm mkdir date ps df stty jwp ... (/BIN)\n"
-             "name > file   name >> file   name < file   name &  (in the background: ps, kill, mem)");
+             "name > file   name >> file   name < file   name &  (in the background: ps, kill, mem)\n"
+             "name | name ...  (programs one after the other, through the files /PIPE0.TMP /PIPE1.TMP)");
         return 0;
     }
     return run(n, args, in, out, append);

@@ -5,7 +5,7 @@
 
 Copyright (c) 2026 YUKARI Semiconductor Devices
 
-**版: 1.5** (2026-10-27。ソースの `include/version.h` の `MK09_VERSION` と同じ。MX 形式の版は 2)。変更の履歴は [DESIGN.md](DESIGN.md) の 16 章。
+**版: 1.6** (2026-10-27。ソースの `include/version.h` の `MK09_VERSION` と同じ。MX 形式の版は 2)。変更の履歴は [DESIGN.md](DESIGN.md) の 16 章。
 
 MK09 の外から見える決まり (システムコール、メッセージ、サーバの要求、ファイルの形式、ハードウェアの前提) を書きます。
 どうしてそうなっているかは [DESIGN.md](DESIGN.md)、使い方は [MANUAL.md](MANUAL.md) にあります。
@@ -388,7 +388,7 @@ typedef struct dirent {     /* 22 バイト。FS_READDIR の結果 */
 [4..]  "プログラム名\0引数1\0引数2\0..." (NUL で区切った文字列)
 ```
 
-`crt0app.s` が (位置に依存しない命令で) 自分を再配置し、bss を 0 にし、`INITGL` で初期値のある変数を設定し、起動ブロックから `argc` `argv` (9 個まで) を作って `main` を呼び、
+`crt0app.s` が (位置に依存しない命令で) 自分を再配置し、bss を 0 にし、`INITGL` で初期値のある変数を設定し、起動ブロックから `argc` `argv` (16 個まで) を作って `main` を呼び、
 戻ったら `exit` します。ファイルは `lwlink --format=raw` で作ります (`tools/mklink.py` がリンクの指定を書く)。
 
 ### 9.2 ブートイメージ
@@ -452,6 +452,6 @@ typedef struct dirent {     /* 22 バイト。FS_READDIR の結果 */
 | グラントの 1 回のコピー | 1024 バイトまで |
 | ブロック | 512 バイト (ディスクのセクタは 256 バイト) |
 | パス | 63 文字 |
-| 引数 | 9 個まで、起動ブロック 128 バイト |
+| 引数 | 16 個まで、起動ブロック 128 バイト |
 | 開けるファイル | 6 |
 | ボリューム | 32MB まで |

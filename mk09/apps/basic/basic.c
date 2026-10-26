@@ -27,6 +27,7 @@
 #define SFP_ASM
 #include "sfpm.h"
 
+#define BASIC_VERSION "1.1"     /* 1.0: the interpreter of the text; 1.1: the internal form (tokens, compiled expressions), as in the YSD9000 port */
 #ifndef PGM
 #define PGM     3800           /* (7000 on the YSD9000, where a program has up to 56 KB; here 41 KB are for the program, the variables, the stack and the code) */
 #endif
@@ -1532,7 +1533,7 @@ int main(int argc, char **argv)
         flush();
         return 0;
     }
-    outs("MK09 BASIC 1.0  (c) 2026 YUKARI Semiconductor Devices\n");
+    outs("MK09 BASIC " BASIC_VERSION "  (c) 2026 YUKARI Semiconductor Devices\n");
     {
         char t[24];
         u16 n = (u16)(PGM - (u16)(pend - pool));

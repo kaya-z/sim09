@@ -4,6 +4,7 @@
  * more - show a file one screen at a time
  *
  *   more file...        Space: next screen   Enter: next line   q: quit
+ *   cmd | more          without a file name more reads its standard input (the keys come from the console: read(2) is not redirected)
  *
  * The screen size and the character set are those of the console (stty).  Long lines are wrapped
  * by the display width of the characters (a Japanese character is two columns wide, a half-width
@@ -58,6 +59,13 @@ static u8 cwidth(const u8 *p, u8 n)
 
 static u8 col, row, pg, maxc, pending, quit;
 
+static int key(void)                             /* a key of the console (standard input may be a file: a pipe) */
+{
+    u8 c;
+    if (read(2, &c, 1) != 1) return -1;
+    return c;
+}
+
 static void ask(void)
 {
     int k;
@@ -65,7 +73,7 @@ static void ask(void)
     puts_("-- more --");
     flush();
     for (;;) {
-        k = getchar();
+        k = key();
         if (k == 'q' || k == 'Q' || k == 3 || k < 0) { quit = 1; break; }
         if (k == ' ') { row = 0; break; }
         if (k == '\r' || k == '\n') { row = pg - 1; break; }
@@ -124,13 +132,13 @@ int main(int argc, char **argv)
 {
     u8 mode;
     int i, fd;
-    if (argc < 2) { puts("usage: more file..."); return 1; }
     tty_getmode(&mode, &cs, &cols, &rows);
     if (!cols) cols = 80;
     if (!rows) rows = 24;
     pg = rows > 2 ? rows - 1 : 1;                /* lines per screen */
     maxc = cols > 8 ? cols - 1 : cols;           /* the last column stays free (no autowrap surprises) */
     tty_setmode((mode | TM_RAW) & ~TM_ECHO, 0xFF, 0xFF, 0xFF);
+    if (argc < 2) more_file(0);                  /* standard input */
     for (i = 1; i < argc && !quit; i++) {
         fd = open(argv[i], FO_READ);
         if (fd < 0) { printf("more: %s: %s\n", argv[i], strerr_(fd)); continue; }

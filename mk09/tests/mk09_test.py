@@ -134,7 +134,7 @@ check(re.search(r'^\s*5 receive\s+1\s+[0-9a-f]{4}-[0-9a-f]{4}', out, re.M) is no
 out, rc = run(disk, BOOT + sh('stk', prompt=P) + OFF)
 rows = re.findall(r'^\s*([1-5]) [0-9a-f]{4}-[0-9a-f]{4}\s+(\d+) \(the run ends', out, re.M)
 check(len(rows) == 5 and all(int(r[1]) >= 10 for r in rows), 'stk: the five servers (TTY DISK FS PM MM) have some unused stack left', out[-600:])
-check('MK09 1.5: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
+check('MK09 1.6: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
 
 # ---- several programs at the same time (relocatable programs, the memory manager, & kill mem)
 out, rc = run(disk, BOOT + sh('mem', 'spin &', 'spin &', 'spin &', 'echo hello', 'mem', 'ps', 'kill 7', 'kill 99', 'ps',
@@ -272,6 +272,17 @@ want = ['send to task 99: 2', 'send to a task that is not there: 2', 'send to my
         'receive from task 99: 2', 'pages from MM (not PM): 1', 'memory info from MM: 0']
 check(all(w in out for w in want), 'the kernel returns the right errors for wrong system calls (bad task, bad address, no right)', out[-900:])
 check('alive' in out and re.search(r'\n\s*7\s+running', out) is not None, 'a wild stack pointer stops that program only: the system goes on', out[-400:])
+check('faults: stopped by the system (stack overflow)' in out, 'the shell says when the kernel stopped a program', out[-700:])
+
+# ---- pipes in the shell (a | b | c through /PIPE0.TMP and /PIPE1.TMP), more on its standard input, 16 arguments
+out, rc = run(disk, BOOT + sh('echo hello world >/p1.txt', 'echo second >>/p1.txt', 'cat /p1.txt | grep second', 'cat /p1.txt | more',
+                              'cat /p1.txt | grep -v zzz | wc', 'ls /', 'echo piped | nosuch', 'echo a | cat >/p2.txt', 'echo x | cat < /p1.txt',
+                              'echo 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15', prompt=P) + OFF)
+check(re.search(r'cat /p1.txt \| grep second\nsecond\n', out) is not None and 'hello world\nsecond\n/> cat' not in out.split('| grep second')[1].split('/> ')[0], 'a pipe: cat | grep passes only the matching line', out[-2500:])
+check(re.search(r'\| more\nhello world\nsecond', out) is not None, 'a pipe into more: more reads its standard input', out[-2500:])
+check(re.search(r'\| wc\n2 3 ', out) is not None and 'PIPE' not in out.split('| wc')[1].split('echo piped')[0], 'a pipe of three programs; the temporary files are gone afterwards', out[-2500:])
+check('nosuch: command not found' in out and 'sh: ambiguous <' in out, 'a pipe with an unknown program or a second redirection is reported', out[-2500:])
+check(re.search(r'echo 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15\n1 2 3 4 5 6 7 8 9 10 11 12 13 14 15\n', out) is not None, 'a program gets up to 16 arguments', out[-500:])
 
 # ---- the file system server as compiled for the 6809, with random operations (apps/fstest.c)
 disk3 = os.path.join(work, 'disk3.img')

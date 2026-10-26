@@ -29,7 +29,7 @@ void crt_start(const u8 *blk)
     in_h = blk[SB_IN];
     out_h = blk[SB_OUT];
     argc_ = blk[SB_ARGC];
-    if (argc_ > 9) argc_ = 9;
+    if (argc_ > 16) argc_ = 16;
     for (i = 0; i < argc_; i++) {
         argv_[i] = p;
         while (*p) p++;

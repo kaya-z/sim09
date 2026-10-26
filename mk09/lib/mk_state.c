@@ -7,4 +7,4 @@
 
 u8 mk_in_h = 0xFF, mk_out_h = 0xFF;    /* FS handles of a redirected standard input / output (0xFF: the console) */
 int argc_;
-char *argv_[10];
+char *argv_[18];

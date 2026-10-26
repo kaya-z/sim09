@@ -20,11 +20,16 @@
  *   1.5  2026-10-27  the portable C kernel gets the same speed-ups in a form that does not depend on the CPU (a one-pass pick that
  *                    still looks at the priority values, arch_copymsg() that an architecture may replace, the send hint):
  *                    round trip 6.7 ms -> 5.0 ms.
+ *   1.6  2026-10-27  from the YSD9000 port (its MK09 up to 1.13): pipes in the shell (`a | b | c` through /PIPE0.TMP and /PIPE1.TMP),
+ *                    `more` reads its standard input, programs get up to 16 arguments, the shell says when the kernel stopped a program;
+ *                    BASIC 1.1 (the name and version in the banner).  Not taken over: the development tools (as, ld, ar, cc, Pascal: they
+ *                    make YSD9000 code), the timer fast path (the console server must poll the UART every tick here), the 8-block cache
+ *                    of FS (no room in the 64 KB).
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.5"
+#define MK09_VERSION    "1.6"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif
