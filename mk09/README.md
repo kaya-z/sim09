@@ -20,6 +20,7 @@ MK09 は、MC6809 (`sim09` と Tang Nano 9K の FPGA) で動く小さなマイ�
 | [docs/MANUAL.md](docs/MANUAL.md) | ユーザーマニュアル: ビルド、起動、SD カード、コマンド、`jwp` の使い方、プログラムの作り方 |
 | [docs/SPEC.md](docs/SPEC.md) | 仕様書: システムコール、メッセージ、サーバの要求、ファイルの形式、ブートイメージ、ハードウェア |
 | [docs/DESIGN.md](docs/DESIGN.md) | 設計書: 構成、メモリの配分、カーネルとサーバの設計、移植性、性能 |
+| [docs/YSD9000.md](docs/YSD9000.md) | 分家 (YSD9000 版 MK09) の機能の記録: 本家との違い、取り込んだもの・取り込まなかったものとその理由 |
 
 ## すぐ動かす
 
