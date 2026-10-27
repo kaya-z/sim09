@@ -41,6 +41,9 @@ static u8 reachable;
 static int frame;
 static u16 nzl;                 /* local labels of the code generator: Z<n> */
 static u8 depth_tab[NLABD];
+#define NALIAS 400
+static u16 alias_from[NALIAS], alias_to[NALIAS];      /* "alias A B" lines: a jump to A goes to B (found before the code is made) */
+static u16 nalias;
 static u8 helpers[10];
 static char ptag[6];            /* a prefix for the names of strings and static variables (-p), different for each module that is linked */
 static const char *const helper_name[10] = { "__mul", "__div", "__mod", "__udiv", "__umod", "__shl", "__shr", "__ushr", "__copy", 0 };
@@ -133,10 +136,20 @@ static void use_helper(const char *n)
 }
 
 /* the labels of the code are local to the function: @L<n> (a local label of the assembler) */
+static u16 resolve(u16 l)
+{
+    u16 i;
+    u8 guard = 0;
+    for (i = 0; i < nalias && guard < 8; i++)
+        if (alias_from[i] == l) { l = alias_to[i]; i = (u16)-1; guard++; }
+    return l;
+}
+
 static void ins_lb(const char *cc, u16 lbl)
 {
     char op[6], b[10];
     char *p;
+    lbl = resolve(lbl);
     op[0] = 'l'; op[1] = 'b'; op[2] = 0;
     strcat(op, cc);
     b[0] = '@'; b[1] = 'L';
@@ -797,18 +810,7 @@ static void function(char *hdr)
         while (*op && *op != ' ' && *op != '\t' && n < 11) opb[n++] = *op++;
         opb[n] = 0;
         a1 = field(buf, 1);
-        if (!strcmp(opb, "alias")) {
-            char *a2 = field(buf, 2);
-            u16 l1 = label_num(a1), l2 = label_num(a2);
-            char t1[10], t2[10];
-            t1[0] = '@'; t1[1] = 'L'; cat_num(t1 + 2, (int)l1);
-            t2[0] = '@'; t2[1] = 'L'; cat_num(t2 + 2, (int)l2);
-            w_puts(&out, t1);
-            w_puts(&out, "\tequ\t");
-            w_puts(&out, t2);
-            w_putc(&out, '\n');
-            continue;
-        }
+        if (!strcmp(opb, "alias")) continue;       /* handled by the first pass over the file (prescan) */
         if (!reachable) continue;
         if (!strcmp(opb, "const")) push_ent(K_CONST, to_int(a1), "");
         else if (!strcmp(opb, "addr")) {
@@ -1078,6 +1080,23 @@ static void toplevel(void)
     }
 }
 
+/* the first pass over the IR: the aliases of labels */
+static void prescan(void)
+{
+    char l[LINEMAX + 2];
+    while (read_raw(l)) {
+        char *p = l;
+        while (*p == ' ' || *p == '\t') p++;
+        if (!strncmp(p, "alias ", 6)) {
+            char *a = field(p, 1), *b = field(p, 2);
+            if (nalias >= NALIAS) { err("too many label aliases"); return; }
+            alias_from[nalias] = label_num(a);
+            alias_to[nalias] = label_num(b);
+            nalias++;
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     int i;
@@ -1109,6 +1128,10 @@ int main(int argc, char **argv)
     strcpy(fname, src);
     if (r_open(&in, src)) { err("cannot open the input"); return 2; }
     if (w_open(&out, dst)) { err("cannot create the output"); return 2; }
+    prescan();
+    r_close(&in);
+    r_open(&in, src);
+    line = 0;
     toplevel();
     r_close(&in);
     w_close(&out);
