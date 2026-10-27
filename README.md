@@ -23,7 +23,7 @@ C 言語で書かれた MC6809 シミュレータです。Debian 12 (gcc 12) で
 * **FUZIX** (UNIX 風 OS): **64KB のフラットメモリ (MMU なし)** で起動してシェルまで動く。プロセスはスワップで切り替える (29KiB / プロセス)。
   `./sim09 -rom fuzix/images/bootrom.bin -0 fuzix.dsk` → [docs/FUZIX.md](docs/FUZIX.md)
 * **MK09**: MC6809 用のマイクロカーネルと、その上で動く小さな OS。シェル、`jwp`、BASIC、**C コンパイラとアセンブラ**まで MK09 の上で動く (下の「MK09」の節) → [mk09/README.md](mk09/README.md)
-* **BASIC**: OS-9 では 2 種類使えます。**YSD BASIC (`ysdbasic`)** は MK09 の BASIC の OS-9 版で、ディスクイメージに入っています (Level 1 / 2 とも)。
+* **BASIC**: OS-9 では 2 種類使えます。**YSD BASIC (`ysdbasic`)** は MK09 の BASIC の OS-9 版で、ディスクイメージに入っています (Level 1 / 2 とも。実機の FPGA でも動作を確認)。
   **BASIC09** は Microware のソースの取得とビルドの手順 (`os9/basic09/`) だけを置いてあり、ソースもビルド済みモジュールも**リポジトリには入れていません**
   → [docs/OS9_MANUAL.md](docs/OS9_MANUAL.md) の 9 章、[LICENSES.md](LICENSES.md) の 4.3
 * **FPGA (Tang Nano 9K)**: 同じマシン (64KB、ACIA、タイマ、ディスク) を **Sipeed Tang Nano 9K** の上に作る Verilog 設計 (サイクル精度の 6809 コア、
@@ -41,9 +41,9 @@ C 言語で書かれた MC6809 シミュレータです。Debian 12 (gcc 12) で
 
 * **カーネル**: Minix 型の同期メッセージ通信 (send / recv / call / reply / notify とメモリ領域の許可)、優先度つきラウンドロビンのスケジューラ。
   アセンブラ版 (約 2KB) と、他の CPU への移植用の C 版があります。
-* **サーバ**: TTY、DISK、FS (FAT16、8.3 名)、PM (プロセス管理) が、それぞれ独立したタスクとして動きます。
+* **サーバ**: TTY、DISK、FS (FAT16、8.3 名)、PM (プロセス管理)、MM (メモリ管理) が、それぞれ独立したタスクとして動きます。
 * **アプリ**: シェル、`ls` `cat` `cp` `mv` `rm` `mkdir` `date` `df` `ps` `hd` `wc` `stty` `kill` `mem` など、**日本語ワープロ `jwp`** (SKK 変換、辞書はディスク上)、
-  Dhrystone (`dhry`、約 234 Dhrystones/s)、`more`、`grep` (日本語の `.` に対応した小さな正規表現)、ライフゲーム `life`、BASIC インタープリタ `basic` (ソフトウェアの単精度浮動小数点)。プログラムは**同時に何本でも**動かせます (`コマンド &`、`kill`、`mem`。MK09 1.1)。1.2/1.3 でメモリ管理が独立したタスク MM になり、BASIC は内部形式への変換と式のコンパイルで約 2 倍速くなりました (YSD9000 版からの移植)。
+  Dhrystone (`dhry`、約 234 Dhrystones/s)、`more`、`grep` (日本語の `.` に対応した小さな正規表現)、ライフゲーム `life`、BASIC インタープリタ `basic` (ソフトウェアの単精度浮動小数点)。プログラムは**同時に何本でも**動かせます (`コマンド &`、`kill`、`mem`。MK09 1.1)。1.2/1.3 でメモリ管理が独立したタスク MM になりました。
   1.7 で 6809 のアセンブラ `as`、1.8 / 1.9 で **C コンパイラ `cc`** (`cpp` + `cc1` + `cg` + `as`。C の部分集合、中間表現 (IR) 経由) が MK09 の上で動くようになりました。
 * **ドキュメント**: 設計書・仕様書・マニュアル → [mk09/docs/](mk09/docs/)
 
@@ -264,7 +264,6 @@ Level 1 は 64KB のフラットメモリで ROM は書き込み保護、Level 2
 * ビルド中の `Pass 2 errors` の行は、すべて `0` であることを確認してください。
 * `jwp` が扱える文書は Level 1 で 9000 バイト、Level 2 で 26000 バイトまでです (docs/JWP.md)。
 * `ysdbasic` は、浮動小数点を C だけで書いているので、MK09 の BASIC (アセンブラ) より遅く、`^C` で BASIC そのものが終わります。Level 1 はメモリがほぼ限界で、変数を増やすと `#207` (メモリ不足) になります。
-* `ysdbasic` は、実機の FPGA ではまだ試していません (sim09 では Level 1 / 2 とも確認)。
 
 ## ディレクトリ構成
 
