@@ -7,7 +7,7 @@ void mk_exit(int code);
 int main(int argc, char **argv);
 
 static unsigned char in_h = 255, out_h = 255;
-static char *argv_[18];
+static char *argv_[34];
 static char obuf[80];
 static unsigned char olen;
 
@@ -186,7 +186,7 @@ void mk_start(char *blk)
     in_h = blk[1];
     out_h = blk[2];
     argc = blk[3];
-    if (argc > 16) argc = 16;
+    if (argc > 32) argc = 32;
     for (i = 0; i < argc; i++) {
         argv_[i] = p;
         while (*p) p++;

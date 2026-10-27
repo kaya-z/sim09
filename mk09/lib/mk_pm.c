@@ -6,6 +6,7 @@
 #include "mkstr.h"
 
 int mk_rpc(u8 dst, msg_t *m, u8 gfl);
+extern u8 mk_in_h, mk_out_h;
 
 /* like spawn(), but returns at once with the task id of the program, which runs in the background */
 int spawn_bg(const char *block, u16 len, u16 in_h, u16 out_h)
@@ -21,6 +22,19 @@ int spawn_bg(const char *block, u16 len, u16 in_h, u16 out_h)
     r = mk_rpc(TID_PM, &m, GR_READ);
     if (r) return r;
     return (int)m.a;
+}
+
+/* start another program in place of this one; it does not return when it works (the new program gets the console and the redirection of this one) */
+int exec(const char *block, u16 len)
+{
+    msg_t m;
+    fflush();
+    m.op = PM_EXEC;
+    m.a = mk_in_h == 0xFF ? NOHANDLE : mk_in_h;
+    m.d = mk_out_h == 0xFF ? NOHANDLE : mk_out_h;
+    m.b = (u16)block;
+    m.c = len;
+    return mk_rpc(TID_PM, &m, GR_READ);
 }
 
 /* stop a program that PM has started (not the shell) */

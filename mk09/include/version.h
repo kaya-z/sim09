@@ -28,11 +28,14 @@
  *   1.7  2026-10-27  `as`: a 6809 assembler that runs on MK09 (programs written in assembler without a linker: the output is an MX
  *                    executable made with the start code of crt0app.s and a relocation table); apps/as.c, apps/as_text.h (the start code and a
  *                    small runtime: exit putc puts getc open close read write), samples in /ASM, tests (all instructions against lwasm).
+ *   1.8  2026-10-27  the C compiler on MK09 (docs/IR.md): cpp, cc1 (C to the IR), cg (IR to 6809 assembler, with the library routines), the driver cc;
+ *                    tools/irsim.py runs the IR on the PC.  PM_EXEC (a program is replaced by another one: the stages follow each other without a
+ *                    program that waits for them, so each can use the whole transient area); programs get up to 32 arguments.
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.7"
+#define MK09_VERSION    "1.8"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

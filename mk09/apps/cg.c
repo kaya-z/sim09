@@ -46,7 +46,7 @@ static u16 alias_from[NALIAS], alias_to[NALIAS];      /* "alias A B" lines: a ju
 static u16 nalias;
 static u8 helpers[10];
 static char ptag[6];            /* a prefix for the names of strings and static variables (-p), different for each module that is linked */
-static const char *const helper_name[10] = { "__mul", "__div", "__mod", "__udiv", "__umod", "__shl", "__shr", "__ushr", "__copy", 0 };
+static char *helper_name[10] = { "__mul", "__div", "__mod", "__udiv", "__umod", "__shl", "__shr", "__ushr", "__copy", 0 };
 
 static void err(const char *msg)
 {
@@ -132,6 +132,9 @@ static void fmt_sym(char *b, const char *nm, int off)
 static void use_helper(const char *n)
 {
     u8 i;
+    w_puts(&out, ";@use ");
+    w_puts(&out, n);
+    w_putc(&out, '\n');
     for (i = 0; helper_name[i]; i++) if (!strcmp(helper_name[i], n)) helpers[i] = 1;
 }
 
@@ -377,11 +380,12 @@ static void binop_d(const char *op)
     char ob[24], hi[24], lo[24];
     u8 add = !strcmp(op, "add"), sub = !strcmp(op, "sub");
     u8 bit = !add && !sub;
-    const char *mn = add ? "addd" : sub ? "subd" : 0;
+    const char *mn = "addd";
     const char *bm = !strcmp(op, "and") ? "and" : !strcmp(op, "or") ? "or" : "eor";
     u8 comm = !sub;
     char bm_a[5], bm_b[5];
     u8 bok;
+    if (sub) mn = "subd";
     /* the left operand in D, the right one an operand of the instruction */
     if (bit) {
         strcpy(bm_a, bm); strcat(bm_a, "a");
@@ -724,6 +728,7 @@ static void data_line(char *l)
         while (*p && *p != '+' && *p != '-' && i < NAMEM) raw[i++] = *p++;
         raw[i] = 0;
         data_name(nm, raw);
+        w_puts(&out, ";@use "); w_puts(&out, nm); w_putc(&out, '\n');
         o_tab("fdb\t");
         w_puts(&out, nm);
         w_puts(&out, p);
@@ -822,6 +827,7 @@ static void function(char *hdr)
             raw[k] = 0;
             if (*a1 == '+' || *a1 == '-') off = to_int(a1);
             data_name(nmx, raw);
+            w_puts(&out, ";@use "); w_puts(&out, nmx); w_putc(&out, '\n');
             push_ent(K_ADDR, off, nmx);
         }
         else if (!strcmp(opb, "laddr")) push_ent(K_UADDR, to_int(a1) - frame, "");
@@ -968,6 +974,7 @@ static void function(char *hdr)
                 while (*a1 && *a1 != ' ' && k < NAMEM) raw[k++] = *a1++;
                 raw[k] = 0;
                 mangle(nmx, raw);
+                w_puts(&out, ";@use "); w_puts(&out, nmx); w_putc(&out, '\n');
             } else { cnt = to_int(a1); nmx[0] = 0; }
             if (nvs) push_upto((u8)(nvs - 1));
             if (ind) {
@@ -1097,13 +1104,179 @@ static void prescan(void)
     }
 }
 
+/* ---------------------------------------------------------------- the library (option -L)
+ * The assembler text of a program is  start code + the code of the program + the routines of the library that it needs.  The library files
+ * (/LIB/CLIB.S, /LIB/RT.S) are in blocks: one or more lines ;@def name, then the text, up to the next ;@def after some text.  A ;@use name or ;@ext name line
+ * says that the text uses a name.  The blocks that define a needed name are copied; their own needs are looked for in turn. */
+#define NNAME   150
+#define POOL    2200
+#define NLIB    2
+static char *libs[NLIB] = { "/LIB/CLIB.S", "/LIB/RT.S" };
+static char pool[POOL];
+static u16 plen;
+static char *names[NNAME];
+static u8 state[NNAME];         /* 0 needed, 1 defined by the program or taken from the library */
+static u8 nnames;
+
+static int find_name(const char *s, u16 n)
+{
+    u8 i;
+    for (i = 0; i < nnames; i++) if (!strncmp(names[i], s, n) && names[i][n] == 0) return i;
+    return -1;
+}
+
+static int add_name(const char *s, u16 n, u8 st)
+{
+    int k = find_name(s, n);
+    if (k >= 0) {
+        if (st) state[k] = 1;
+        return k;
+    }
+    if (nnames >= NNAME || plen + n + 1 > POOL) { err("too many names in the library"); return -1; }
+    memcpy(pool + plen, s, n);
+    pool[plen + n] = 0;
+    names[nnames] = pool + plen;
+    plen += n + 1;
+    state[nnames] = st;
+    return nnames++;
+}
+
+/* ";@def name" (1), ";@use name" or ";@ext name" (2); 0 if the line has no marker */
+static u8 marker(const char *l, const char **name, u16 *n)
+{
+    u8 kind;
+    if (l[0] != ';' || l[1] != '@') return 0;
+    if (!strncmp(l + 2, "def ", 4)) kind = 1;
+    else if (!strncmp(l + 2, "use ", 4) || !strncmp(l + 2, "ext ", 4)) kind = 2;
+    else return 0;
+    l += 6;
+    *name = l;
+    *n = 0;
+    while (l[*n] && l[*n] != ' ' && l[*n] != '\r') (*n)++;
+    return kind;
+}
+
+static u8 text_line(rfile *r, char *l)
+{
+    u8 n = 0;
+    int c;
+    for (;;) {
+        c = r_getc(r);
+        if (c < 0) { if (!n) return 0; break; }
+        if (c == '\n') break;
+        if (n < 100) l[n++] = (char)c;
+    }
+    l[n] = 0;
+    return 1;
+}
+
+static void text_put(wfile *w, const char *l)
+{
+    w_puts(w, l);
+    w_putc(w, '\n');
+}
+
+/* copy a file of assembler text, noting the names that it defines and uses */
+static void copy_text(wfile *w, const char *path)
+{
+    rfile r;
+    char l[104];
+    const char *nm;
+    u16 n;
+    u8 k;
+    if (r_open(&r, path)) { err("cannot open a library file"); return; }
+    while (text_line(&r, l)) {
+        k = marker(l, &nm, &n);
+        if (k == 1) add_name(nm, n, 1);
+        else if (k == 2) add_name(nm, n, 0);
+        text_put(w, l);
+    }
+    r_close(&r);
+}
+
+static u8 pull_blocks(wfile *w, const char *path)
+{
+    rfile r;
+    char l[104];
+    const char *nm;
+    u16 n;
+    u8 k, copied = 0;
+    u8 in_block = 0, header = 0, want = 0;
+    char head[300];
+    u16 hl = 0;
+    if (r_open(&r, path)) return 0;
+    while (text_line(&r, l)) {
+        k = marker(l, &nm, &n);
+        if (k == 1) {
+            int i;
+            if (!header) { hl = 0; want = 0; in_block = 0; }
+            header = 1;
+            i = find_name(nm, n);
+            if (i >= 0 && state[i] == 0) want = 1;
+            if (hl + strlen(l) + 2 < sizeof(head)) { memcpy(head + hl, l, strlen(l)); hl += (u16)strlen(l); head[hl++] = '\n'; }
+            continue;
+        }
+        if (header) {
+            header = 0;
+            in_block = want;
+            if (want) {
+                u16 p = 0;
+                while (p < hl) {
+                    u16 q = p;
+                    while (q < hl && head[q] != '\n') q++;
+                    if (q - p > 6) add_name(head + p + 6, (u16)(q - p - 6), 1);
+                    p = (u16)(q + 1);
+                }
+                for (p = 0; p < hl; p++) w_putc(w, head[p]);
+                copied = 1;
+            }
+        }
+        if (in_block) {
+            if (k == 2) add_name(nm, n, 0);
+            text_put(w, l);
+        }
+    }
+    r_close(&r);
+    return copied;
+}
+
+/* tmp: the assembler text of the program; dst: start code + that + the library routines */
+static void link_library(const char *tmp, const char *dst)
+{
+    wfile w;
+    u8 pass, i, changed;
+    if (w_open(&w, dst)) { err("cannot create the output"); return; }
+    add_name("_mk_start", 9, 0);
+#ifdef CC_HOST
+    if (getenv("CC_LIB")) {                 /* (on the PC the library is in a directory of the PC) */
+        static char p0[200], p1[200], p2[200];
+        strcpy(p0, getenv("CC_LIB")); strcat(p0, "/CLIB.S"); libs[0] = p0;
+        strcpy(p1, getenv("CC_LIB")); strcat(p1, "/RT.S"); libs[1] = p1;
+        strcpy(p2, getenv("CC_LIB")); strcat(p2, "/START.S");
+        copy_text(&w, p2);
+    } else
+#endif
+    copy_text(&w, "/LIB/START.S");
+    copy_text(&w, tmp);
+    for (pass = 0; pass < 8; pass++) {
+        changed = 0;
+        for (i = 0; i < NLIB; i++) if (pull_blocks(&w, libs[i])) changed = 1;
+        if (!changed) break;
+    }
+    w_close(&w);
+    for (i = 0; i < nnames; i++)
+        if (state[i] == 0) { char m[40]; strcpy(m, "undefined: "); strcat(m, names[i]); err(m); }
+}
+
 int main(int argc, char **argv)
 {
-    int i;
+    int i, tail = tail_start(argc, argv);
     const char *src = NULL, *dst = NULL;
     char outname[120];
-    for (i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "-o") && i + 1 < argc) dst = argv[++i];
+    u8 libmode = 0;
+    for (i = 1; i < tail; i++) {
+        if (!strcmp(argv[i], "-o") && i + 1 < tail) dst = argv[++i];
+        else if (!strcmp(argv[i], "-L")) libmode = 1;
         else if (argv[i][0] == '-' && argv[i][1] == 'p' && strlen(argv[i]) < 8) strcpy(ptag, argv[i] + 2);
         else if (argv[i][0] == '-') { err("unknown option"); return 2; }
         else src = argv[i];
@@ -1127,7 +1300,7 @@ int main(int argc, char **argv)
     }
     strcpy(fname, src);
     if (r_open(&in, src)) { err("cannot open the input"); return 2; }
-    if (w_open(&out, dst)) { err("cannot create the output"); return 2; }
+    if (w_open(&out, libmode ? "cg0.tmp" : dst)) { err("cannot create the output"); return 2; }
     prescan();
     r_close(&in);
     r_open(&in, src);
@@ -1135,6 +1308,14 @@ int main(int argc, char **argv)
     toplevel();
     r_close(&in);
     w_close(&out);
+    if (libmode && !errors) link_library("cg0.tmp", dst);
+    if (libmode) {
+#ifdef CC_HOST
+        remove("cg0.tmp");
+#else
+        unlink("cg0.tmp");
+#endif
+    }
     if (errors) {
 #ifdef CC_HOST
         remove(dst);
@@ -1143,5 +1324,5 @@ int main(int argc, char **argv)
 #endif
         return 1;
     }
-    return 0;
+    return run_tail(argc, argv, tail);
 }

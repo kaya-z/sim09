@@ -54,6 +54,7 @@ int  tty_flush(void);
 /* processes */
 int  spawn(const char *block, u16 len, u16 in_h, u16 out_h);  /* "prog\0arg\0...\0\0"; returns the exit code */
 int  spawn_bg(const char *block, u16 len, u16 in_h, u16 out_h);  /* the same, but returns the task id at once */
+int  exec(const char *block, u16 len);                        /* this program is replaced by the one in block (does not return unless it fails) */
 int  kill(u8 tid);                                            /* stop a program started by PM (not the shell) */
 int  meminfo(u16 *total, u16 *freep, u16 *largest, u16 *procs);  /* pages of 256 bytes; programs running */
 int  gettime(u16 *date, u16 *time);                           /* FAT format */

@@ -24,7 +24,7 @@ typedef int8_t s8;
 #include "types.h"
 #include "mklib.h"
 #include "mkstr.h"
-#define CC_BUF 128
+#define CC_BUF 64
 #endif
 
 #ifdef CC_HOST
@@ -87,6 +87,53 @@ static void w_patch(wfile *w, u16 at, const char *s, u16 n)
     seek(w->fd, 0, w->pos, 0, &rh, &rl);
 }
 #endif
+
+/* The stages of the compiler follow each other without a program that waits for them: the command line of a stage can end with
+ *   ; next-program arguments ; ...
+ * and when the stage has done its work it runs the next program in its place (exec: the memory of the stage is given back first). */
+static int tail_start(int argc, char **argv)
+{
+    int i;
+    for (i = 1; i < argc; i++) if (argv[i][0] == ';' && argv[i][1] == 0) return i;
+    return argc;
+}
+
+static int run_tail(int argc, char **argv, int at)
+{
+    if (at + 1 >= argc) return 0;
+#ifdef CC_HOST
+    {
+        char cmd[600];
+        const char *bin = getenv("CC_BIN");
+        int i;
+        cmd[0] = 0;
+        if (bin) { strcat(cmd, bin); strcat(cmd, "/"); }
+        for (i = at + 1; i < argc; i++) {
+            if (i > at + 1) strcat(cmd, " ");
+            if (argv[i][0] == ';' && argv[i][1] == 0) strcat(cmd, "\\;"); else strcat(cmd, argv[i]);
+        }
+        return system(cmd);
+    }
+#else
+    {
+        char blk[ARGMAX];
+        u16 len;
+        int i;
+        strcpy(blk, "/BIN/");
+        strcat(blk, argv[at + 1]);
+        strcat(blk, ".MX");
+        len = (u16)strlen(blk) + 1;
+        for (i = at + 2; i < argc; i++) {
+            u16 l = (u16)strlen(argv[i]) + 1;
+            if (len + l + 1 > ARGMAX - SB_ARGS) { puts("cc: the command line of the next stage is too long"); return 1; }
+            memcpy(blk + len, argv[i], l);
+            len += l;
+        }
+        blk[len++] = 0;
+        return exec(blk, len);
+    }
+#endif
+}
 
 static void w_puts(wfile *w, const char *s) { while (*s) w_putc(w, *s++); }
 /* a signed decimal number */

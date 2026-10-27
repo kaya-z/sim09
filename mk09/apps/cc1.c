@@ -11,14 +11,14 @@
  */
 #include "ccio.h"
 
-#define NGSYM   150
-#define NLSYM   60
-#define NTY     220
-#define NMEM    150
+#define NGSYM   130
+#define NLSYM   48
+#define NTY     160
+#define NMEM    100
 #define NTAG    24
 #define NAMEMAX 15
-#define ARENA   1800
-#define STRMAX  250
+#define ARENA   1100
+#define STRMAX  160
 #define NCASE   60
 #define NLAB    16
 
@@ -32,7 +32,7 @@ enum {
     T_ANDEQ, T_OREQ, T_XOREQ, T_SHLEQ, T_SHREQ, T_ELLIP
 };
 
-static const char *const keywords[] = {
+static char *keywords[] = {
     "void", "char", "int", "short", "long", "unsigned", "signed", "struct", "union", "enum", "typedef", "static", "extern", "const",
     "volatile", "register", "auto", "if", "else", "while", "do", "for", "switch", "case", "default", "break", "continue", "return",
     "goto", "sizeof", 0
@@ -2080,11 +2080,11 @@ static void external_decl(void)
 
 int main(int argc, char **argv)
 {
-    int i;
+    int i, tail = tail_start(argc, argv);
     const char *src = NULL, *dst = NULL;
     char outname[120];
-    for (i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "-o") && i + 1 < argc) dst = argv[++i];
+    for (i = 1; i < tail; i++) {
+        if (!strcmp(argv[i], "-o") && i + 1 < tail) dst = argv[++i];
         else if (argv[i][0] == '-') { err("unknown option"); return 2; }
         else src = argv[i];
     }
@@ -2130,9 +2130,10 @@ int main(int argc, char **argv)
     }
     w_close(&df);
     w_close(&sf);
+    r_close(&in);
     /* the data and string files go behind the code */
     {
-        static const char *const names[2] = { "cc1.tmp", "cc1s.tmp" };
+        static char *names[2] = { "cc1.tmp", "cc1s.tmp" };
         u8 k;
         for (k = 0; k < 2; k++) {
             rfile r;
@@ -2157,5 +2158,5 @@ int main(int argc, char **argv)
 #endif
         return 1;
     }
-    return 0;
+    return run_tail(argc, argv, tail);
 }

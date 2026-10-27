@@ -278,10 +278,12 @@ static void reap(void)
     if (!shell_tid && !nproc) start_shell();
 }
 
-/* PM_SPAWN (the answer comes when the program has exited) and PM_SPAWNBG (the answer, the task id, comes at once) */
+/* PM_SPAWN (bg = 0: the answer comes when the program has exited), PM_SPAWNBG (bg = 1: the answer, the task id, comes at once) and PM_EXEC (bg = 2:
+ * the program that asks is replaced by the new one, which is waited for by the task that waited for the old one and has its console; the memory of
+ * the old one is given back first, so that a program can start a bigger one: the stages of the C compiler follow each other like this) */
 static void do_spawn(msg_t *m, u8 bg)
 {
-    u8 tid, st, i;
+    u8 tid, st, i, w = m->src, wasfg = (fg == w);
     u16 n = m->c;
 
     if (n < 2 || n > ARGMAX - SB_ARGS - 1) { reply(m->src, E_INVAL, 0); return; }
@@ -292,11 +294,19 @@ static void do_spawn(msg_t *m, u8 bg)
     for (i = SB_ARGS; i < SB_ARGS + n; i++)                     /* count the arguments */
         if (sb[i] == 0 && sb[i + 1] != 0) sb[SB_ARGC]++;
     sb[SB_ARGC]++;
-    st = start_program(bg ? 0 : m->src, 0, &tid);
-    if (st) { reply(m->src, st, 0); return; }
-    if (bg) {
+    if (bg == 2) {
+        w = waiter[w];
+        if (sb[SB_IN] != NOH) fsc(FS_CHOWN, sb[SB_IN], TID_PM);     /* (the files of the redirection must not be closed with the old program) */
+        if (sb[SB_OUT] != NOH) fsc(FS_CHOWN, sb[SB_OUT], TID_PM);
+        waiter[m->src] = 0;
+        mk_tkill(m->src, 0);
+        collect();
+    }
+    st = start_program(bg == 1 ? 0 : w, 0, &tid);
+    if (st) { reply(w, st, 0); return; }
+    if (bg == 1) {
         reply(m->src, E_OK, tid);
-    } else {
+    } else if (bg == 0 || wasfg) {
         fg = tid;
         set_owner();
     }
@@ -336,6 +346,9 @@ int main(void)
             break;
         case PM_KILL:
             do_kill(&m);
+            break;
+        case PM_EXEC:
+            do_spawn(&m, 2);
             break;
         case PM_MEMINFO:                                /* the answer of MM, and the programs that run */
             c = m.src;

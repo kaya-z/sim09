@@ -27,7 +27,7 @@ TTY_CSZ    = 08CC
 DISK_CSZ   = 029C
 FS_CSZ     = 27D4
 MM_CSZ     = 01C4
-PM_CSZ     = 0A70
+PM_CSZ     = 0B0A
 
 # size of the data slots (rwdata + bss + stack)
 K_DSZ      = 0260

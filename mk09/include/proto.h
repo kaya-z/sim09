@@ -100,6 +100,9 @@ typedef struct dirent {
 #define PM_KILL     5       /* a = task id of a program started by PM (not the shell): stop it */
 #define PM_MEMINFO  6       /* -> a = pages of the transient area (256 bytes each), b = free pages,
                                c = the biggest piece of free pages, d = programs running */
+#define PM_EXEC     7       /* like PM_SPAWN, but the program that asks is replaced by the new one (it takes over the task that waits for the
+                               old one, the console and the redirection); the memory of the old one is given back first.  There is no answer
+                               when it works; an error comes back as the reply.  Not for the shell. */
 
 /* ---- MM: memory manager (a task of its own, TID_MM) -------------------- */
 #define MM_ALLOC    1       /* a = n pages (256 bytes), d = 0: the first fit from the bottom of the transient area, 1: from the top; PM only.

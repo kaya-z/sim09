@@ -947,14 +947,41 @@ static void print_symbols(void)
 
 static char outname[64];
 
+/* "; program arguments ...": run the program in place of this one when the assembly is done (the stages of the C compiler, docs/IR.md) */
+static int run_tail(int argc, char **argv, int at)
+{
+#ifdef AS_HOST
+    (void)argc; (void)argv; (void)at;
+    return 0;
+#else
+    char blk[ARGMAX];
+    u16 len;
+    int i;
+    if (at + 1 >= argc) return 0;
+    strcpy(blk, "/BIN/");
+    strcat(blk, argv[at + 1]);
+    strcat(blk, ".MX");
+    len = (u16)strlen(blk) + 1;
+    for (i = at + 2; i < argc; i++) {
+        u16 l = (u16)strlen(argv[i]) + 1;
+        if (len + l + 1 > ARGMAX - SB_ARGS) { puts("as: the command line of the next stage is too long"); return 1; }
+        memcpy(blk + len, argv[i], l);
+        len += l;
+    }
+    blk[len++] = 0;
+    return exec(blk, len);
+#endif
+}
+
 int main(int argc, char **argv)
 {
-    int i;
+    int i, tail = argc;
     const char *src = NULL, *out = NULL;
-    for (i = 1; i < argc; i++) {
+    for (i = 1; i < argc; i++) if (argv[i][0] == ';' && argv[i][1] == 0) { tail = i; break; }
+    for (i = 1; i < tail; i++) {
         if (!strcmp(argv[i], "-r")) raw = 1;
         else if (!strcmp(argv[i], "-s")) showsyms = 1;
-        else if (!strcmp(argv[i], "-o") && i + 1 < argc) out = argv[++i];
+        else if (!strcmp(argv[i], "-o") && i + 1 < tail) out = argv[++i];
         else if (argv[i][0] == '-') { LOG("as: unknown option %s\n", argv[i]); return 2; }
         else src = argv[i];
     }
@@ -1037,5 +1064,5 @@ int main(int argc, char **argv)
         return 1;
     }
     LOG("%s: %u bytes, %u relocations, bss %u\n", out, (u16)imgend, nrel, (u16)bssmax);
-    return 0;
+    return run_tail(argc, argv, tail);
 }

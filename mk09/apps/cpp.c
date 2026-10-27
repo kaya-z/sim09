@@ -669,10 +669,10 @@ static void process(const char *path, const char *from_dir)
 
 int main(int argc, char **argv)
 {
-    int i;
+    int i, tail = tail_start(argc, argv);
     const char *src = NULL, *dst = NULL;
     char outname[120];
-    for (i = 1; i < argc; i++) {
+    for (i = 1; i < tail; i++) {
         char *a = argv[i];
         if (a[0] == '-' && a[1] == 'D') {
             char def[100];
@@ -682,7 +682,7 @@ int main(int argc, char **argv)
             define(def);
         } else if (a[0] == '-' && a[1] == 'I') {
             if (nidirs < NIDIR) idirs[nidirs++] = a + 2;
-        } else if (!strcmp(a, "-o") && i + 1 < argc) dst = argv[++i];
+        } else if (!strcmp(a, "-o") && i + 1 < tail) dst = argv[++i];
         else if (a[0] == '-') { fputs_err("cpp: unknown option\n"); return 2; }
         else src = a;
     }
@@ -706,5 +706,5 @@ int main(int argc, char **argv)
 #endif
         return 1;
     }
-    return 0;
+    return run_tail(argc, argv, tail);
 }
