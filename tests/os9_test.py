@@ -118,6 +118,21 @@ for level in (1, 2):
       check('BASIC09' in t and '42' in t.replace('\r', '') and '1.41421356' in t, '%s BASIC09 edits and runs a procedure (42, SQRT(2))' % tag, t[-500:])
       s.close()
 
+    # --- YSD BASIC (ysdbasic): a program is run, saved and loaded again; the float arithmetic, the math functions, the strings ---
+    s = Session(level)
+    s.run(['send "ysdbasic\\r"', 'expect "Ok"', 'send "10 FOR I=1 TO 3: PRINT I*I: NEXT\\r"', 'expect "Ok"',
+           'send "20 PRINT SQR(2), SIN(1), \\"HI\\"+STR$(42)\\r"', 'expect "Ok"', 'send "RUN\\r"', 'expect "Ok"',
+           'send "SAVE \\"/v0/ysd.bas\\"\\r"', 'expect "Ok"', 'send "NEW\\r"', 'expect "Ok"',
+           'send "LOAD \\"/v0/ysd.bas\\"\\r"', 'expect "Ok"', 'send "LIST\\r"', 'expect "Ok"', 'send "BYE\\r"', 'expect "OS9:"'])
+    t = s.text().replace('\r', '')
+    saved = os.path.join(s.v0, 'ysd.bas')
+    body = open(saved, 'rb').read().replace(b'\r', b'\n') if os.path.exists(saved) else b''
+    check('YSD BASIC' in t and ' 9 ' in t and '1.41421' in t and '0.841471' in t and 'HI 42' in t,
+          '%s ysdbasic runs a program (loops, SQR, SIN, strings)' % tag, t[-600:])
+    check(b'10 FOR I=1 TO 3: PRINT I*I: NEXT' in body and t.count('PRINT SQR(2)') >= 2,
+          '%s ysdbasic SAVE writes an OS-9 text file and LOAD reads it back' % tag, repr(body))
+    s.close()
+
     # --- real time clock ---
     s = Session(level)
     s.run(cmds('date'))

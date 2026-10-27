@@ -41,7 +41,7 @@ static const char *const keywords[] = {
 static rfile in;
 static wfile ir, df, sf;       /* the code, the data (global and static variables), the strings */
 static u8 errors;
-static char fname[60];
+static char fname[120];
 static u16 line = 1;
 static int ch;
 static u16 tok;
@@ -2082,7 +2082,7 @@ int main(int argc, char **argv)
 {
     int i;
     const char *src = NULL, *dst = NULL;
-    char outname[64];
+    char outname[120];
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-o") && i + 1 < argc) dst = argv[++i];
         else if (argv[i][0] == '-') { err("unknown option"); return 2; }
@@ -2098,7 +2098,7 @@ int main(int argc, char **argv)
     }
     if (!dst) {
         u16 n = (u16)strlen(src);
-        if (n > 58) n = 58;
+        if (n > 115) n = 115;
         memcpy(outname, src, n);
         outname[n] = 0;
         if (n > 2 && outname[n - 2] == '.') { outname[n - 1] = 'i'; outname[n] = 'r'; outname[n + 1] = 0; }

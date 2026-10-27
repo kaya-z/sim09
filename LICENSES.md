@@ -25,6 +25,7 @@ MIT の著作権者の表記 `sim09 contributors` は仮のものです。実際
 | `tools/mkskkdic.py` `mkrbf.py` `mkboot.py` `mkkernel.py` `os9edition.py` `dhry_bench.py` `install_cmoc.sh` `fix_org.py` `gen_os9names.py` `trace_cmp.sh` | ツール | `mkskkdic.py` が**生成する辞書**は入力の SKK 辞書 (GPL v2 以降) の派生物です |
 | `os9/jwp/jwp.c` `skk.c` `genmsgs.py` `Makefile` と、生成される `msgs.h` | ワードプロセッサ `jwp` と SKK 入力 (**著作権者は YUKARI Semiconductor Devices**、各ファイルの先頭に Copyright 行) | SKK は入力方式に従った独自実装で、SKK のコードは使っていません。**ビルド済みのモジュール `jwp` `jwp-l2` は GPL-3.0 です** (3 章) |
 | `mk09/` のうち、ビルドして作るもの以外のすべて (カーネル `kernel/` `arch/`、サーバ `servers/`、ライブラリ `lib/`、コマンド `apps/` (`apps/jwp/` を含む)、ブート ROM `boot/`、`bsp/` `include/` `tools/` `tests/`、`disk/bas/*.bas` `disk/doc/guide.txt`、`docs/*.md`、`Makefile`) | マイクロカーネル **MK09** とその上のサーバ・コマンド・文書 (**著作権者は YUKARI Semiconductor Devices**、ファイルの先頭に `SPDX-License-Identifier: MIT` と Copyright 行) | 第三者のコードは入っていません (ソフト浮動小数点 `apps/basic/sfp*` も自作で、`tests/sfp_vectors.h` は PC で作った試験値です)。`apps/jwp/` は `os9/jwp/` (MIT) からの派生です。ブート ROM は FUZIX と共通の 256 バイトで、`fuzix/bootrom.s` と同じ内容です。ビルド済みのバイナリについては 3 章 |
+| `os9/ysdbasic/` (`ysdbasic.c` `sfp.h` `sfpm.h` `types.h` `Makefile`) | YSD BASIC: MK09 の BASIC (`mk09/apps/basic`) の OS-9 への移植 (**著作権者は YUKARI Semiconductor Devices**) | 第三者のコードは入っていません |
 | `os9/dhry/Makefile`、`dhry.c` の時間計測と OS-9 呼び出しの部分 | Dhrystone の実行部分 | Dhrystone 本体は原作者の著作物で、ライセンス文がない (4.2) |
 | `os9/skk/Makefile` | 辞書ディスクの作成 | 辞書は同梱していません (手元の `skkdic` から生成) |
 | `os9/misc/shutdown.asm` `os9/net/nc.asm` `os9/kanji/kmode.asm` と、`os9/kanji` `os9/net` `os9/misc` の `defsfile` | OS-9 のコマンド | NitrOS-9 の定義ファイル (`os9/nitros9-code/defs`) を `use` してアセンブルします (定義ファイルの内容は埋め込んでいません) |
@@ -81,7 +82,7 @@ FPGA のビットストリームは、この 3 つと自作の RTL (MIT)、載�
 
 ## 3. CMOC の実行時ライブラリを含むバイナリ: GPL-3.0
 
-`os9/jwp/jwp` `os9/jwp/jwp-l2` `os9/dhry/dhry` (と `os9/level*/cmds/` にある同じもの、`jwp_chk`) は、CMOC (Pierre Sarrazin、GPL v3) の
+`os9/jwp/jwp` `os9/jwp/jwp-l2` `os9/ysdbasic/ysdbasic` `os9/ysdbasic/ysdbasic-l2` `os9/dhry/dhry` (と `os9/level*/cmds/` にある同じもの、`jwp_chk`) は、CMOC (Pierre Sarrazin、GPL v3) の
 実行時ライブラリ (起動コード、16 ビット乗除算、`memcpy` `strcat` `strcpy` `strlen`) を含むので、**モジュールとしては GPL v3 です**。
 ソース (`jwp.c` など) は MIT ですが、ビルド済みのモジュールを配布するときは GPL v3 の条件 (ソースの提供など) に従ってください。
 ビルド済みのモジュールを同梱せず、CMOC で各自ビルドしてもらう形にすれば、この条件は配布物から外れます。

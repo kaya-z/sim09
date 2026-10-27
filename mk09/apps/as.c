@@ -56,7 +56,7 @@ static int wr(const void *b, int n) { return write(fout, b, n); }
 #define NHASH   64
 #define NREL    2600
 #define LINEMAX 128
-#define NAMEMAX 11
+#define NAMEMAX 17
 
 /* ---------------------------------------------------------------- symbols */
 #define F_DEF 1
@@ -139,10 +139,12 @@ static void mkname(char *dst, const char *src, u8 n)
     if (src[0] == '@') {            /* local: '@' + the scope + the name */
         const char hx[] = "0123456789ABCDEF";
         dst[0] = '@';
-        dst[1] = hx[(scope >> 4) & 15];
-        dst[2] = hx[scope & 15];
-        for (i = 0; i < n - 1 && i < NAMEMAX - 3; i++) dst[3 + i] = src[1 + i];
-        dst[3 + i] = 0;
+        dst[1] = hx[(scope >> 12) & 15];
+        dst[2] = hx[(scope >> 8) & 15];
+        dst[3] = hx[(scope >> 4) & 15];
+        dst[4] = hx[scope & 15];
+        for (i = 0; i < n - 1 && i < NAMEMAX - 5; i++) dst[5 + i] = src[1 + i];
+        dst[5 + i] = 0;
     } else {
         for (i = 0; i < n && i < NAMEMAX; i++) dst[i] = src[i];
         dst[i] = 0;
@@ -700,7 +702,7 @@ static void defsym(const char *name, int val, u8 rel, u8 bss, u8 abs)
     if (k < 0) { err("too many names"); return; }
     y = &syms[k];
     if (pass == 1 && (y->flags & F_DEF)) { err("name defined twice"); return; }
-    if (pass == 2 && (y->flags & F_DEF) && !abs && y->val != val && !(y->flags & 16)) {
+    if (pass == 2 && (y->flags & F_DEF) && !abs && y->val != val && !(y->flags & (16 | 32))) {
         err("a name has another value in the second pass (a forward reference decided a length?)");
         return;
     }
@@ -870,7 +872,9 @@ static void assemble_line(char *l)
             if (k >= 0 && (syms[k].flags & F_DEF) && !strcmp(mnem, "SET")) syms[k].flags = 0;
         }
         if (xbss && pass == 2) v -= imgend;
+        if (pass == 1 && xundef) xrel = 1;      /* a forward reference: most likely an address (an alias of a label) */
         defsym(label, v, xrel, xbss, !xrel && !xbss);
+        if (pass == 1 && xundef) { int k = lookup(label, 0); if (k >= 0) syms[k].flags |= 32; }     /* a forward reference: the value is known in pass 2 */
         if (!strcmp(mnem, "SET")) { int k = lookup(label, 0); if (k >= 0) syms[k].flags |= 16; }
         return;
     }

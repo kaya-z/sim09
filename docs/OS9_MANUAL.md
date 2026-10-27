@@ -16,7 +16,7 @@ FPGA ボードそのものの話 (ビットストリーム、フラッシュ、S
 6. シェルの使い方
 7. 動いているもの (プロセスとメモリ)
 8. 日本語を使う: `jwp`
-9. ほかのプログラム: `dhry`、`shutdown`、`basic09`
+9. ほかのプログラム: `dhry`、`shutdown`、`basic09`、`ysdbasic`
 10. 止める
 11. コマンド一覧
 12. エラー番号
@@ -395,7 +395,7 @@ OS9:jwp memo.txt               memo.txt を開く (なければ新規)
 
 > `jwp` は、メモリを多く使います。ほかのプログラムをバックグラウンドで動かしていると、`ERROR #207` (メモリが足りない) で起動できないことがあります。
 
-## 9. ほかのプログラム: `dhry`、`shutdown`、`basic09`
+## 9. ほかのプログラム: `dhry`、`shutdown`、`basic09`、`ysdbasic`
 
 ### 9.1 `dhry` (ベンチマーク)
 
@@ -448,6 +448,32 @@ OS9:
 * `runb` は、BASIC09 の実行部分だけを取り出したもの (コンパイル済みの手続きを動かすだけ) で、`basic09` の中の `run` が使います。シェルから直接使う必要はありません。
 * Level 1 では、`basic09` を起動する前に、`mfree` で空きページを確かめてください (`jwp` と同じく、ほかのプログラムをバックグラウンドで動かしていると足りなくなります)。
 * **BASIC09 は、リポジトリのディスクイメージには入っていません** (Microware / Motorola の著作物で、ライセンスが不明確なため)。使うには、`make -C os9/basic09` (ソースを NitrOS-9 プロジェクトの GitHub から取得して、`lwasm` で作る) のあと、`tools/addbasic09.py os9/OS9.dsk os9/OS9-basic09.dsk` (Level 2 は `-2 os9/OS9L2.dsk os9/OS9L2-basic09.dsk`) で、BASIC09 を載せたディスクイメージを作って、カードに書いてください (出所と条件は `CREDITS.md` と `LICENSES.md`)。
+
+### 9.4 `ysdbasic` (YSD BASIC)
+
+`ysdbasic` は、MK09 の BASIC (`mk09/apps/basic`) を OS-9 に移した、**1980 年代の Microsoft 系 BASIC** に近い小さな BASIC です (BASIC09 とは別のもの。行番号つきで、手続きに分けません)。
+数値は 32 ビットの浮動小数点 (ソフトウェアで計算)、文字列は 39 バイトまでです。
+
+```
+OS9:ysdbasic                  対話モード。Ok が出たら 1 行ずつ打つ (行番号つきはプログラムに入り、行番号なしは今すぐ実行)
+OS9:ysdbasic /d1/prog.bas     ファイルを読み込んで実行して、シェルに戻る
+Ok
+10 FOR I=1 TO 3: PRINT I*I: NEXT
+20 PRINT SQR(2), SIN(1), "HI"+STR$(42)
+RUN
+ 1
+ 4
+ 9
+ 1.41421       0.841471     HI 42
+SAVE "/d1/t.bas"             保存 (OS-9 のテキストファイル)
+BYE                          終わる
+```
+
+* 使える文、関数、演算子は、MK09 の BASIC と同じです (`mk09/docs/MANUAL.md` の「BASIC」の節): `NEW LIST RUN LOAD SAVE BYE`、`PRINT INPUT IF..THEN..ELSE GOTO GOSUB FOR..NEXT DIM DATA READ ON..GOTO` ほか、`ABS INT SQR SIN COS TAN ATN EXP LOG RND TIMER` と文字列の関数。
+* **Level 1** は、1 行 199 文字、プログラム約 3600 バイト (内部の形)、配列は全体で 300 要素、変数は 80 種類までです。**Level 2** (`OS9L2.dsk`) は、プログラム 12000 バイト、配列 1000 要素、変数 200 種類までです。
+* `TIMER` は午前 0 時からの秒です。`^C` で止めると、BASIC も終わります。
+* MK09 の BASIC のサンプル (`mk09/disk/bas/*.bas`) は、そのまま動きます。`INPUT` で入れた文字は大文字になります (MK09 と同じ)。
+* 実行は、MK09 の BASIC より遅めです (浮動小数点を C で書いた版を使っているため)。
 
 ## 10. 止める
 
@@ -524,6 +550,7 @@ OS-9 のディスクの書き込みは、1 回ごとに完了するので、`shu
 |---|---|
 | ★ `jwp` | 日本語ワードプロセッサ (8 章) |
 | ★ `dhry` | Dhrystone ベンチマーク (9 章) |
+| ★ `ysdbasic` | YSD BASIC (行番号つきの BASIC。9.4 節) |
 | ★ `shutdown` | 止める (10 章) |
 | `shell` | もう 1 つのシェルを起動する |
 | `login` `tsmon` | ユーザの認証・端末の監視 (このシステムでは使いません) |

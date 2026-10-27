@@ -9,7 +9,7 @@ CMDS1 = asm attr calldbg cmp config copy cputype date debug del deldir devs dir_
         echo edit disasm free ident irqs link list load makdir procs prompt \
         shellplus sleep tee touch tsmon unlink
 
-all : dhry jwp help error $(CMDS2) $(CMDS1) sbc09 pxd pwd dir kmode nc login shutdown
+all : dhry jwp ysdbasic help error $(CMDS2) $(CMDS1) sbc09 pxd pwd dir kmode nc login shutdown
 
 $(CMDS2) :
 	$(A09) -l $@.lst -o $@ $(SRC2)/$@.asm
@@ -36,6 +36,11 @@ dhry :
 	$(MAKE) -C ../../dhry dhry
 	cp ../../dhry/dhry dhry
 .PHONY : dhry
+# YSD BASIC is built (CMOC, if installed) in os9/ysdbasic; a prebuilt module is part of the distribution
+ysdbasic :
+	$(MAKE) -C ../../ysdbasic ysdbasic-l2
+	cp ../../ysdbasic/ysdbasic-l2 ysdbasic
+.PHONY : ysdbasic
 # the word processor is built (CMOC, if installed) in os9/jwp; a prebuilt module is part of the distribution
 jwp :
 	$(MAKE) -C ../../jwp jwp-l2

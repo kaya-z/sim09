@@ -57,7 +57,7 @@ def main():
             names.append(f)
     names.append('shutdown')
     # only the commands that the disk has (the others are not on it): from the disk's own cmds directory
-    have = "attr basic09 cmp copy date dhry del deldir dir dump echo free ident jwp link list load login makdir mdir mfree procs pwd pxd runb shutdown sleep tee tsmon unlink".split()
+    have = "attr basic09 cmp copy date dhry del deldir dir dump echo free ident jwp link list load login makdir mdir mfree procs pwd pxd runb shutdown sleep tee tsmon unlink ysdbasic".split()
     names = [n for n in have if n in names or n == 'shutdown']
     lines = ['timeout 3000000', 'expect "OS9:"', 'send "chx /v0/cmds\\r"', 'expect "OS9:"']
     for n in names:

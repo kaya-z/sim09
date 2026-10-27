@@ -466,7 +466,7 @@ static int r_open_probe(const char *path)
 
 static void include(const char *s, const char *curdir)
 {
-    char name[80], path[100];
+    char name[80], path[130];
     char open_c, close_c;
     u8 i, found = 0;
     u16 n = 0;
@@ -492,7 +492,7 @@ static void include(const char *s, const char *curdir)
     {
         const char *sn = curname;
         u16 sl = curline;
-        char keep[100];
+        char keep[130];
         strcpy(keep, path);
         process(keep, curdir);
         curname = sn;
@@ -563,7 +563,7 @@ static u8 read_line(rfile *r, char *l)
 static void process(const char *path, const char *from_dir)
 {
     rfile in;
-    char line[LINEMAX], dir[80];
+    char line[LINEMAX], dir[120];
     cond_t cs[NCOND];
     u8 nc = 0;
     u8 skip = 0;
@@ -671,7 +671,7 @@ int main(int argc, char **argv)
 {
     int i;
     const char *src = NULL, *dst = NULL;
-    char outname[64];
+    char outname[120];
     for (i = 1; i < argc; i++) {
         char *a = argv[i];
         if (a[0] == '-' && a[1] == 'D') {
@@ -689,7 +689,7 @@ int main(int argc, char **argv)
     if (!src) { fputs_err("usage: cpp [-Dname[=value]] [-Idir] [-o out] file.c\n"); return 2; }
     if (!dst) {
         u16 n = (u16)strlen(src);
-        if (n > 58) n = 58;
+        if (n > 115) n = 115;
         memcpy(outname, src, n);
         outname[n] = 0;
         if (n > 2 && outname[n - 2] == '.') outname[n - 1] = 'i'; else strcat(outname, ".i");
