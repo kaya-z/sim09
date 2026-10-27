@@ -2,8 +2,7 @@
 
 C 言語で書かれた MC6809 シミュレータです。Debian 12 (gcc 12) でそのままビルド・実行できます。
 
-> このリポジトリのソースとドキュメントは、すべて **Claude Code** (Anthropic の AI コーディングツール) で生成しました
-> (複数のセッションで作成。マイクロカーネル MK09 とそのドキュメントは最後のセッションで作成)。
+> このリポジトリのソースとドキュメントは、すべて **Claude Code** (Anthropic の AI コーディングツール) で生成しました。
 > 参考にした外部ソースとそのライセンスは [CREDITS.md](CREDITS.md) と [LICENSES.md](LICENSES.md) に書いてあります。
 > 動作はテスト (`make test`) と、Verilator による FPGA の RTL 検証で確認していますが、**生成物なので、使う前に内容を確認してください**。
 > 実機の Tang Nano 9K で確認できたのは README 本文に書いた範囲だけです。
@@ -23,13 +22,16 @@ C 言語で書かれた MC6809 シミュレータです。Debian 12 (gcc 12) で
 * **Dhrystone 2.1** (`dhry`): OS-9 上で動くベンチマーク。Level 1 / 2 とも約 210 Dhrystones/s (1.8432 MHz)、サイクル数による正確な測定ツールつき → [docs/DHRYSTONE.md](docs/DHRYSTONE.md)
 * **FUZIX** (UNIX 風 OS): **64KB のフラットメモリ (MMU なし)** で起動してシェルまで動く。プロセスはスワップで切り替える (29KiB / プロセス)。
   `./sim09 -rom fuzix/images/bootrom.bin -0 fuzix.dsk` → [docs/FUZIX.md](docs/FUZIX.md)
+* **MK09**: MC6809 用のマイクロカーネルと、その上で動く小さな OS。シェル、`jwp`、BASIC、**C コンパイラとアセンブラ**まで MK09 の上で動く (下の「MK09」の節) → [mk09/README.md](mk09/README.md)
+* **BASIC**: OS-9 では 2 種類使えます。**YSD BASIC (`ysdbasic`)** は MK09 の BASIC の OS-9 版で、ディスクイメージに入っています (Level 1 / 2 とも)。
+  **BASIC09** は Microware のソースの取得とビルドの手順 (`os9/basic09/`) だけを置いてあり、ソースもビルド済みモジュールも**リポジトリには入れていません**
+  → [docs/OS9_MANUAL.md](docs/OS9_MANUAL.md) の 9 章、[LICENSES.md](LICENSES.md) の 4.3
 * **FPGA (Tang Nano 9K)**: 同じマシン (64KB、ACIA、タイマ、ディスク) を **Sipeed Tang Nano 9K** の上に作る Verilog 設計 (サイクル精度の 6809 コア、
-  RAM は内蔵 PSRAM、ディスクは microSD、コンソールは USB シリアルと **HDMI の文字画面** (80x25、ANSI 16 色、**漢字** (JIS 第 1 水準、UTF-8 / EUC-JP / Shift_JIS)))。FUZIX と NitrOS-9 Level 1 が動く (Verilator で検証。実機の Tang Nano 9K で FUZIX、NitrOS-9 Level 1 と **Level 2 (MMU、2MB)** の起動、HDMI の画面と漢字の表示を確認) → [docs/FPGA.md](docs/FPGA.md)
+  RAM は内蔵 PSRAM、ディスクは microSD、コンソールは USB シリアルと **HDMI の文字画面** (80x25、ANSI 16 色、**漢字** (JIS 第 1 水準、UTF-8 / EUC-JP / Shift_JIS)))。**FUZIX、NitrOS-9 Level 1 / Level 2 (MMU、2MB)、MK09 が、同じビットストリームのまま SD カードを替えるだけで**動く (Verilator で検証。実機の Tang Nano 9K で 4 つとも起動を確認。HDMI の画面と漢字の表示、起動時のメモリ検査、LED による状態表示 (SD カード、OS RUN、電源断) も確認) → [docs/FPGA.md](docs/FPGA.md)
 * **OS-9 Net**: ACIA のシリアルポート 1〜3 をホストの TCP ソケットにつなぐ仕組み。OS-9 からは普通のシリアルデバイス `/n1` `/n2` `/n3` に
   見えるので、シェルやリダイレクト、`tsmon` などがそのまま使えます。telnet サーバ (`-net 1=listen:6809`) として外から OS-9 にログインでき、
   Hayes モデム風の `ATDT` ダイヤルや `nc` コマンドで OS-9 からネットワークに出ることもできます
   → [docs/OS9NET.md](docs/OS9NET.md)
-* **MK09**: MC6809 用のマイクロカーネルと、その上で動く小さな OS (下の「MK09」の節) → [mk09/README.md](mk09/README.md)
 * 参考にしたソースのクレジットは各ソースの冒頭と [CREDITS.md](CREDITS.md) にあります。
 
 ## MK09 (マイクロカーネル)
@@ -40,8 +42,9 @@ C 言語で書かれた MC6809 シミュレータです。Debian 12 (gcc 12) で
 * **カーネル**: Minix 型の同期メッセージ通信 (send / recv / call / reply / notify とメモリ領域の許可)、優先度つきラウンドロビンのスケジューラ。
   アセンブラ版 (約 2KB) と、他の CPU への移植用の C 版があります。
 * **サーバ**: TTY、DISK、FS (FAT16、8.3 名)、PM (プロセス管理) が、それぞれ独立したタスクとして動きます。
-* **アプリ**: シェル、`ls` `cat` `cp` `mv` `rm` `mkdir` `date` `df` `ps` `hd` `wc` `stty` など、**日本語ワープロ `jwp`** (SKK 変換、辞書はディスク上)、
+* **アプリ**: シェル、`ls` `cat` `cp` `mv` `rm` `mkdir` `date` `df` `ps` `hd` `wc` `stty` `kill` `mem` など、**日本語ワープロ `jwp`** (SKK 変換、辞書はディスク上)、
   Dhrystone (`dhry`、約 234 Dhrystones/s)、`more`、`grep` (日本語の `.` に対応した小さな正規表現)、ライフゲーム `life`、BASIC インタープリタ `basic` (ソフトウェアの単精度浮動小数点)。プログラムは**同時に何本でも**動かせます (`コマンド &`、`kill`、`mem`。MK09 1.1)。1.2/1.3 でメモリ管理が独立したタスク MM になり、BASIC は内部形式への変換と式のコンパイルで約 2 倍速くなりました (YSD9000 版からの移植)。
+  1.7 で 6809 のアセンブラ `as`、1.8 / 1.9 で **C コンパイラ `cc`** (`cpp` + `cc1` + `cg` + `as`。C の部分集合、中間表現 (IR) 経由) が MK09 の上で動くようになりました。
 * **ドキュメント**: 設計書・仕様書・マニュアル → [mk09/docs/](mk09/docs/)
 
 ```sh
@@ -51,6 +54,22 @@ make -C mk09 test      # 自動テスト
 ```
 
 実機の Tang Nano 9K でも、USB シリアルのコンソールで起動し、シェル、ファイル操作、`dhry`、`jwp` が動くことを確認しました (HDMI の画面でも確認)。
+`cc` / `as` は sim09 上のテストで確認したもので、実機ではまだ試していません。
+
+## 実機 (Tang Nano 9K) で動かす
+
+FUZIX、MK09、OS-9 Level 1 / 2 は、**同じビットストリーム** (`fuzix`) で動きます。ブート ROM (256 バイト) がカードの先頭から読み込むので、**カードを替えるだけ**で OS が替わります。
+詳しくは [docs/FPGA.md](docs/FPGA.md)。
+
+```sh
+fpga/tn9k/scripts/build.sh fuzix                                                       # ビットストリームを作る (Gowin IDE が要ります)
+openFPGALoader -b tangnano9k -f fpga/tn9k/build/fuzix/impl/pnr/sbc09_fuzix.fs          # フラッシュに書く (または fpga/tn9k/images/ のビルド済みを使う)
+openFPGALoader -b tangnano9k --external-flash -f --verify -o 1048576 fpga/tn9k/images/kanji.bin   # 漢字データ (ビットストリームを書いたあとに)
+sudo dd if=os9/OS9L2.dsk of=/dev/sdX bs=1M conv=fsync status=progress                  # カード (OS9.dsk なら Level 1)。sdX は lsblk で必ず確かめる
+```
+
+ビットストリームを `-f` で書くとフラッシュ全体が消えるので、漢字データは必ずそのあとに書きます。カードに書き込んだあとは、USB を抜き差しして起動します。
+コンソールは USB シリアル (`minicom -D /dev/ttyUSB1 -b 115200`) と HDMI の画面です。起動時には `Memory >>>>>` と出てメモリを検査し、検査が終わると OS が始まります。
 
 ## ビルドと実行
 
@@ -94,6 +113,9 @@ OS9:chx /v0/cmds
 OS9:shutdown          電源断レジスタ (I/O ベース+$0F に $A5) に書いてシミュレータを正常終了 (Level 1/2 共通)
 ```
 
+FPGA では、このレジスタが LED を動かします。ブート ROM が OS に渡る前に `$A4` を書くと LED4 (OS RUN) が点灯し、`$A5` を書くと LED4 が消えて LED5 (電源断) が点灯します
+(クロックが止まるだけで、電源は切れません)。
+
 そのほか、`Ctrl-]` でモニタに入り `q`、ネットワーク端末や `-script` からは `shutdown` / `quit` で終了できます。
 OS-9 側にはディスクのキャッシュはなく (書き込みは即ホストへ)、`shutdown` 前の同期は不要です。
 
@@ -123,6 +145,15 @@ OS9:jwp memo.txt            全画面で編集。^S 保存  ^Q 終了  ^R 検索
 端末の日本語入力でそのまま書けます。OS-9 の中だけで入力するなら SKK 方式の仮名漢字変換 (`^J` でかなモード、`Kanji␣` → 漢字)
 が使え、辞書ディスクは `make -C os9/skk` で作ります (`SKK-JISYO.L` が要ります: `apt install skkdic`)。画面幅で禁則処理つきに折り返し、全角文字は 2 桁・カーソル/削除は文字単位です。
 OS-9 の CR、ホストの LF / CRLF の改行を自動判定して同じ形式で保存します。
+
+### BASIC (ysdbasic)
+
+```
+OS9:chx /v0/cmds
+OS9:ysdbasic                行番号つきの BASIC。RUN LIST SAVE "ファイル" LOAD "ファイル"。終了は ^C
+```
+
+MK09 の BASIC と同じ言語です (単精度の浮動小数点、文字列、配列)。扱えるプログラムは Level 1 で約 3600 バイト、Level 2 で 12000 バイトまでです (docs/OS9_MANUAL.md の 9.4)。
 
 ### OS-9 Net
 
@@ -181,6 +212,7 @@ I/O ベース: Level 1 は `$E000`、Level 2 は `$FF80` (以下は I/O ベー�
 | `11` | MMU タスクレジスタ (Level 2) |
 | `20-27` / `28-2F` | MMU システム / ユーザマップ (Level 2, `$FFA0`/`$FFA8`) |
 | `30` | タイマ制御: 書き込み `$8F` で開始/確認応答、`$80` 停止、`$04` で `31-36` に年月日時分秒 (RTC: 起動時のホストの時刻 + エミュレートした経過時間) |
+| `0E/0F` | 電源・状態 (FPGA)。`0F` に `$A5` で電源断 (シミュレータは終了、FPGA は LED5 点灯とクロック停止)、`$A4` で OS RUN (LED4)。`0E` は Level 2 への切り替え (FPGA のみ) |
 | `40` | ディスク/VRBF コマンド (`$81` 読み、`$55` 書き、`$D1`-`$DD` VRBF) と `41-47` パラメータ |
 
 Level 1 は 64KB のフラットメモリで ROM は書き込み保護、Level 2 は物理 2MB で `$FE00-$FFFF` が常に物理 `$7FE00` に固定されます。
@@ -191,15 +223,17 @@ Level 1 は 64KB のフラットメモリで ROM は書き込み保護、Level 2
 |---|---|
 | `make test-cpu` | CPU コアの自己テスト (割り込み、CWAI/SYNC/HALT/RESET、NMI の武装、DAA、サイクル数 …) |
 | `make test-diff` | 全オペコード (ページ 0/1/2) について v09s.c と乱数で突き合わせ (レジスタ・メモリ・サイクル) |
-| `make test-os9` | Level 1/2 の起動、RBF / VRBF、時計、日本語 (UTF-8/EUC/SJIS) の編集とファイル名 |
+| `make test-os9` | Level 1/2 の起動、RBF / VRBF、時計、日本語 (UTF-8/EUC/SJIS) の編集とファイル名、`ysdbasic` (実行、`SAVE` / `LOAD`) |
 | `make test-jwp` | ワードプロセッサ jwp: 編集・折り返し・禁則・スクロール・保存、SKK の変換・登録・学習・辞書の二分探索、乱数のキー列で差分描画が全画面描画と一致すること (Level 1/2、UTF-8/EUC/SJIS) |
 | `make test-dhry` | Dhrystone: 最終値の検査 (Dhrystone 2.1 の正しい値)、時間付きの実行、`-clock` に比例すること |
 | `make test-fuzix` | FUZIX: 起動、MBR/スワップの検出、シェル、ファイル、パイプ、`ps`、`df`、時計、`shutdown` / `halt`、再起動後のファイル、`hdb` (17 項目。`fuzix/images` がないときは skip) |
 | `make test-hdmi` | FPGA の HDMI 文字画面: 端末の動作 (折り返し、スクロール、スクロール領域、行の挿入と削除、消去、色) を別に書いたモデルと 1 セルずつ比較 (88 項目)、TMDS の符号と直流平衡、**漢字**: 3 つの文字コードの復号、2 桁の文字の端末の動作を全画素で比較 (124 項目) |
-| `make test-fpga` | FPGA の RTL を Verilator で動かす: FUZIX の起動・ログイン・コマンド・`shutdown`・再起動、SDSC カード、カードなし、NitrOS-9 Level 1 の起動と `dir /d0` (約 5 分。Verilator がなければ skip) |
+| `make test-fpga` | FPGA の RTL を Verilator で動かす: FUZIX の起動・ログイン・コマンド・`shutdown`・再起動、SDSC カード、カードなし、NitrOS-9 Level 1 / Level 2 の起動と `dir /d0` (約 5 分。Verilator がなければ skip) |
+| `make -C mk09 test` | MK09: カーネル、サーバ、コマンド、BASIC、C コンパイラ。EUC-JP / Shift_JIS 版も作るので数分かかります (CMOC が要ります)。`make test` には含まれません |
 | `make test-net` | OS-9 Net: telnet ログイン、日本語往復、`nc` によるダイヤルアウト、切断検出 (Level 1/2) |
 | `make test-cross` | 参考実装 (タイマを命令数駆動に改造したもの) と**全命令のレジスタトレースを比較** (Level 1/2 とも 150 万命令一致) |
 
+`make test` は `test-cpu` `test-os9` `test-jwp` `test-dhry` `test-net` `test-fuzix` `test-hdmi` `test-fpga` を順に実行します。
 `test-diff` / `test-cross` は参考実装の sbc09 ソース (`REF_SBC09=../sbc09_shinji`) を使います。
 
 ## 参考実装との相違 (意図したもの)
@@ -229,6 +263,8 @@ Level 1 は 64KB のフラットメモリで ROM は書き込み保護、Level 2
 * `-max` は OS-9 の `F$Sleep 1` (時間を譲るだけ) のため OS-9 内の時間がホストより速く進みます。ネットワークを使うときは付けないでください。
 * ビルド中の `Pass 2 errors` の行は、すべて `0` であることを確認してください。
 * `jwp` が扱える文書は Level 1 で 9000 バイト、Level 2 で 26000 バイトまでです (docs/JWP.md)。
+* `ysdbasic` は、浮動小数点を C だけで書いているので、MK09 の BASIC (アセンブラ) より遅く、`^C` で BASIC そのものが終わります。Level 1 はメモリがほぼ限界で、変数を増やすと `#207` (メモリ不足) になります。
+* `ysdbasic` は、実機の FPGA ではまだ試していません (sim09 では Level 1 / 2 とも確認)。
 
 ## ディレクトリ構成
 
@@ -239,16 +275,19 @@ os9/        OS-9 の ROM / モジュール / コマンドのビルド (make で 
   level1/ level2/   sbc09 用モジュール (pty, pdisk, vrbf, clock, boot, sysgo ...)
   kanji/    日本語対応 SCF (行編集)、dir、kmode
   dhry/     Dhrystone 2.1 (dhry.c: C 言語 / CMOC、ビルド済みモジュール)
+  misc/     shutdown と defsfile
   basic09/  BASIC09 と RunB を作る手順 (Microware のソースもビルド済みモジュールもリポジトリに入れず、fetch.sh で取得してビルド。第三者の著作物: LICENSES.md の 4.3)
   ysdbasic/ YSD BASIC (MK09 の BASIC の OS-9 版。C 言語 / CMOC、ビルド済みモジュール)
   jwp/      日本語ワードプロセッサ (jwp.c, skk.c: C 言語 / CMOC、genmsgs.py、ビルド済みモジュール)
   skk/      SKK 辞書ディスクを作る Makefile (SKK-JISYO.L → RBF イメージ)
   net/      OS-9 Net: npty ドライバ, n1..n3 デスクリプタ, nc, login
   nitros9-code/     NitrOS-9 ソース (必要部分)    OS9.dsk WORK.dsk  ディスクイメージ    v09.rom モニタ
-fpga/tn9k/  Tang Nano 9K 用の FPGA 設計: rtl/ (SoC、UART、タイマ、SD カード)、vendor/ (6809 コアと PSRAM コントローラ)、sim/ (Verilator)、scripts/build.sh (Gowin IDE)
+mk09/       マイクロカーネル MK09: kernel/ arch/ (カーネル)、servers/ (TTY DISK FS PM MM)、apps/ (コマンド、jwp、basic、cc)、lib/ boot/ disk/ tests/ docs/ (MANUAL SPEC DESIGN IR YSD9000)
+fpga/tn9k/  Tang Nano 9K 用の FPGA 設計: rtl/ (SoC、UART、タイマ、SD カード、HDMI)、vendor/ (6809 コアと PSRAM コントローラ)、sim/ (Verilator)、scripts/build.sh (Gowin IDE)、images/ (ビルド済みのビットストリームと漢字データ)
 fuzix/      FUZIX の移植: platform-sim09 (sim09 のマシン仕様のポート。Tang Nano 9K の FPGA は同じ仕様の実装で、カーネルは同じもの。カーネルのプラットフォーム部)、bootrom.s、mkdisk.py、build.sh、images/ (ブート ROM とディスクイメージ)
 tools/      build_gcc6809.sh (FUZIX 用の gcc 4.6.4 を作る)、a09 (OS-9 対応アセンブラ), make9rom, os9mod, mkskkdic.py (SKK 辞書), mkrbf.py (RBF ディスクイメージ), install_cmoc.sh ほか
 tests/      自己テスト一式
+non_dist_docs/   配布しない参考資料 (OS-9 の資料。.gitignore に入れてあり、リポジトリには入りません)
 docs/       FPGA.md FUZIX.md CPU.md KANJI.md OS9NET.md JWP.md PORTING.md (jwp の機種依存) DHRYSTONE.md OS9_MANUAL.md (OS-9 ユーザマニュアル、初心者向け)
 ```
 
@@ -258,7 +297,9 @@ docs/       FPGA.md FUZIX.md CPU.md KANJI.md OS9NET.md JWP.md PORTING.md (jwp �
 
 * このプロジェクトで書いたもの (シミュレータ `src/`、テスト、`jwp` `skk` `dhry` のソース、辞書とディスクのツール、文書): **MIT** ([LICENSES/MIT.txt](LICENSES/MIT.txt))
 * sbc09 由来のもの (`tools/` のアセンブラなど、`os9/level1` `os9/level2`、ディスクイメージ、ROM): **GPL v2** ([LICENSES/GPL-2.0.txt](LICENSES/GPL-2.0.txt))
-* ビルド済みの `jwp` `jwp-l2` `dhry` (CMOC の実行時ライブラリを含む): **GPL v3** ([LICENSES/GPL-3.0.txt](LICENSES/GPL-3.0.txt))
+* マイクロカーネル MK09 (`mk09/`) と YSD BASIC (`os9/ysdbasic/`): **MIT** (著作権者は YUKARI Semiconductor Devices)
+* BASIC09 (Microware / Motorola): 第三者の著作物のため、ソースもビルド済みモジュールもリポジトリに**入れていません** ([LICENSES.md](LICENSES.md) の 4.3)
+* ビルド済みの `jwp` `jwp-l2` `dhry` `ysdbasic` `ysdbasic-l2` (CMOC の実行時ライブラリを含む): **GPL v3** ([LICENSES/GPL-3.0.txt](LICENSES/GPL-3.0.txt))
 * NitrOS-9 のソース (`os9/nitros9-code` と、それを改造したもの): 上流は GPL v2 と申告していますが、ファイルには Microware の著作権表示や非商用の限定などがあり、**再配布の条件は確定できません**
 * `fuzix/` : 移植のソースは FUZIX の派生なので **GPL v2** (自作のスクリプトは MIT)。ディスクイメージは FUZIX のカーネル (GPL v2)、ライブラリ (LGPL)、V7 由来のコマンド (Caldera の BSD 形式) を含む
 * `fpga/tn9k/`: 自作の RTL は **MIT**、`vendor/mc6809` (Greg Miller の 6809 コア) は **BSD-3-Clause**、`vendor/psram` (Feng Zhou の PSRAM コントローラ) は **Apache-2.0**
