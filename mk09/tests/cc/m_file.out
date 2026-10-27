@@ -1,0 +1,11 @@
+open 1
+wrote 12
+read 5 [hello]
+seek 7
+read 5 [file
+]
+eof 0
+noent 1
+unlink 0
+again 1
+argc 1

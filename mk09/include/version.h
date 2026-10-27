@@ -31,11 +31,14 @@
  *   1.8  2026-10-27  the C compiler on MK09 (docs/IR.md): cpp, cc1 (C to the IR), cg (IR to 6809 assembler, with the library routines), the driver cc;
  *                    tools/irsim.py runs the IR on the PC.  PM_EXEC (a program is replaced by another one: the stages follow each other without a
  *                    program that waits for them, so each can use the whole transient area); programs get up to 32 arguments.
+ *   1.9  2026-10-27  the C compiler, second step: JBxx branches in as (short when the label is near, found by repeating pass 1), cg uses them and the
+ *                    flags that a load has set; a fault in cg (a push between a comparison and its branch); the headers (stdio string stdlib ctype stdarg
+ *                    stddef mklib in /INC) and a bigger library (sprintf, strings, ctype, malloc, qsort, rand, seek, unlink, mkdir, chdir ...).
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.8"
+#define MK09_VERSION    "1.9"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

@@ -5,7 +5,7 @@
 
 Copyright (c) 2026 YUKARI Semiconductor Devices
 
-**版: 1.8** (2026-10-27。起動のときの `ver` と同じ)。変更の履歴は [DESIGN.md](DESIGN.md) の 16 章。
+**版: 1.9** (2026-10-27。起動のときの `ver` と同じ)。変更の履歴は [DESIGN.md](DESIGN.md) の 16 章。
 
 MK09 は MC6809 用の小さなマイクロカーネルと、その上で動くコマンド、日本語ワードプロセッサ `jwp` です。**プログラムは同時に何本でも (メモリの許すだけ) 動かせます** (`コマンド &`)。
 **64KB のメモリだけで動き (MMU は使いません)**、カーネルもプログラムも **SD カードから起動時に読み込まれます**。
@@ -86,7 +86,7 @@ HDMI の画面の文字コードは、ビットストリームを作るときに
 
 ## 2. シェルとコマンド
 
-起動すると、まず `MK09 1.8: kernel TTY DISK FS PM MM` の 1 行 (カードにボリュームがなければもう 1 行) が出ます。続いて `MK09` のロゴと `MC6809 microkernel 1.8 ... type help` という案内が出て、`/> ` というプロンプトが出ます (`/` は今のディレクトリです)。
+起動すると、まず `MK09 1.9: kernel TTY DISK FS PM MM` の 1 行 (カードにボリュームがなければもう 1 行) が出ます。続いて `MK09` のロゴと `MC6809 microkernel 1.9 ... type help` という案内が出て、`/> ` というプロンプトが出ます (`/` は今のディレクトリです)。
 1 行を打って Enter で実行します。行の編集は、BS / DEL で 1 文字 (全角文字は 1 文字)、`^U` で行全体の取り消し、`^D` (行の先頭で) でファイル終わりです。
 
 * **コマンドの探し方**: `名前.MX` を今のディレクトリ、次に `/BIN` から探します。名前に `/` があれば、そのパスのとおりです。
@@ -394,6 +394,8 @@ loop	ldx	#buf		; 名前  命令  オペランド  ; コメント (空白かタ�
   間接 `[...]` (`[n]` も)。`n,R` の大きさ (5、8、16 ビット) は、`n` の値がその行を読んだ時点で分かっているときだけ値で決め、前方参照のときは 16 ビットです
   (`<n,R` で 8 ビット、`>n,R` で 16 ビットに決められます)。`n,PCR` は、ラベルが前に出てきていて近ければ 8 ビットです。**ダイレクトページへは自動では行きません**
   (`<` を付けたときだけ)。分岐は短い `bra ...` と長い `lbra ...` の両方があり、命令の長さを勝手に変えることはありません。
+* **相対分岐の自動選択**: `jbra` `jbeq` `jbne` ... `jbsr` (`b` の前に `j`) は、ラベルが近ければ短い分岐 (`bra` ...)、遠ければ長い分岐 (`lbra` ...) にする。アセンブラが第 1 パスを
+  繰り返して決める (長くなる分岐がなくなるまで)。C コンパイラの出力が使う。
 * **指示**: `名前 equ 式` / `set`、`fcb 式,...`、`fdb 式,...`、`fcc "文字列"` (区切りは何でもよい)、`fcs` (最後の文字の最上位ビットが 1)、`rmb 数` / `zmb 数` (ゼロで埋める)、
   `bss` と `code` (`bss` の間の `rmb` はファイルに入らない、起動時にゼロにされる領域に取られる)、`stack 数` (スタックの大きさ、既定 512)、
   `runtime` (下の関数をプログラムの後ろにつける)、`end`。`org` `include` `section` はありません。
@@ -436,9 +438,13 @@ cc -S foo.c                        # アセンブラの文 (foo.s) まで
 * **言語**: `char` `int` `short` `unsigned` `signed` `void`、ポインタ、配列、`struct` `union` `enum` `typedef`、関数ポインタ、`static` `extern` `sizeof`、キャスト、
   すべての C89 の演算子と文、初期化子 (配列、構造体、文字列)。前処理 (`#include` `#define` 関数形式も、`#if` `#ifdef` ...)。`int` は 16 ビット。
   **ない**もの: `long` `float` `double`、ビットフィールド、K&R 形式の関数定義、構造体を値で渡す・返すこと、`#` と `##`、名前は 15 文字まで。詳しくは [IR.md](IR.md) の 6 章。
-* **ライブラリ**: `/LIB/CLIB.S` (C で書いた `printf` `putchar` `puts` `getchar` `open` `read` `write` `close` `strlen` `strcpy` `strcmp` `memcpy` `memset` `abs` `exit`)
-  と `/LIB/RT.S` (掛け算・割り算・シフトとシステムコール)。使うものだけが入る。ヘッダはまだなく、関数は自分のプログラムで宣言する (`int printf(char *fmt, ...);`)。
-  `main(argc, argv)` から始まり、`return` の値が終了コード。
+* **ヘッダ** (`/INC`。`#include <名前.h>`): `stdio.h` (`printf` `sprintf` `putchar` `puts` `getchar` `readline` `fflush`)、`string.h` (`strlen` `strcpy` `strncpy` `strcat` `strcmp` `strncmp` `strchr`
+  `strrchr` `strstr` `memcpy` `memmove` `memset` `memcmp`)、`stdlib.h` (`exit` `abs` `atoi` `rand` `srand` `malloc` `free` `calloc` `qsort`)、`ctype.h` (ASCII)、
+  `stdarg.h` (`va_list` `va_start` `va_arg` `va_end`: 引数は 2 バイトずつなので、`char` も `va_arg(ap, int)` で読む)、`stddef.h` (`NULL` `size_t`)、
+  `mklib.h` (MK09 のファイル: `open` `close` `read` `write` `seek` `unlink` `mkdir` `chdir` `getcwd` と `FO_*` `E_*`)。`FILE` はなく、標準入出力は `printf` などと `read(0, ...)` `write(1, ...)`。
+  1 つのソースの名前の表が小さい (約 130) ので、使うヘッダだけを入れる。
+* **ライブラリ**: `/LIB/CLIB.S` (上の関数を C で書いたもの) と `/LIB/RT.S` (掛け算・割り算・シフトとシステムコール)。使うものだけが入る。`malloc` は bss の 3000 バイトの領域から取る。
+  `printf` は `%d %u %x %c %s %%`、幅、`-` と `0`。`main(argc, argv)` から始まり、`return` の値が終了コード。
 * **大きさ**: 1 つのソースは、名前が約 130 個 (型と構造体のメンバはさらに別の表)、局所変数の領域は関数ごと、式は約 1KB の引数の文字列までです。
   コンパイルは速くありません (シミュレータで数十秒)。
 

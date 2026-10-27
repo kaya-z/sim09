@@ -297,6 +297,11 @@ static int expr(const char **p)
 static u8 obuf[256];
 static u16 olen;
 static u16 relpos[NREL];
+#define NJB 1600                    /* relaxable branches (JBxx) that can be short; the others are long */
+static u8 jb_long[NJB / 8];         /* bit n: the n-th JBxx of the program is long */
+static u16 jbn;                     /* the number of the JBxx that is read now */
+static u8 jb_changed;               /* a JBxx became long in this pass */
+static u8 redef_ok;                 /* the names were defined by an earlier pass 1: a new definition is not a duplicate */
 static u16 nrel;
 static int opos;            /* offset of the next byte in the image */
 
@@ -317,7 +322,7 @@ static void emit(u8 b)
 }
 
 /* ---------------------------------------------------------------- tables */
-enum { T_INH, T_MEM, T_ACC8, T_ACC16, T_ST8, T_ST16, T_LEA, T_BR, T_LBR, T_RR, T_STK, T_IMM8 };
+enum { T_INH, T_MEM, T_ACC8, T_ACC16, T_ST8, T_ST16, T_LEA, T_BR, T_LBR, T_RR, T_STK, T_IMM8, T_JBR };
 typedef struct op {
     const char *name;
     u8 type;
@@ -356,6 +361,11 @@ static const op_t optab[] = {
     {"LBCC", T_LBR, 0x1024}, {"LBHS", T_LBR, 0x1024}, {"LBCS", T_LBR, 0x1025}, {"LBLO", T_LBR, 0x1025}, {"LBNE", T_LBR, 0x1026},
     {"LBEQ", T_LBR, 0x1027}, {"LBVC", T_LBR, 0x1028}, {"LBVS", T_LBR, 0x1029}, {"LBPL", T_LBR, 0x102A}, {"LBMI", T_LBR, 0x102B},
     {"LBGE", T_LBR, 0x102C}, {"LBLT", T_LBR, 0x102D}, {"LBGT", T_LBR, 0x102E}, {"LBLE", T_LBR, 0x102F},
+    /* JBxx: the short branch Bxx when the label is near, else the long one (the assembler decides; see "relaxation" in main) */
+    {"JBRA", T_JBR, 0x20}, {"JBRN", T_JBR, 0x21}, {"JBHI", T_JBR, 0x22}, {"JBLS", T_JBR, 0x23}, {"JBCC", T_JBR, 0x24}, {"JBHS", T_JBR, 0x24},
+    {"JBCS", T_JBR, 0x25}, {"JBLO", T_JBR, 0x25}, {"JBNE", T_JBR, 0x26}, {"JBEQ", T_JBR, 0x27}, {"JBVC", T_JBR, 0x28}, {"JBVS", T_JBR, 0x29},
+    {"JBPL", T_JBR, 0x2A}, {"JBMI", T_JBR, 0x2B}, {"JBGE", T_JBR, 0x2C}, {"JBLT", T_JBR, 0x2D}, {"JBGT", T_JBR, 0x2E}, {"JBLE", T_JBR, 0x2F},
+    {"JBSR", T_JBR, 0x8D},
     {"TFR", T_RR, 0x1F}, {"EXG", T_RR, 0x1E},
     {"PSHS", T_STK, 0x34}, {"PULS", T_STK, 0x35}, {"PSHU", T_STK, 0x36}, {"PULU", T_STK, 0x37},
     {"ANDCC", T_IMM8, 0x1C}, {"ORCC", T_IMM8, 0x1A}, {"CWAI", T_IMM8, 0x3C},
@@ -613,6 +623,34 @@ static void instruction(const op_t *o, const char *s)
         nonrel("an address in a byte");
         ibyte((u8)v);
         return;
+    case T_JBR: {
+        int off = 0;
+        u8 lng, idx_ok = jbn < NJB;
+        u16 code = o->code;
+        v = expr(&s);
+        lng = !idx_ok || (jb_long[jbn >> 3] & (1 << (jbn & 7))) != 0;
+        if (!lng && !xundef) {
+            off = v - (pc + 2);
+            if (off < -128 || off > 127) {
+                jb_long[jbn >> 3] |= (u8)(1 << (jbn & 7));
+                jb_changed = 1;
+                lng = 1;
+            }
+        }
+        jbn++;
+        if (pass == 2 && !xundef && !xrel) err("a branch needs a label");
+        if (!lng) {
+            iop(code);
+            ibyte((u8)off);
+        } else {
+            if (code == 0x20) iop(0x16);
+            else if (code == 0x8D) iop(0x17);
+            else iop((u16)(0x1000 | code));
+            off = v - (pc + (code == 0x20 || code == 0x8D ? 3 : 4));
+            iword(off);
+        }
+        return;
+    }
     case T_BR: case T_LBR: {
         int off;
         v = expr(&s);
@@ -701,7 +739,7 @@ static void defsym(const char *name, int val, u8 rel, u8 bss, u8 abs)
     sym_t *y;
     if (k < 0) { err("too many names"); return; }
     y = &syms[k];
-    if (pass == 1 && (y->flags & F_DEF)) { err("name defined twice"); return; }
+    if (pass == 1 && (y->flags & F_DEF) && !redef_ok) { err("name defined twice"); return; }
     if (pass == 2 && (y->flags & F_DEF) && !abs && y->val != val && !(y->flags & (16 | 32))) {
         err("a name has another value in the second pass (a forward reference decided a length?)");
         return;
@@ -911,7 +949,7 @@ static void assemble_line(char *l)
 static void run_pass(void)
 {
     char l[LINEMAX + 2];
-    pc = 0; bpc = 0; inbss = 0; opos = 0; lineno = 0; scope = 0; nrel = 0; uline = 0;
+    pc = 0; bpc = 0; inbss = 0; opos = 0; lineno = 0; scope = 0; nrel = 0; uline = 0; jbn = 0;
     srcmode = raw ? 1 : 0;
     sline = 0;
     srctext = as_start;
@@ -976,6 +1014,7 @@ static int run_tail(int argc, char **argv, int at)
 int main(int argc, char **argv)
 {
     int i, tail = argc;
+    u8 round;
     const char *src = NULL, *out = NULL;
     for (i = 1; i < argc; i++) if (argv[i][0] == ';' && argv[i][1] == 0) { tail = i; break; }
     for (i = 1; i < tail; i++) {
@@ -1003,31 +1042,53 @@ int main(int argc, char **argv)
     fin = open(src, FO_READ);
     if (fin < 0) { LOG("as: cannot open %s\n", src); return 2; }
 #endif
-    pass = 1;
-    run_pass();
-    imgend = pc;
-    if (!raw) {
-        int k;
-        /* what the start code needs to know */
-        k = lookup("__size", 1); syms[k].val = imgend; syms[k].flags = F_DEF | 8; syms[k].defline = 0;
-        k = lookup("__bss", 1); syms[k].val = bssmax; syms[k].flags = F_DEF | 8; syms[k].defline = 0;
-        k = lookup("__end", 1); syms[k].val = imgend; syms[k].flags = F_DEF | F_REL; syms[k].defline = 0;
-        k = lookup("__stack", 1); syms[k].val = stksz; syms[k].flags = F_DEF | 8; syms[k].defline = 0;
-    }
-    noout = e1 != 0;                    /* errors: the second pass only looks for more of them */
-    if (!noout) {
+    /* Relaxation of the JBxx branches: pass 1 is repeated until no branch becomes long (a branch is short at first and becomes long when its target is
+     * out of reach; the labels that are not defined yet have the values of the pass before), then pass 2 writes the file.  If pass 2 finds a short branch
+     * that does not reach (the layout moved), the round starts again with that branch long. */
+    for (round = 0; ; round++) {
+        u8 iter;
+        pass = 1;
+        for (iter = 0; ; iter++) {
+            jb_changed = 0;
+            e1 = 0;
+            run_pass();
+            redef_ok = 1;
+            if (e1 || !jb_changed || iter >= 8) break;
+        }
+        imgend = pc;
+        if (!raw) {
+            int k;
+            /* what the start code needs to know */
+            k = lookup("__size", 1); syms[k].val = imgend; syms[k].flags = F_DEF | 8; syms[k].defline = 0;
+            k = lookup("__bss", 1); syms[k].val = bssmax; syms[k].flags = F_DEF | 8; syms[k].defline = 0;
+            k = lookup("__end", 1); syms[k].val = imgend; syms[k].flags = F_DEF | F_REL; syms[k].defline = 0;
+            k = lookup("__stack", 1); syms[k].val = stksz; syms[k].flags = F_DEF | 8; syms[k].defline = 0;
+        }
+        noout = e1 != 0;                    /* errors: the second pass only looks for more of them */
+        if (!noout) {
 #ifdef AS_HOST
-        fout = fopen(out, "wb");
-        if (!fout) { LOG("as: cannot create %s\n", out); return 2; }
+            fout = fopen(out, "wb");
+            if (!fout) { LOG("as: cannot create %s\n", out); return 2; }
 #else
-        fout = open(out, FO_WRITE | FO_CREATE | FO_TRUNC);
-        if (fout < 0) { LOG("as: cannot create %s\n", out); return 2; }
+            fout = open(out, FO_WRITE | FO_CREATE | FO_TRUNC);
+            if (fout < 0) { LOG("as: cannot create %s\n", out); return 2; }
 #endif
+        }
+        pass = 2;
+        jb_changed = 0;
+        errors = 0;
+        /* the bss addresses were counted from 0 in pass 1; the first pass has the size of the image now */
+        run_pass();
+        oflush();
+        if (noout || errors || !jb_changed) break;
+        /* a short branch did not reach: again with it long */
+#ifdef AS_HOST
+        fclose(fout);
+#else
+        close(fout);
+#endif
+        if (round >= 4) memset(jb_long, 0xFF, sizeof(jb_long));
     }
-    pass = 2;
-    /* the bss addresses were counted from 0 in pass 1; the first pass has the size of the image now */
-    run_pass();
-    oflush();
     if (!errors && !noout && !raw) {
         /* the relocation table (the format of lib/crt0app.s): the gaps between the places, 255 = skip 254 bytes, 0 = end */
         u16 cur = 0, j;

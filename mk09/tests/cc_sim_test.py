@@ -37,7 +37,7 @@ def build(src, exe):
 def compile_c(path, base, tag):
     """C file -> assembler text (PC tools); returns the text or None"""
     i_f, ir_f, s_f = [os.path.join(work, base + e) for e in ('.i', '.ir', '.s')]
-    for cmd in ([os.path.join(work, 'cpp'), path, '-o', i_f], [os.path.join(work, 'cc1'), i_f, '-o', ir_f], [os.path.join(work, 'cg'), '-p' + tag, ir_f, '-o', s_f]):
+    for cmd in ([os.path.join(work, 'cpp'), '-I' + os.path.join(MK, 'disk', 'inc'), path, '-o', i_f], [os.path.join(work, 'cc1'), i_f, '-o', ir_f], [os.path.join(work, 'cg'), '-p' + tag, ir_f, '-o', s_f]):
         p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=work)
         if p.returncode:
             check(False, base + ': ' + os.path.basename(cmd[0]), p.stdout.decode())
@@ -51,7 +51,7 @@ cc = os.path.join(MK, 'lib', 'cc')
 lib_s, _ = compile_c(os.path.join(cc, 'clib.c'), 'clib', 'l')
 if lib_s is None:
     sys.exit(1)
-tests = sorted(f for f in os.listdir(os.path.join(HERE, 'cc')) if f.startswith('t_') and f.endswith('.c'))
+tests = sorted(f for f in os.listdir(os.path.join(HERE, 'cc')) if f[:2] in ('t_', 'l_') and f.endswith('.c'))
 tests = [t for t in tests if not names or t[:-2] in names]
 tree = os.path.join(work, 'tree')
 shutil.copytree(os.path.join(BUILD, 'tree'), tree, ignore=shutil.ignore_patterns('skk'))
@@ -61,7 +61,12 @@ for t in tests:
     s, ir = compile_c(os.path.join(HERE, 'cc', t), base, 'p')
     if s is None:
         continue
-    out, code = irsim.run(ir)
+    if t.startswith('l_'):         # the library tests: the output of gcc
+        exe = os.path.join(work, base + '.gcc')
+        subprocess.run(['gcc', '-w', '-fwrapv', '-o', exe, os.path.join(HERE, 'cc', t)], check=True)
+        out = subprocess.run([exe], stdout=subprocess.PIPE).stdout
+    else:
+        out, code = irsim.run(ir)
     want[base] = out
     allsrc = open(os.path.join(cc, 'start.s')).read() + s + lib_s + open(os.path.join(cc, 'rt.s')).read()
     open(os.path.join(tree, base.upper()[:8] + '.S'), 'w').write(allsrc)

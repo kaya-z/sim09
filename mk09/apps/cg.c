@@ -85,9 +85,12 @@ static char *cat_str(char *d, const char *s)
     return d;
 }
 
+static u8 dz;       /* the flags describe D: 2 = N Z and V (V = 0) after ldd std sex;  1 = Z only after addd subd (V may be set);  0 = nothing */
+
 /* one instruction: op and operand */
 static void ins(const char *op, const char *arg)
 {
+    dz = (!strcmp(op, "ldd") || !strcmp(op, "std") || !strcmp(op, "sex")) ? 2 : (!strcmp(op, "addd") || !strcmp(op, "subd")) ? 1 : 0;
     o_tab(op);
     if (arg && *arg) { w_putc(&out, '\t'); w_puts(&out, arg); }
     w_putc(&out, '\n');
@@ -153,7 +156,7 @@ static void ins_lb(const char *cc, u16 lbl)
     char op[6], b[10];
     char *p;
     lbl = resolve(lbl);
-    op[0] = 'l'; op[1] = 'b'; op[2] = 0;
+    op[0] = 'j'; op[1] = 'b'; op[2] = 0;       /* JBxx: short when the label is near (the assembler decides) */
     strcat(op, cc);
     b[0] = '@'; b[1] = 'L';
     p = cat_num(b + 2, (int)lbl);
@@ -163,6 +166,7 @@ static void ins_lb(const char *cc, u16 lbl)
 
 static void def_label(u16 l)
 {
+    dz = 0;
     w_puts(&out, "@L");
     w_num(&out, (int)l);
     w_putc(&out, '\n');
@@ -500,7 +504,7 @@ static void binop_helper(const char *op)
     }
     hn[0] = '_'; hn[1] = '_';
     strcpy(hn + 2, op);
-    ins("lbsr", hn);
+    ins("jbsr", hn);
     use_helper(hn);
     if (!strcmp(op, "mod") || !strcmp(op, "umod")) ins("tfr", "x,d");
     result_d();
@@ -513,9 +517,13 @@ static void compare(const char *op, const char *jop, u16 jlabel)
     const char *cc = cc_true(op);
     char ob[24];
     u8 swapped = 0;
+    if (jop && nvs > 2) { push_upto((u8)(nvs - 3)); a = vs[nvs - 2]; b = vs[nvs - 1]; }      /* (the pushes would change the flags: before the comparison) */
     if (b.k != K_D && operand(&b, ob)) {
         if (a.k != K_D) { free_d(); load_d((u8)(nvs - 2)); }
-        ins("cmpd", ob);
+        if (b.k == K_CONST && b.v == 0 && dz && ((!strcmp(cc, "eq") || !strcmp(cc, "ne")) ||
+                                                  (dz == 2 && (!strcmp(cc, "lt") || !strcmp(cc, "ge") || !strcmp(cc, "le") || !strcmp(cc, "gt"))))) {
+            /* D is just loaded: the flags are those of the comparison with 0 */
+        } else ins("cmpd", ob);
     } else if (b.k == K_D && operand(&a, ob)) {
         ins("cmpd", ob);
         swapped = 1;
@@ -549,6 +557,7 @@ static void compare(const char *op, const char *jop, u16 jlabel)
         w_puts(&out, l1); w_putc(&out, '\n');
         ins_imm("ldd", 1);
         w_puts(&out, l2); w_putc(&out, '\n');
+        dz = 0;
         push_ent(K_D, 0, "");
     }
 }
@@ -936,6 +945,7 @@ static void function(char *hdr)
                 w_puts(&out, l1); w_putc(&out, '\n');
                 ins_imm("ldd", 1);
                 w_puts(&out, l2); w_putc(&out, '\n');
+                dz = 0;
             }
         }
         else if (!strcmp(opb, "jmp")) {
@@ -954,8 +964,9 @@ static void function(char *hdr)
                 if (take) { canonical(); depth_tab[l < NLABD ? l : 0] = nvs; ins_lb("ra", l); reachable = 0; }
                 continue;
             }
+            if (nvs > 1) push_upto((u8)(nvs - 2));      /* (the pushes would change the flags: before the comparison) */
             top_to_d();
-            ins_imm("cmpd", 0);
+            if (!dz) ins_imm("cmpd", 0);       /* (ldd addd subd std sex have set Z) */
             pop_n(1);
             canonical();
             depth_tab[l < NLABD ? l : 0] = nvs;
@@ -986,7 +997,7 @@ static void function(char *hdr)
                 if (cnt >= 0) ins_idx("leas", 2 * cnt + 2, "s");
                 pop_n((u8)(cnt + 1));
             } else {
-                ins("lbsr", nmx);
+                ins("jbsr", nmx);
                 if (cnt) ins_idx("leas", 2 * cnt, "s");
                 pop_n((u8)cnt);
             }
@@ -1005,7 +1016,7 @@ static void function(char *hdr)
             ins("ldx", ",s");
             ins("ldy", "2,s");
             ins_imm("ldd", n);
-            ins("lbsr", "__copy");
+            ins("jbsr", "__copy");
             use_helper("__copy");
             ins("leas", "2,s");
             pop_n(2);
