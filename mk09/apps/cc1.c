@@ -11,13 +11,22 @@
  */
 #include "ccio.h"
 
-#define NGSYM   130
-#define NLSYM   48
-#define NTY     160
-#define NMEM    100
 #define NTAG    24
+/* the sizes of the tables: small on MK09 (the whole program must fit in the transient area), big on the PC (the library is compiled there) */
+#ifdef CC_HOST
+#define NGSYM   400
+#define NLSYM   100
+#define NTY     500
+#define NMEM    400
+#define ARENA   2500
+#else
+#define NGSYM   100
+#define NLSYM   48
+#define NTY     120
+#define NMEM    72
+#define ARENA   1300
+#endif
 #define NAMEMAX 15
-#define ARENA   1100
 #define STRMAX  160
 #define NCASE   60
 #define NLAB    16
@@ -47,21 +56,45 @@ static int ch;
 static u16 tok;
 static int tokv;
 static u8 tokun;
+static u16 tokvh;            /* the high 16 bits of a number: a constant above 65535 or with an L is a long */
+static u8 toklong;
 static char toks[STRMAX + 2];
 static u16 toklen;
 static u8 haspeek;
 static u16 ptok;
 static int ptokv;
 static u8 ptokun;
+static u16 ptokvh;
+static u8 ptoklong;
 static char ptoks[STRMAX + 2];
 static u16 ptoklen;
 
-static void err(const char *msg)
+/* With MSGS (the build for MK09, see tools/msgsplit.py) a message is a number: line N of /LIB/CC1.MSG */
+#ifdef MSGS
+typedef u8 msgt;
+#else
+typedef const char *msgt;
+#endif
+
+static void err(msgt msg)
 {
     errors++;
     w_flush(&ir);
 #ifdef CC_HOST
     fprintf(stderr, "%s:%u: %s\n", fname, line, msg);
+#elif defined(MSGS)
+    {
+        rfile r;
+        int c;
+        u8 n = 1;
+        printf("%s:%u: ", fname, line);
+        if (!r_open(&r, "/LIB/CC1.MSG")) {
+            while (n < msg && (c = r_getc(&r)) >= 0) if (c == '\n') n++;
+            while ((c = r_getc(&r)) >= 0 && c != '\n') putchar(c);
+            r_close(&r);
+        } else printf("error %u", (u16)msg);
+        putchar('\n');
+    }
 #else
     printf("%s:%u: %s\n", fname, line, msg);
 #endif
@@ -136,6 +169,23 @@ static void read_marker(void)
     line = (u16)(n - 1);
 }
 
+static u16 nh, nl;               /* a number: 32 bits */
+
+static void num_step(u8 base, u8 d)       /* (nh:nl) = (nh:nl) * base + d */
+{
+    u16 ah = 0, al = 0, t;
+    u8 i;
+    for (i = 0; i < base; i++) {
+        t = al + nl;
+        ah += nh + (t < al);
+        al = t;
+    }
+    t = al + d;
+    ah += (t < al);
+    nh = ah;
+    nl = t;
+}
+
 static void lex(void)
 {
     for (;;) {
@@ -148,7 +198,7 @@ static void lex(void)
         }
         break;
     }
-    tokun = 0;
+    tokun = 0; toklong = 0; tokvh = 0;
     if (ch < 0) { tok = T_EOF; return; }
     if (isidc(ch, 1)) {
         u8 n = 0, k;
@@ -160,24 +210,28 @@ static void lex(void)
         return;
     }
     if (ch >= '0' && ch <= '9') {
-        int v = 0;
+        u8 base = 10;
+        nh = nl = 0;
         tok = T_NUM;
         if (ch == '0') {
             nextch();
             if (ch == 'x' || ch == 'X') {
+                base = 16;
                 nextch();
                 while ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')) {
-                    v = v * 16 + (ch <= '9' ? ch - '0' : (ch | 32) - 'a' + 10);
+                    num_step(16, (u8)(ch <= '9' ? ch - '0' : (ch | 32) - 'a' + 10));
                     nextch();
                 }
             } else {
-                while (ch >= '0' && ch <= '7') { v = v * 8 + ch - '0'; nextch(); }
+                while (ch >= '0' && ch <= '7') { num_step(8, (u8)(ch - '0')); nextch(); }
             }
         } else {
-            while (ch >= '0' && ch <= '9') { v = v * 10 + ch - '0'; nextch(); }
+            while (ch >= '0' && ch <= '9') { num_step(10, (u8)(ch - '0')); nextch(); }
         }
-        while (ch == 'u' || ch == 'U' || ch == 'l' || ch == 'L') { if (ch == 'u' || ch == 'U') tokun = 1; nextch(); }
-        tokv = v;
+        (void)base;
+        while (ch == 'u' || ch == 'U' || ch == 'l' || ch == 'L') { if (ch == 'u' || ch == 'U') tokun = 1; else toklong = 1; nextch(); }
+        tokv = (int)nl;
+        tokvh = nh;
         return;
     }
     if (ch == '\'') {
@@ -241,7 +295,7 @@ static void lex(void)
 static void next(void)
 {
     if (haspeek) {
-        tok = ptok; tokv = ptokv; tokun = ptokun; toklen = ptoklen;
+        tok = ptok; tokv = ptokv; tokun = ptokun; toklen = ptoklen; tokvh = ptokvh; toklong = ptoklong;
         memcpy(toks, ptoks, STRMAX + 1);
         haspeek = 0;
         return;
@@ -256,26 +310,28 @@ static u16 peek(void)
     int sv = tokv;
     u8 su = tokun;
     u16 sl = toklen;
+    u16 svh = tokvh;
+    u8 slg = toklong;
     char ss[STRMAX + 2];
     if (haspeek) return ptok;
     memcpy(ss, toks, STRMAX + 1);
     lex();
-    ptok = tok; ptokv = tokv; ptokun = tokun; ptoklen = toklen;
+    ptok = tok; ptokv = tokv; ptokun = tokun; ptoklen = toklen; ptokvh = tokvh; ptoklong = toklong;
     memcpy(ptoks, toks, STRMAX + 1);
     haspeek = 1;
-    tok = st; tokv = sv; tokun = su; toklen = sl;
+    tok = st; tokv = sv; tokun = su; toklen = sl; tokvh = svh; toklong = slg;
     memcpy(toks, ss, STRMAX + 1);
     return ptok;
 }
 
-static void expect(u16 t, const char *what)
+static void expect(u16 t, msgt what)
 {
     if (tok != t) { err(what); return; }
     next();
 }
 
 /* ---------------------------------------------------------------- types */
-enum { TK_VOID, TK_CHAR, TK_INT, TK_PTR, TK_ARR, TK_STRUCT, TK_UNION, TK_FUNC };
+enum { TK_VOID, TK_CHAR, TK_INT, TK_PTR, TK_ARR, TK_STRUCT, TK_UNION, TK_FUNC, TK_LONG };
 typedef struct ty {
     u8 k, un;
     u16 size;
@@ -283,12 +339,14 @@ typedef struct ty {
     u16 n;          /* array: elements;  struct/union: the first member (index + 1);  function: unused */
 } ty_t;
 static ty_t tys[NTY];
-static u16 nty = 5;
+static u16 nty = 7;
 #define T_VOIDT 0
 #define T_CHART 1
 #define T_UCHART 2
 #define T_INTT  3
 #define T_UINTT 4
+#define T_LONGT 5
+#define T_ULONGT 6
 
 typedef struct mem {
     char name[NAMEMAX + 1];
@@ -316,7 +374,7 @@ static u16 newty(u8 k, u16 size, u16 base)
 static u16 ptr_to(u16 t)
 {
     u16 i;
-    for (i = 5; i < nty; i++) if (tys[i].k == TK_PTR && tys[i].base == t) return i;
+    for (i = 7; i < nty; i++) if (tys[i].k == TK_PTR && tys[i].base == t) return i;
     return newty(TK_PTR, 2, t);
 }
 
@@ -330,6 +388,7 @@ static u16 arr_of(u16 t, u16 n)
 static u16 func_of(u16 t) { return newty(TK_FUNC, 0, t); }
 static u8 is_ptr(u16 t) { return tys[t].k == TK_PTR || tys[t].k == TK_ARR; }
 static u8 is_int(u16 t) { return tys[t].k == TK_CHAR || tys[t].k == TK_INT; }
+static u8 is_long(u16 t) { return tys[t].k == TK_LONG; }
 static u8 is_agg(u16 t) { return tys[t].k == TK_STRUCT || tys[t].k == TK_UNION; }
 static u8 is_unsigned(u16 t) { return tys[t].k == TK_PTR || tys[t].k == TK_ARR || tys[t].un; }
 
@@ -426,6 +485,8 @@ static u8 e_c;      /* a constant: e_v, nothing is emitted yet */
 static int e_v;
 static int e_fn;    /* a function name that is not emitted yet: the index in gsyms + 1 */
 
+static u16 fp, maxfp;          /* the frame: bytes used now, at most */
+static u16 fn_ret;             /* the type that the function being compiled returns */
 static void parse_expr(void);
 static void parse_assign(void);
 static void parse_cast(void);
@@ -445,7 +506,7 @@ static void rvalue(void)
         u8 k = tys[e_t].k;
         if (k == TK_ARR) { e_t = ptr_to(tys[e_t].base); e_lv = 0; }
         else if (k == TK_FUNC) { e_t = ptr_to(e_t); e_lv = 0; }
-        else if (k == TK_STRUCT || k == TK_UNION) { }
+        else if (k == TK_STRUCT || k == TK_UNION || k == TK_LONG) { }
         else {
             if (k == TK_CHAR) { ins0(tys[e_t].un ? "load.ub" : "load.b"); e_t = T_INTT; }
             else ins0("load.w");
@@ -460,11 +521,6 @@ static void force(void)
 }
 
 static void rv(void) { rvalue(); force(); }
-
-static void need_int(const char *what)
-{
-    if (!is_int(e_t) && !is_ptr(e_t)) err(what);
-}
 
 /* ---------------------------------------------------------------- constants and operators */
 static int fold(u16 op, int a, int b, u8 un, u8 *ok)
@@ -535,6 +591,132 @@ static void scale(u16 sz)
     ins0("mul");
 }
 
+/* ---------------------------------------------------------------- long: an object of 4 bytes (hi word first); the operations are calls of the library (clib.c)
+ * A long value is always an address on the stack (e_lv = 1): a variable, or a temporary of the frame that holds a result.  The library functions get the
+ * addresses:  __ladd(d, b, a) and so on (the stack holds a, b, d: d is the top).  A function returns a long in __lret. */
+enum { LH_ITOL, LH_UTOL, LH_ADD, LH_SUB, LH_MUL, LH_DIV, LH_MOD, LH_UDIV, LH_UMOD, LH_AND, LH_OR, LH_XOR, LH_SHL, LH_SHR, LH_USHR, LH_NEG, LH_COM,
+       LH_NZ, LH_CMP, LH_UCMP, LH_INC, LH_RET, LH_N };
+static char *lh_name[LH_N] = { "__itol", "__utol", "__ladd", "__lsub", "__lmul", "__ldiv", "__lmod", "__ludiv", "__lumod", "__land", "__lor", "__lxor",
+                               "__lshl", "__lshr", "__lushr", "__lneg", "__lcom", "__lnz", "__lcmp", "__lucmp", "__linc", "__lret" };
+static u8 lh_used[LH_N];
+static u16 tmp_used;           /* bytes of temporaries of the statement */
+
+static u16 new_temp(void)
+{
+    u16 off = (u16)(fp + tmp_used);
+    tmp_used = (u16)(tmp_used + 4);
+    if (fp + tmp_used > maxfp) maxfp = (u16)(fp + tmp_used);
+    return off;
+}
+
+static void lcall(u8 id, u8 n)
+{
+    lh_used[id] = 1;
+    put("\tcall ");
+    put(lh_name[id]);
+    put(" ");
+    putn(n);
+    put("\n");
+}
+
+static void long_to_int(void)          /* the low word of the long whose address is on the stack */
+{
+    u8 un = tys[e_t].un;
+    ins1("const", 2);
+    ins0("add");
+    ins0("load.w");
+    e_t = un ? T_UINTT : T_INTT;
+    e_lv = 0;
+}
+
+/* e_* is an rvalue: a long is made of it (in a temporary) if it is not one */
+static void to_long(void)
+{
+    u16 t;
+    u8 un;
+    if (is_long(e_t)) return;
+    un = is_unsigned(e_t);
+    force();
+    t = new_temp();
+    ins1("laddr", t);
+    lcall(un ? LH_UTOL : LH_ITOL, 2);
+    ins0("drop");
+    ins1("laddr", t);
+    e_t = T_LONGT; e_lv = 1; e_c = 0;
+}
+
+/* the value for a jump: a long becomes an int (0 or not) */
+static void truth(void)
+{
+    rv();
+    if (is_long(e_t)) { lcall(LH_NZ, 1); e_t = T_INTT; e_lv = 0; }
+}
+
+static u8 long_op_id(u16 op, u8 un)
+{
+    switch (op) {
+    case '+': return LH_ADD;
+    case '-': return LH_SUB;
+    case '*': return LH_MUL;
+    case '/': return un ? LH_UDIV : LH_DIV;
+    case '%': return un ? LH_UMOD : LH_MOD;
+    case '&': return LH_AND;
+    case '|': return LH_OR;
+    case '^': return LH_XOR;
+    case T_SHL: return LH_SHL;
+    }
+    return un ? LH_USHR : LH_SHR;
+}
+
+static u8 is_cmp(u16 op);
+static const char *opname(u16 op, u8 un);
+
+/* op: the operator; the left operand is a constant (lc, lval) or on the stack (lt: its type); the right one is in e_* (rvalue'd); one of them is a long */
+static void binary(u16 op, u8 lc, int lval, u16 lt);
+
+static void long_binary(u16 op, u8 lc, int lval, u16 lt)
+{
+    u8 shift = (op == T_SHL || op == T_SHR);
+    u8 un;
+    u16 t, rt = e_t;
+    if (shift) {
+        if (!is_long(lt)) {            /* an int shifted by a long: the count is an int */
+            if (is_long(rt)) long_to_int();
+            binary(op, lc, lval, lt);
+            return;
+        }
+        if (is_long(rt)) long_to_int();
+        force();                       /* the count is on the stack */
+        un = tys[lt].un;
+    } else {
+        if (!is_long(lt)) {            /* the left operand is an int (a constant not emitted yet, or a word under the address of the right one) */
+            if (lc) ins1("const", lval); else ins0("swap");
+            t = new_temp();
+            ins1("laddr", t);
+            lcall(is_unsigned(lt) ? LH_UTOL : LH_ITOL, 2);
+            ins0("drop");
+            ins1("laddr", t);
+            ins0("swap");
+        } else if (!is_long(rt)) {
+            to_long();
+        }
+        un = (is_long(lt) ? tys[lt].un : is_unsigned(lt)) || (is_long(rt) ? tys[rt].un : is_unsigned(rt));
+    }
+    if (is_cmp(op)) {
+        lcall(un ? LH_UCMP : LH_CMP, 2);
+        ins1("const", 0);
+        ins0(opname(op, 0));
+        e_t = T_INTT; e_lv = 0; e_c = 0;
+        return;
+    }
+    t = new_temp();
+    ins1("laddr", t);
+    lcall(long_op_id(op, un), 3);
+    ins0("drop");
+    ins1("laddr", t);
+    e_t = un ? T_ULONGT : T_LONGT; e_lv = 1; e_c = 0;
+}
+
 /* op: the operator; the left operand is a constant (lc, lval) or on the stack; the right one is in e_* (rvalue'd, not forced) */
 static void binary(u16 op, u8 lc, int lval, u16 lt)
 {
@@ -546,6 +728,7 @@ static void binary(u16 op, u8 lc, int lval, u16 lt)
     u8 un;
     u8 ok;
     int v;
+    if (is_long(lt) || is_long(rt)) { long_binary(op, lc, lval, lt); return; }
     if (is_agg(lt) || is_agg(rt)) { err("a structure in an expression"); return; }
     if (op == '+' && (lp || rp)) {
         if (lp && rp) { err("two pointers added"); return; }
@@ -693,7 +876,7 @@ static u16 enum_spec(void)
 /* the specifiers of a declaration; storage: 1 typedef 2 static 4 extern */
 static u16 parse_declspec(u8 *storage)
 {
-    u8 un = 0, sg = 0, ch_ = 0, in_ = 0, vd = 0, sh = 0;
+    u8 un = 0, sg = 0, ch_ = 0, in_ = 0, vd = 0, sh = 0, lg = 0;
     u16 t = 0;
     *storage = 0;
     for (;;) {
@@ -707,10 +890,10 @@ static u16 parse_declspec(u8 *storage)
         else if (tok == K_INT) in_ = 1;
         else if (tok == K_SHORT) sh = 1;
         else if (tok == K_VOID) vd = 1;
-        else if (tok == K_LONG) { err("long is not supported"); in_ = 1; }
+        else if (tok == K_LONG) lg = 1;
         else if (tok == K_STRUCT || tok == K_UNION) { u8 u = tok == K_UNION; next(); t = struct_spec(u); continue; }
         else if (tok == K_ENUM) { next(); t = enum_spec(); continue; }
-        else if (tok == T_ID && !t && !un && !sg && !ch_ && !in_ && !vd && !sh) {
+        else if (tok == T_ID && !t && !un && !sg && !ch_ && !in_ && !vd && !sh && !lg) {
             sym_t *s = find_sym(toks);
             if (s && s->cls == C_TYPEDEF) t = s->ty; else break;
         } else break;
@@ -719,6 +902,7 @@ static u16 parse_declspec(u8 *storage)
     (void)sg;
     if (t) return t;
     if (vd) return T_VOIDT;
+    if (lg) return un ? T_ULONGT : T_LONGT;
     if (ch_) return un ? T_UCHART : T_CHART;
     if (in_ || sh || un || sg) return un ? T_UINTT : T_INTT;
     return T_INTT;      /* a declaration without a type is an int (K&R) */
@@ -890,7 +1074,20 @@ static void string_literal(void)
 static void primary(void)
 {
     e_c = 0; e_lv = 0; e_fn = 0;
-    if (tok == T_NUM) {
+    if (tok == T_NUM && (toklong || tokvh)) {
+        u16 n = ++nstat;
+        char nm[8];
+        u8 k = 0, m = 0;
+        char d[6];
+        w_puts(&sf, ".data S"); w_num(&sf, n); w_puts(&sf, " local\n.w "); w_num(&sf, (int)tokvh); w_putc(&sf, ','); w_num(&sf, tokv); w_puts(&sf, "\n.end\n");
+        nm[k++] = 'S';
+        do { d[m++] = (char)('0' + n % 10); n /= 10; } while (n);
+        while (m) nm[k++] = d[--m];
+        nm[k] = 0;
+        insaddr(nm, 0);
+        e_t = tokun ? T_ULONGT : T_LONGT; e_lv = 1;
+        next();
+    } else if (tok == T_NUM) {
         e_c = 1; e_v = tokv;
         e_t = (tokun || (tokv >= 32768 || tokv < -32768)) ? T_UINTT : T_INTT;
         next();
@@ -949,7 +1146,7 @@ static void call(void)
     u16 rt;
     int fn = e_fn;
     u16 ft = e_t;
-    u8 n = 0;
+    u8 n = 0, extra = 0;          /* extra: the second word of each long argument */
     u16 seg_s[10], seg_e[10];
     u16 base, i;
     u8 outer = to_arena;
@@ -974,6 +1171,7 @@ static void call(void)
             parse_assign();
             if (is_agg(e_t)) err("a structure as an argument");
             rv();
+            if (is_long(e_t)) { ins0("dup"); ins1("const", 2); ins0("add"); ins0("load.w"); ins0("swap"); ins0("load.w"); extra++; }     /* a long: its 2 words */
             seg_e[n] = alen;
             n++;
             if (tok == ',') next(); else break;
@@ -1006,12 +1204,21 @@ static void call(void)
         put("\tcall ");
         put(gsyms[fn - 1].name);
         put(" ");
-        putn(n);
+        putn(n + extra);
         put("\n");
     } else {
-        ins1("calli", n);
+        ins1("calli", n + extra);
     }
     e_t = rt; e_lv = 0; e_c = 0; e_fn = 0;
+    if (is_long(rt)) {            /* the function leaves a long in __lret: it is copied into a temporary */
+        u16 t = new_temp();
+        ins0("drop");
+        ins1("laddr", t);
+        lh_used[LH_RET] = 1;
+        insaddr("__lret", 0);
+        ins1("copy", 4);
+        e_lv = 1;
+    }
 }
 
 static u8 stmt_top;         /* set at the start of an expression statement: the leftmost operand may be x++ with an unused value */
@@ -1024,6 +1231,19 @@ static void incdec(u16 op, u8 post, u8 unused)
     const char *opn = op == T_INC ? "add" : "sub";
     u8 byte = tys[t].k == TK_CHAR;
     if (!e_lv || tys[t].k == TK_ARR || is_agg(t)) { err("++ or -- needs a variable"); return; }
+    if (is_long(t)) {
+        int d = op == T_INC ? 1 : -1;
+        if (post && !unused) {
+            u16 tmp = new_temp();
+            ins0("dup"); ins1("laddr", tmp); ins0("swap"); ins1("copy", 4); ins0("drop");
+            ins1("const", d); ins0("swap"); lcall(LH_INC, 2); ins0("drop");
+            ins1("laddr", tmp);
+        } else {
+            ins0("dup"); ins1("const", d); ins0("swap"); lcall(LH_INC, 2); ins0("drop");
+        }
+        e_lv = 1; e_c = 0;
+        return;
+    }
     if (is_ptr(t)) sz = pointee(t);
     if (post && !unused && !byte) {
         ins1("postinc", op == T_INC ? (int)sz : -(int)sz);     /* ( a -- old ): the word at a is changed, its old value stays */
@@ -1119,6 +1339,17 @@ static void parse_unary(void)
         parse_cast();
         rvalue();
         if (op == '+') return;
+        if (is_long(e_t)) {
+            u16 t;
+            if (op == '!') { lcall(LH_NZ, 1); e_t = T_INTT; e_lv = 0; ins0("not"); return; }
+            t = new_temp();
+            ins1("laddr", t);
+            lcall(op == '-' ? LH_NEG : LH_COM, 2);
+            ins0("drop");
+            ins1("laddr", t);
+            e_lv = 1;
+            return;
+        }
         if (e_c) {
             if (op == '-') e_v = -e_v;
             else if (op == '~') e_v = ~e_v;
@@ -1205,6 +1436,12 @@ static void parse_cast(void)
             expect(')', "missing ) of the cast");
             parse_cast();
             rvalue();
+            if (is_long(t)) {
+                to_long();
+                e_t = t;
+                return;
+            }
+            if (is_long(e_t)) long_to_int();
             if (tys[t].k == TK_CHAR) {
                 if (e_c) e_v = tys[t].un ? (e_v & 255) : (int)(s8)e_v;
                 else ins0(tys[t].un ? "zx" : "sx");
@@ -1260,12 +1497,12 @@ static void parse_logand(void)
     parse_bin(0);
     if (tok == T_ANDAND) {
         u16 lf = ++nlab, le = ++nlab;
-        rv();
+        truth();
         insl("jz", lf);
         while (tok == T_ANDAND) {
             next();
             parse_bin(0);
-            rv();
+            truth();
             insl("jz", lf);
         }
         ins1("const", 1);
@@ -1282,12 +1519,12 @@ static void parse_logor(void)
     parse_logand();
     if (tok == T_OROR) {
         u16 lt = ++nlab, le = ++nlab;
-        rv();
+        truth();
         insl("jnz", lt);
         while (tok == T_OROR) {
             next();
             parse_logand();
-            rv();
+            truth();
             insl("jnz", lt);
         }
         ins1("const", 0);
@@ -1305,7 +1542,7 @@ static void parse_cond(void)
     if (tok == '?') {
         u16 lf = ++nlab, le = ++nlab;
         u16 t1, t2;
-        rv();
+        truth();
         insl("jz", lf);
         next();
         parse_expr();
@@ -1320,6 +1557,8 @@ static void parse_cond(void)
         deflabel(le);
         e_t = is_ptr(t1) ? t1 : is_ptr(t2) ? t2 : (is_unsigned(t1) || is_unsigned(t2)) ? T_UINTT : T_INTT;
         e_c = 0; e_lv = 0;
+        if (is_long(t1) && is_long(t2)) { e_t = t1; e_lv = 1; }
+        else if (is_long(t1) || is_long(t2)) err("a long and an int in ?: (use a cast)");
     }
 }
 
@@ -1328,7 +1567,7 @@ static void cond_and(u16 lf)
 {
     for (;;) {
         parse_bin(0);
-        rv();
+        truth();
         insl("jz", lf);
         if (tok == T_ANDAND) { next(); continue; }
         break;
@@ -1344,12 +1583,12 @@ static void condition(u16 lf)
         /* the first operand is parsed already: finish with the loops of cond_and and cond_or by hand */
         u16 lt = 0;
         u16 ln = ++nlab;
-        rv();
+        truth();
         insl("jz", ln);
         while (tok == T_ANDAND) {
             next();
             parse_bin(0);
-            rv();
+            truth();
             insl("jz", ln);
         }
         while (tok == T_OROR) {
@@ -1366,7 +1605,7 @@ static void condition(u16 lf)
     }
     if (tok == '=' || (tok >= T_ADDEQ && tok <= T_SHREQ)) assign_tail();
     else if (tok == '?') err("?: at the top of a condition needs parentheses");
-    rv();
+    truth();
     insl("jz", lf);
 }
 
@@ -1380,6 +1619,13 @@ static void assign_op(u16 op)
     if (op == '=') {
         parse_assign();
         rvalue();
+        if (is_long(lt)) {
+            to_long();
+            ins1("copy", 4);
+            e_t = lt; e_lv = 1; e_c = 0;
+            return;
+        }
+        if (is_long(e_t)) long_to_int();
         if (is_agg(lt)) {
             if (!is_agg(e_t) || tys[e_t].size != tys[lt].size) { err("incompatible structures"); return; }
             ins1("copy", (int)tys[lt].size);
@@ -1393,6 +1639,18 @@ static void assign_op(u16 op)
         u16 lt2;
         int lval;
         if (is_agg(lt)) { err("a structure in a compound assignment"); return; }
+        if (is_long(lt)) {                 /* L op= x : a = L, b = x, d = L */
+            u8 shift = op == T_SHL || op == T_SHR;
+            ins0("dup");
+            parse_assign();
+            rvalue();
+            if (shift) { if (is_long(e_t)) long_to_int(); force(); } else to_long();
+            ins0("swap");
+            lcall(long_op_id(op, tys[lt].un), 3);
+            ins0("drop");
+            e_t = lt; e_lv = 1; e_c = 0;
+            return;
+        }
         ins0("dup");
         ins0(byte ? (tys[lt].un ? "load.ub" : "load.b") : "load.w");
         lt2 = byte ? T_INTT : lt;
@@ -1400,6 +1658,7 @@ static void assign_op(u16 op)
         parse_assign();
         rvalue();
         binary(op, lc, lval, lt2);
+        if (is_long(e_t)) long_to_int();
         force();
         ins0(byte ? "store.b" : "store.w");
     }
@@ -1436,7 +1695,6 @@ static void parse_expr(void)
 }
 
 /* ---------------------------------------------------------------- declarations of variables and functions */
-static u16 fp, maxfp;          /* the frame: bytes used now, at most */
 static u16 frame_patch;        /* where in the output the size of the frame of this function is written */
 static u16 cur_ret;
 static const char *curfn;
@@ -1462,12 +1720,24 @@ static void init_scalar(wfile *f, u16 t)
 {
     u16 save = alen;
     u8 sv = to_arena;
+    if (is_long(t) && (tok == T_NUM || (tok == '-' && peek() == T_NUM))) {      /* a long constant */
+        u16 hi, lo;
+        u8 neg = tok == '-';
+        if (neg) next();
+        hi = tokvh; lo = (u16)tokv;
+        if (neg) { lo = (u16)(~lo + 1); hi = (u16)(~hi + (lo == 0)); }
+        w_puts(f, ".w "); w_num(f, (int)hi); w_putc(f, ','); w_num(f, (int)lo); w_putc(f, '\n');
+        next();
+        return;
+    }
     to_arena = 1;
     parse_assign();
     rvalue();
     to_arena = sv;
     if (e_c) {
-        w_puts(f, tys[t].size == 1 ? ".b " : ".w ");
+        if (is_long(t)) {
+            w_puts(f, ".w "); w_num(f, e_v < 0 && !is_unsigned(e_t) ? -1 : 0); w_putc(f, ',');
+        } else w_puts(f, tys[t].size == 1 ? ".b " : ".w ");
         w_num(f, e_v);
         w_putc(f, '\n');
     } else {
@@ -1660,9 +1930,17 @@ static void local_init(u16 off, u16 t)
         if (tok == '{') { br = 1; next(); }
         ins1("laddr", off);
         parse_assign();
-        rv();
-        ins0(tys[t].k == TK_CHAR ? "store.b" : "store.w");
-        ins0("drop");
+        if (is_long(t)) {
+            rvalue();
+            to_long();
+            ins1("copy", 4);
+            ins0("drop");
+        } else {
+            rv();
+            if (is_long(e_t)) long_to_int();
+            ins0(tys[t].k == TK_CHAR ? "store.b" : "store.w");
+            ins0("drop");
+        }
         if (br) { if (tok == ',') next(); expect('}', "missing }"); }
     }
 }
@@ -1760,6 +2038,7 @@ static u16 user_label(const char *n)
 
 static void expr_statement(void)
 {
+    tmp_used = 0;
     stmt_top = 1;
     parse_expr();
     stmt_top = 0;
@@ -1785,6 +2064,7 @@ static void block(void)
 
 static void statement(void)
 {
+    tmp_used = 0;
     switch (tok) {
     case ';': next(); return;
     case '{': block(); return;
@@ -1831,7 +2111,7 @@ static void statement(void)
         next();
         expect('(', "missing (");
         parse_expr();
-        rv();
+        truth();
         insl("jnz", lt);
         expect(')', "missing )");
         expect(';', "missing ;");
@@ -1949,7 +2229,19 @@ static void statement(void)
         next();
         if (tok != ';') {
             parse_expr();
-            rv();
+            rvalue();
+            if (is_long(fn_ret)) {          /* a long goes to __lret */
+                to_long();
+                lh_used[LH_RET] = 1;
+                insaddr("__lret", 0);
+                ins0("swap");
+                ins1("copy", 4);
+                ins0("drop");
+                ins1("const", 0);
+            } else {
+                if (is_long(e_t)) long_to_int();
+                force();
+            }
         } else ins1("const", 0);
         ins0("ret");
         expect(';', "missing ;");
@@ -1990,11 +2282,12 @@ static void function_body(const char *name, u16 ft, u8 isstatic)
     char pn[8][NAMEMAX + 1];
     u16 pt[8];
     for (i = 0; i < np; i++) { strcpy(pn[i], pnames[i]); pt[i] = ptypes[i]; }
-    (void)ft;
+    u16 slot = 0;
+    fn_ret = tys[ft].base;
     nlsym = 0;
     fp = 0; maxfp = 0;
     nloop = 0; ncase = 0; sw_depth = 0; nlabn = 0;
-    for (i = 0; i < np; i++) new_local(pn[i], C_PARAM, pt[i], (int)i);
+    for (i = 0; i < np; i++) { new_local(pn[i], C_PARAM, pt[i], (int)slot); slot = (u16)(slot + (is_long(pt[i]) ? 2 : 1)); }
     curfn = name;
     w_puts(&ir, ".func ");
     w_puts(&ir, name);
@@ -2118,9 +2411,11 @@ int main(int argc, char **argv)
     tys[T_UCHART].k = TK_CHAR; tys[T_UCHART].size = 1; tys[T_UCHART].un = 1;
     tys[T_INTT].k = TK_INT; tys[T_INTT].size = 2;
     tys[T_UINTT].k = TK_INT; tys[T_UINTT].size = 2; tys[T_UINTT].un = 1;
+    tys[T_LONGT].k = TK_LONG; tys[T_LONGT].size = 4;
+    tys[T_ULONGT].k = TK_LONG; tys[T_ULONGT].size = 4; tys[T_ULONGT].un = 1;
     nextch();
     line = 1;
-    if (ch == '#') { read_marker(); line++; }
+    if (ch == '#') read_marker();
     next();
     while (tok != T_EOF && errors < 20) external_decl();
     /* undefined functions and variables that were used */
@@ -2131,6 +2426,8 @@ int main(int argc, char **argv)
             w_putc(&ir, '\n');
         }
     }
+    for (i = 0; i < LH_N; i++)
+        if (lh_used[i]) { w_puts(&ir, ".extern "); w_puts(&ir, lh_name[i]); w_putc(&ir, '\n'); }
     w_close(&df);
     w_close(&sf);
     r_close(&in);

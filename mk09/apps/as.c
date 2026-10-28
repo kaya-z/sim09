@@ -52,7 +52,8 @@ static int rd(void *b, int n) { return read(fin, b, n); }
 static int wr(const void *b, int n) { return write(fout, b, n); }
 #endif
 
-#define NSYM    520
+#define NSYM    640
+#define NPOOL   6400            /* the characters of the names */
 #define NHASH   64
 #define NREL    1700
 #define LINEMAX 128
@@ -63,13 +64,15 @@ static int wr(const void *b, int n) { return write(fout, b, n); }
 #define F_REL 2     /* the value is an address of the program */
 #define F_BSS 4     /* the address is in the bss: the size of the image is added when it is known */
 typedef struct sym {
-    char name[NAMEMAX + 1];
+    u16  name;      /* offset in npool */
     int  val;
     u16  defline;
     u8   flags;
     u16  next;      /* index + 1 of the next symbol with the same hash, 0 = end */
 } sym_t;
 static sym_t syms[NSYM];
+static char npool[NPOOL];
+static u16 nplen;
 static u16 hashtab[NHASH];
 static u16 nsym;
 
@@ -85,11 +88,13 @@ static int lookup(const char *n, u8 create)
     u8 h = hashof(n);
     u16 i = hashtab[h];
     while (i) {
-        if (!strcmp(syms[i - 1].name, n)) return i - 1;
+        if (!strcmp(npool + syms[i - 1].name, n)) return i - 1;
         i = syms[i - 1].next;
     }
-    if (!create || nsym >= NSYM) return -1;
-    strcpy(syms[nsym].name, n);
+    if (!create || nsym >= NSYM || nplen + strlen(n) + 1 > NPOOL) return -1;
+    syms[nsym].name = nplen;
+    strcpy(npool + nplen, n);
+    nplen += (u16)strlen(n) + 1;
     syms[nsym].flags = 0;
     syms[nsym].val = 0;
     syms[nsym].defline = 0;
@@ -978,8 +983,9 @@ static void print_symbols(void)
 {
     u16 i;
     for (i = 0; i < nsym; i++) {
-        if (syms[i].name[0] == '@' || (syms[i].name[0] == '_' && syms[i].name[1] == '_')) continue;
-        LOG("%04x %c %s\n", (u16)(syms[i].val + ((syms[i].flags & F_BSS) ? imgend : 0)), (syms[i].flags & F_REL) ? 'A' : ' ', syms[i].name);
+        char *nm = npool + syms[i].name;
+        if (nm[0] == '@' || (nm[0] == '_' && nm[1] == '_')) continue;
+        LOG("%04x %c %s\n", (u16)(syms[i].val + ((syms[i].flags & F_BSS) ? imgend : 0)), (syms[i].flags & F_REL) ? 'A' : ' ', nm);
     }
 }
 

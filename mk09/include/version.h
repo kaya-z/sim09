@@ -34,11 +34,14 @@
  *   1.9  2026-10-27  the C compiler, second step: JBxx branches in as (short when the label is near, found by repeating pass 1), cg uses them and the
  *                    flags that a load has set; a fault in cg (a push between a comparison and its branch); the headers (stdio string stdlib ctype stdarg
  *                    stddef mklib in /INC) and a bigger library (sprintf, strings, ctype, malloc, qsort, rand, seek, unlink, mkdir, chdir ...).
+ *   1.10 2026-10-28  the C compiler, third step: FILE (fopen fclose fgetc fputc fgets fputs fread fwrite fseek ftell fprintf ...), `long` (32 bits, as objects
+ *                    in memory whose operations are library calls), postinc (`*p++` is one load or store with ldb ,x+), the error messages of cc1 in
+ *                    /LIB/CC1.MSG (tools/msgsplit.py), the symbol names of as in a pool (640 symbols).
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.9"
+#define MK09_VERSION    "1.10"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

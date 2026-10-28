@@ -333,7 +333,36 @@ static void __putnum(unsigned v, unsigned base, int width, int zero, int left, i
 {
     char t[8];
     int n = 0, i;
+    if (neg && zero && !left) { __out('-'); width--; neg = 0; }       /* (the sign comes before the zeros) */
     do { t[n++] = "0123456789abcdef"[v % base]; v /= base; } while (v);
+    if (neg) t[n++] = '-';
+    if (!left) for (i = n; i < width; i++) __out(zero ? '0' : ' ');
+    i = n;
+    while (n) __out(t[--n]);
+    if (left) for (; i < width; i++) __out(' ');
+}
+
+static void __putlong(unsigned hi, unsigned lo, unsigned base, int width, int zero, int left, int neg)
+{
+    char t[12];
+    int n = 0, i;
+    unsigned r, qh, ql;
+    if (neg && zero && !left) { __out('-'); width--; neg = 0; }
+    while (hi | lo) {                  /* (hi:lo) / base, base <= 16 */
+        qh = hi / base;
+        r = hi % base;
+        ql = 0;
+        for (i = 0; i < 16; i++) {
+            r = (r << 1) | (lo >> 15);
+            lo <<= 1;
+            ql <<= 1;
+            if (r >= base) { r -= base; ql |= 1; }
+        }
+        hi = qh;
+        lo = ql;
+        t[n++] = "0123456789abcdef"[r];
+    }
+    if (!n) t[n++] = '0';
     if (neg) t[n++] = '-';
     if (!left) for (i = n; i < width; i++) __out(zero ? '0' : ' ');
     i = n;
@@ -345,14 +374,21 @@ static void __fmt(char *fmt, int *ap)
 {
     char c;
     while (c = *fmt++) {
-        int width = 0, zero = 0, left = 0, n, len;
+        int width = 0, zero = 0, left = 0, n, len, lg = 0;
+        unsigned hi, lo;
         char *s;
         if (c != '%') { __out(c); continue; }
         for (;; fmt++) { if (*fmt == '-') left = 1; else if (*fmt == '0') zero = 1; else break; }
         while (*fmt >= '0' && *fmt <= '9') width = width * 10 + *fmt++ - '0';
-        if (*fmt == 'l') fmt++;
+        if (*fmt == 'l') { fmt++; lg = 1; }
         c = *fmt++;
-        if (c == 'd') {
+        if (lg && (c == 'd' || c == 'u' || c == 'x')) {          /* a long: 2 words, the high one first */
+            hi = *ap++;
+            lo = *ap++;
+            n = 0;
+            if (c == 'd' && (hi & 0x8000)) { lo = ~lo + 1; hi = ~hi + (lo == 0); n = 1; }
+            __putlong(hi, lo, c == 'x' ? 16 : 10, width, zero, left, n);
+        } else if (c == 'd') {
             n = *ap++;
             if (n < 0) __putnum(-n, 10, width, zero, left, 1); else __putnum(n, 10, width, zero, left, 0);
         } else if (c == 'u') __putnum(*ap++, 10, width, zero, left, 0);
@@ -591,6 +627,189 @@ void qsort(char *base, unsigned n, unsigned size, int (*cmp)(char *, char *))
                 base[j * size + k] = t;
             }
 }
+
+/* ---------------------------------------------------------------- long: 4 bytes, the high word first.  The compiler calls these with the addresses of the
+ * operands (docs/IR.md): __ladd(d, b, a) is  *d = *a + *b;  a function that returns a long leaves it in __lret */
+typedef struct { unsigned hi, lo; } __L;
+__L __lret;
+
+void __itol(__L *d, int v) { d->lo = v; d->hi = v < 0 ? 65535 : 0; }
+void __utol(__L *d, unsigned v) { d->lo = v; d->hi = 0; }
+
+void __ladd(__L *d, __L *b, __L *a)
+{
+    unsigned lo = a->lo + b->lo;
+    unsigned hi = a->hi + b->hi + (lo < a->lo);
+    d->hi = hi;
+    d->lo = lo;
+}
+
+void __lsub(__L *d, __L *b, __L *a)
+{
+    unsigned lo = a->lo - b->lo;
+    unsigned hi = a->hi - b->hi - (a->lo < b->lo);
+    d->hi = hi;
+    d->lo = lo;
+}
+
+void __land(__L *d, __L *b, __L *a) { d->hi = a->hi & b->hi; d->lo = a->lo & b->lo; }
+void __lor(__L *d, __L *b, __L *a) { d->hi = a->hi | b->hi; d->lo = a->lo | b->lo; }
+void __lxor(__L *d, __L *b, __L *a) { d->hi = a->hi ^ b->hi; d->lo = a->lo ^ b->lo; }
+
+void __lneg(__L *d, __L *a)
+{
+    unsigned lo = ~a->lo + 1;
+    unsigned hi = ~a->hi + (lo == 0);
+    d->hi = hi;
+    d->lo = lo;
+}
+
+void __lcom(__L *d, __L *a) { d->hi = ~a->hi; d->lo = ~a->lo; }
+int __lnz(__L *a) { return (a->hi | a->lo) != 0; }
+
+int __lcmp(__L *b, __L *a)
+{
+    if (a->hi != b->hi) return (int)a->hi < (int)b->hi ? -1 : 1;
+    if (a->lo != b->lo) return a->lo < b->lo ? -1 : 1;
+    return 0;
+}
+
+int __lucmp(__L *b, __L *a)
+{
+    if (a->hi != b->hi) return a->hi < b->hi ? -1 : 1;
+    if (a->lo != b->lo) return a->lo < b->lo ? -1 : 1;
+    return 0;
+}
+
+void __linc(__L *p, int delta)
+{
+    if (delta > 0) { p->lo++; if (!p->lo) p->hi++; }
+    else { if (!p->lo) p->hi--; p->lo--; }
+}
+
+void __lshl(__L *d, int n, __L *a)
+{
+    unsigned hi = a->hi, lo = a->lo;
+    if (n > 32) n = 32;
+    while (n-- > 0) { hi = (hi << 1) | (lo >> 15); lo <<= 1; }
+    d->hi = hi;
+    d->lo = lo;
+}
+
+void __lushr(__L *d, int n, __L *a)
+{
+    unsigned hi = a->hi, lo = a->lo;
+    if (n > 32) n = 32;
+    while (n-- > 0) { lo = (lo >> 1) | (hi << 15); hi >>= 1; }
+    d->hi = hi;
+    d->lo = lo;
+}
+
+void __lshr(__L *d, int n, __L *a)
+{
+    unsigned hi = a->hi, lo = a->lo;
+    if (n > 32) n = 32;
+    while (n-- > 0) { lo = (lo >> 1) | (hi << 15); hi = (hi >> 1) | (hi & 0x8000); }
+    d->hi = hi;
+    d->lo = lo;
+}
+
+/* 16 x 16 -> 32 bits with 8 bit pieces */
+static void __mul16(unsigned x, unsigned y, unsigned *hi, unsigned *lo)
+{
+    unsigned x0 = x & 255, x1 = x >> 8, y0 = y & 255, y1 = y >> 8;
+    unsigned p00 = x0 * y0, p01 = x0 * y1, p10 = x1 * y0, p11 = x1 * y1;
+    unsigned mid = p01 + p10;
+    unsigned c = mid < p01;
+    unsigned l = p00 + (mid << 8);
+    *hi = p11 + (mid >> 8) + (l < p00) + (c << 8);
+    *lo = l;
+}
+
+void __lmul(__L *d, __L *b, __L *a)
+{
+    unsigned h, l;
+    unsigned ah = a->hi, al = a->lo, bh = b->hi, bl = b->lo;
+    __mul16(al, bl, &h, &l);
+    h += ah * bl + al * bh;
+    d->hi = h;
+    d->lo = l;
+}
+
+/* unsigned division: q = n / d, r = n % d (a division by 0 gives 0 and 0) */
+static void __udm(__L *q, __L *r, __L *n, __L *d)
+{
+    unsigned qh = n->hi, ql = n->lo, rh = 0, rl = 0, dh = d->hi, dl = d->lo, top;
+    int i;
+    if (!(dh | dl)) { q->hi = 0; q->lo = 0; r->hi = 0; r->lo = 0; return; }
+    for (i = 0; i < 32; i++) {
+        top = rh & 0x8000;
+        rh = (rh << 1) | (rl >> 15);
+        rl = (rl << 1) | (qh >> 15);
+        qh = (qh << 1) | (ql >> 15);
+        ql <<= 1;
+        if (top || rh > dh || (rh == dh && rl >= dl)) {
+            top = rl < dl;
+            rl -= dl;
+            rh = rh - dh - top;
+            ql |= 1;
+        }
+    }
+    q->hi = qh; q->lo = ql;
+    r->hi = rh; r->lo = rl;
+}
+
+void __ludiv(__L *d, __L *b, __L *a)
+{
+    __L q, r;
+    __udm(&q, &r, a, b);
+    d->hi = q.hi; d->lo = q.lo;
+}
+
+void __lumod(__L *d, __L *b, __L *a)
+{
+    __L q, r;
+    __udm(&q, &r, a, b);
+    d->hi = r.hi; d->lo = r.lo;
+}
+
+void __ldiv(__L *d, __L *b, __L *a)
+{
+    __L x, y, q, r;
+    int neg = 0;
+    x.hi = a->hi; x.lo = a->lo;
+    y.hi = b->hi; y.lo = b->lo;
+    if ((int)x.hi < 0) { __lneg(&x, &x); neg = 1; }
+    if ((int)y.hi < 0) { __lneg(&y, &y); neg ^= 1; }
+    __udm(&q, &r, &x, &y);
+    if (neg) __lneg(&q, &q);
+    d->hi = q.hi; d->lo = q.lo;
+}
+
+void __lmod(__L *d, __L *b, __L *a)
+{
+    __L x, y, q, r;
+    int neg = 0;
+    x.hi = a->hi; x.lo = a->lo;
+    y.hi = b->hi; y.lo = b->lo;
+    if ((int)x.hi < 0) { __lneg(&x, &x); neg = 1; }
+    if ((int)y.hi < 0) __lneg(&y, &y);
+    __udm(&q, &r, &x, &y);
+    if (neg) __lneg(&r, &r);
+    d->hi = r.hi; d->lo = r.lo;
+}
+
+long atol(char *s)
+{
+    long n = 0;
+    int neg = 0;
+    while (isspace(*s)) s++;
+    if (*s == '-') { neg = 1; s++; } else if (*s == '+') s++;
+    while (isdigit(*s)) n = n * 10 + (*s++ - '0');
+    return neg ? -n : n;
+}
+
+long labs(long v) { return v < 0 ? -v : v; }
 
 /* ---------------------------------------------------------------- the start of a program (called by start.s with the start-up block of PM) */
 void mk_start(char *blk)

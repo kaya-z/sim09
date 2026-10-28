@@ -112,9 +112,11 @@ int sum(int n) { int i, s = 0; for (i = 1; i <= n; i++) s += i; return s; }
 
 ## 6. C の部分集合 (`cc1`)
 
-`char` `int` `unsigned` `signed` `short` (int と同じ) `void`、ポインタ、配列、`struct` `union` `enum` `typedef`、関数ポインタ、`static` `extern` `const` (読み飛ばす)、
+`char` `int` `unsigned` `signed` `short` (int と同じ) `long` (32 ビット) `void`、ポインタ、配列、`struct` `union` `enum` `typedef`、関数ポインタ、`static` `extern` `const` (読み飛ばす)、
 `sizeof`、キャスト、`?:` `&&` `||` `,`、代入と複合代入、`++` `--`、`if` `while` `do` `for` `switch` `break` `continue` `goto` `return`、初期化子 (配列、構造体、文字列)、文字列の連結、
 前処理 (`#include` `#define` (名前だけと関数形式) `#undef` `#if` `#ifdef` `#ifndef` `#else` `#elif` `#endif`)。
 
-**ない**もの: `long` `float` `double`、ビットフィールド、K&R 形式の関数定義、構造体を値で渡す・返すこと (代入はできる)、`#` と `##`、可変個の引数を持つマクロ。
-名前は 14 文字までが有効。
+**ない**もの: `float` `double`、ビットフィールド、K&R 形式の関数定義、構造体を値で渡す・返すこと (代入はできる)、`#` と `##`、可変個の引数を持つマクロ。
+名前は 15 文字までが有効。
+
+`long` はこの IR の命令にはない。4 バイトのメモリの対象で、演算は関数の呼び出し (`__ladd` ... [DESIGN.md](DESIGN.md) 17.3)。`postinc` は 3 章。

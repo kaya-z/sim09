@@ -121,7 +121,7 @@ STACK_jwp := 1200
 STACK_basic := 1500
 STACK_as := 700
 STACK_cpp := 4000
-STACK_cc1 := 2300
+STACK_cc1 := 2100
 STACK_cg := 1500
 $(B)/as.o: apps/as_text.h
 OBJS_basic := $(B)/sfpa.o
@@ -171,15 +171,21 @@ $(B)/skk_$(CHARSET).dic: ../tools/mkskkdic.py $(SKKJISYO)
 	$(PYTHON) ../tools/mkskkdic.py -e $(CHARSET) -b $(SKK_KB) -o $@ $(SKKJISYO)
 
 # the library of the C compiler: assembler text made by the PC builds of cpp, cc1 and cg (-DCC_HOST), put on the disk in /LIB
+# cc1 does not fit in the transient area with its error messages: they are taken out (tools/msgsplit.py) into /LIB/CC1.MSG
+$(B)/cc1_t.c $(B)/cc1.msg: apps/cc1.c tools/msgsplit.py | $(B)
+	$(PYTHON) tools/msgsplit.py apps/cc1.c $(B)/cc1_t.c $(B)/cc1.msg
+$(B)/cc1.o: $(B)/cc1_t.c apps/ccio.h $(HDRS)
+	$(CMOC) -c $(CFLAGS) -DMSGS -Iapps -o $@ $<
+
 $(B)/host_%: apps/%.c apps/ccio.h | $(B)
 	gcc -DCC_HOST -O1 -w -Iapps -o $@ $<
 $(B)/clib.s: lib/cc/clib.c $(B)/host_cpp $(B)/host_cc1 $(B)/host_cg
 	cd $(B) && ./host_cpp ../lib/cc/clib.c -o clib.i && ./host_cc1 clib.i -o clib.ir && ./host_cg -pl clib.ir -o clib.s
 
 TREE := $(B)/tree
-$(B)/tree.stamp: $(foreach a,$(APPS),$(B)/$(a).mx) $(wildcard disk/etc/* disk/doc/* disk/bas/* disk/asm/* disk/inc/*) $(if $(HAVE_SKK),$(B)/skk_$(CHARSET).dic) $(B)/clib.s lib/cc/start.s lib/cc/rt.s Makefile
+$(B)/tree.stamp: $(foreach a,$(APPS),$(B)/$(a).mx) $(wildcard disk/etc/* disk/doc/* disk/bas/* disk/asm/* disk/inc/*) $(if $(HAVE_SKK),$(B)/skk_$(CHARSET).dic) $(B)/clib.s $(B)/cc1.msg lib/cc/start.s lib/cc/rt.s Makefile
 	rm -rf $(TREE); mkdir -p $(TREE)/bin $(TREE)/etc $(TREE)/doc $(TREE)/bas $(TREE)/asm $(TREE)/inc $(TREE)/lib $(TREE)/skk
-	cp lib/cc/start.s $(TREE)/lib/start.s; cp $(B)/clib.s $(TREE)/lib/clib.s; cp lib/cc/rt.s $(TREE)/lib/rt.s
+	cp lib/cc/start.s $(TREE)/lib/start.s; cp $(B)/cc1.msg $(TREE)/lib/cc1.msg; cp $(B)/clib.s $(TREE)/lib/clib.s; cp lib/cc/rt.s $(TREE)/lib/rt.s
 	for a in $(APPS); do cp $(B)/$$a.mx $(TREE)/bin/$$a.mx; done
 	for d in etc doc bas asm inc; do if [ -d disk/$$d ] && [ -n "$$(ls disk/$$d)" ]; then cp disk/$$d/* $(TREE)/$$d/; fi; done
 	printf '# /ETC/RC.SH - run by the shell when the system starts\nstty $(CHARSET)\n' > $(TREE)/etc/rc.sh

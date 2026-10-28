@@ -1189,8 +1189,8 @@ static void prescan(void)
  * The assembler text of a program is  start code + the code of the program + the routines of the library that it needs.  The library files
  * (/LIB/CLIB.S, /LIB/RT.S) are in blocks: one or more lines ;@def name, then the text, up to the next ;@def after some text.  A ;@use name or ;@ext name line
  * says that the text uses a name.  The blocks that define a needed name are copied; their own needs are looked for in turn. */
-#define NNAME   150
-#define POOL    2200
+#define NNAME   260
+#define POOL    3800
 #define NLIB    2
 static char *libs[NLIB] = { "/LIB/CLIB.S", "/LIB/RT.S" };
 static char pool[POOL];

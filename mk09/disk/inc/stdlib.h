@@ -4,6 +4,8 @@
 void exit(int code);
 int abs(int v);
 int atoi(char *s);
+long atol(char *s);
+long labs(long v);
 int rand(void);                         /* 0..32767 */
 void srand(unsigned seed);
 char *malloc(unsigned n);               /* from a heap of 3000 bytes */

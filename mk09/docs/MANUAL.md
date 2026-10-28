@@ -5,7 +5,7 @@
 
 Copyright (c) 2026 YUKARI Semiconductor Devices
 
-**版: 1.9** (2026-10-27。起動のときの `ver` と同じ)。変更の履歴は [DESIGN.md](DESIGN.md) の 16 章。
+**版: 1.10** (2026-10-28。起動のときの `ver` と同じ)。変更の履歴は [DESIGN.md](DESIGN.md) の 16 章。
 
 MK09 は MC6809 用の小さなマイクロカーネルと、その上で動くコマンド、日本語ワードプロセッサ `jwp` です。**プログラムは、シェルのほかに最大 4 本 (タスクの数とメモリの範囲で) 同時に動かせます** (`コマンド &`)。
 **64KB のメモリだけで動き (MMU は使いません)**、カーネルもプログラムも **SD カードから起動時に読み込まれます**。
@@ -86,7 +86,7 @@ HDMI の画面の文字コードは、ビットストリームを作るときに
 
 ## 2. シェルとコマンド
 
-起動すると、まず `MK09 1.9: kernel TTY DISK FS PM MM` の 1 行 (カードにボリュームがなければもう 1 行) が出ます。続いて `MK09` のロゴと `MC6809 microkernel 1.9 ... type help` という案内が出て、`/> ` というプロンプトが出ます (`/` は今のディレクトリです)。
+起動すると、まず `MK09 1.10: kernel TTY DISK FS PM MM` の 1 行 (カードにボリュームがなければもう 1 行) が出ます。続いて `MK09` のロゴと `MC6809 microkernel 1.10 ... type help` という案内が出て、`/> ` というプロンプトが出ます (`/` は今のディレクトリです)。
 1 行を打って Enter で実行します。行の編集は、BS / DEL で 1 文字 (全角文字は 1 文字)、`^U` で行全体の取り消し、`^D` (行の先頭で) でファイル終わりです。
 
 * **コマンドの探し方**: `名前.MX` を今のディレクトリ、次に `/BIN` から探します。名前に `/` があれば、そのパスのとおりです。
@@ -419,7 +419,7 @@ loop	ldx	#buf		; 名前  命令  オペランド  ; コメント (空白かタ�
 
   fd 0 1 2 は標準入力・標準出力・標準エラー出力です (シェルが `<` `>` `|` で付け替えていれば、そのファイル)。上の関数がしないこと (ディレクトリ、`seek`、`spawn` など) は、
   [SPEC.md](SPEC.md) のメッセージとシステムコール (`SWI`、A = 番号) を直接使います。
-* **大きさ**: `as` は約 40KB (コード 21KB + 表 18KB + スタック 0.7KB) を使うので、ほかのプログラムを同時に走らせる余裕は少なくなります。1 つのソースに、名前が約 500 個、
+* **大きさ**: `as` は約 40KB (コード 21KB + 表 18KB + スタック 0.7KB) を使うので、ほかのプログラムを同時に走らせる余裕は少なくなります。1 つのソースに、名前が約 600 個、
   アドレスが約 1700 個まで。1 行は 128 文字まで。
 
 ### 5.3 C で書く (`cc`)
@@ -437,7 +437,9 @@ cc -S foo.c                        # アセンブラの文 (foo.s) まで
 
 * **言語**: `char` `int` `short` `unsigned` `signed` `void`、ポインタ、配列、`struct` `union` `enum` `typedef`、関数ポインタ、`static` `extern` `sizeof`、キャスト、
   すべての C89 の演算子と文、初期化子 (配列、構造体、文字列)。前処理 (`#include` `#define` 関数形式も、`#if` `#ifdef` ...)。`int` は 16 ビット。
-  **ない**もの: `long` `float` `double`、ビットフィールド、K&R 形式の関数定義、構造体を値で渡す・返すこと、`#` と `##`、名前は 15 文字まで。詳しくは [IR.md](IR.md) の 6 章。
+  `long` (32 ビット。`long int` `unsigned long` `L` `UL` の付いた定数、16 ビットを超える定数。演算はライブラリの呼び出しなので遅い。`printf` は `%ld` `%lu` `%lx`、`atol` `labs`)。
+  **ない**もの: `float` `double`、ビットフィールド、K&R 形式の関数定義、構造体を値で渡す・返すこと、`#` と `##`、`switch` の `long`、名前は 15 文字まで。詳しくは [IR.md](IR.md) の 6 章。
+  エラーのメッセージは `/LIB/CC1.MSG` から読む (`cc1` の大きさのため)。
 * **ヘッダ** (`/INC`。`#include <名前.h>`): `stdio.h` (`printf` `sprintf` `putchar` `puts` `getchar` `readline`、`FILE`: `fopen` `fclose` `fgetc` `fputc` `fgets` `fputs` `fread` `fwrite` `fseek` `ftell` `feof` `fprintf` `fflush` `stdin` `stdout` `stderr`)、`string.h` (`strlen` `strcpy` `strncpy` `strcat` `strcmp` `strncmp` `strchr`
   `strrchr` `strstr` `memcpy` `memmove` `memset` `memcmp`)、`stdlib.h` (`exit` `abs` `atoi` `rand` `srand` `malloc` `free` `calloc` `qsort`)、`ctype.h` (ASCII)、
   `stdarg.h` (`va_list` `va_start` `va_arg` `va_end`: 引数は 2 バイトずつなので、`char` も `va_arg(ap, int)` で読む)、`stddef.h` (`NULL` `size_t`)、
@@ -445,7 +447,7 @@ cc -S foo.c                        # アセンブラの文 (foo.s) まで
   1 つのソースの名前の表が小さい (約 130) ので、使うヘッダだけを入れる。
 * **ライブラリ**: `/LIB/CLIB.S` (上の関数を C で書いたもの) と `/LIB/RT.S` (掛け算・割り算・シフトとシステムコール)。使うものだけが入る。`malloc` は bss の 3000 バイトの領域から取る。
   `printf` は `%d %u %x %c %s %%`、幅、`-` と `0`。`main(argc, argv)` から始まり、`return` の値が終了コード。
-* **大きさ**: 1 つのソースは、名前が約 130 個 (型と構造体のメンバはさらに別の表)、局所変数の領域は関数ごと、式は約 1KB の引数の文字列までです。
+* **大きさ**: 1 つのソースは、グローバルの名前が約 100 個 (関数の宣言も数える。型と構造体のメンバはさらに別の表)、局所変数の領域は関数ごと、1 回の呼び出しの引数は約 650 文字の IR までです。
   コンパイルは速くありません (シミュレータで数十秒)。
 
 ## 6. 困ったとき

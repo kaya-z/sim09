@@ -134,7 +134,7 @@ check(re.search(r'^\s*5 receive\s+1\s+[0-9a-f]{4}-[0-9a-f]{4}', out, re.M) is no
 out, rc = run(disk, BOOT + sh('stk', prompt=P) + OFF)
 rows = re.findall(r'^\s*([1-5]) [0-9a-f]{4}-[0-9a-f]{4}\s+(\d+) \(the run ends', out, re.M)
 check(len(rows) == 5 and all(int(r[1]) >= 10 for r in rows), 'stk: the five servers (TTY DISK FS PM MM) have some unused stack left', out[-600:])
-check('MK09 1.9: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
+check('MK09 1.10: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
 
 # ---- several programs at the same time (relocatable programs, the memory manager, & kill mem)
 out, rc = run(disk, BOOT + sh('mem', 'spin &', 'spin &', 'spin &', 'echo hello', 'mem', 'ps', 'kill 7', 'kill 99', 'ps',
@@ -317,9 +317,10 @@ check(re.search(r'^[0-9a-f]{4} A msg$', out, re.M) is not None, 'as -s prints th
 # ---- the C compiler on MK09: cc runs cpp, cc1, cg and as one after the other (each in place of the one before: exec), then the program runs
 ctree = os.path.join(work, 'ctree')
 shutil.copytree(os.path.join(BUILD, 'tree'), ctree, ignore=shutil.ignore_patterns('skk'))
-cprogs = ('t_basic', 't_ctl', 'l_lib', 'm_file')
+cprogs = ('t_basic', 't_ctl', 'l_lib', 'l_long', 'm_file')
 for b in cprogs:
     shutil.copy(os.path.join(HERE, 'cc', b + '.c'), os.path.join(ctree, b[2:].upper() + '.C'))
+open(os.path.join(ctree, 'BADC.C'), 'w').write('int main(void)\n{\n    return x;\n}\n')
 cdisk = os.path.join(work, 'cdisk.img')
 subprocess.run([sys.executable, '-X', 'utf8', os.path.join(MK, 'tools', 'mkdisk.py'), '-o', cdisk, '--boot', os.path.join(BUILD, 'boot.img'),
                 '--size-mb', '16', ctree], check=True, stdout=subprocess.DEVNULL)
@@ -327,8 +328,10 @@ csteps = ['cc /asm/hello.c -o /hc.mx', '/hc.mx a b', 'ls /']
 for b in cprogs:
     n = b[2:].upper()
     csteps += ['cc /%s.C -o /%s.MX' % (n, n), '/%s.MX' % n, 'echo ==%s==' % n]
+csteps += ['cc /BADC.C -o /bad.mx']
 out, rc = run(cdisk, ['timeout 9000000'] + BOOT + sh(*csteps, prompt='/> ') + OFF, timeout=3000)
 check('hello from C, 3 argument(s)\n  0: /hc.mx\n  1: a\n  2: b\n' in out, 'cc compiles a C program on MK09 (cpp, cc1, cg, as in a chain) and it runs', out[-1500:])
+check('/BADC.C:3: undeclared name' in out, 'cc prints the messages of cc1 (they are read from /LIB/CC1.MSG)', out[-500:])
 check('_.I' not in out.split('ls /')[-1].split('==')[0] and 'HC.MX' in out, 'cc removes its temporary files', out[-800:])
 for b in cprogs:
     n = b[2:].upper()

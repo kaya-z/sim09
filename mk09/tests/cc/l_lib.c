@@ -24,6 +24,7 @@ int main(void)
     char *p, *q;
     int i, v[6] = { 5, 3, 9, 1, 7, 2 };
     printf("[%5d][%-5d][%05d][%x][%u][%c][%s][%8s][%-8s]\n", 42, 42, 42, 255, 65535, 'z', "str", "right", "left");
+    printf("[%05d][%-5d][%5d]\n", -42, -42, -42);
     sprintf(buf, "%d-%s-%d", 12, "ab", -7);
     printf("%s %d\n", buf, (int)strlen(buf));
     strcpy(buf, "hello");
