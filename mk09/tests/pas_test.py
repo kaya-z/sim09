@@ -29,8 +29,8 @@ for t in ('pas0', 'pas1', 'cg'):
     subprocess.run(['gcc', '-DCC_HOST', '-O1', '-w', '-I' + os.path.join(MK, 'apps'), '-o', os.path.join(work, t), os.path.join(MK, 'apps', t + '.c')], check=True)
 libdir = os.path.join(work, 'lib')
 os.makedirs(libdir)
-for f in ('clib', 'rt', 'start'):
-    shutil.copy(os.path.join(BUILD, 'tree', 'lib', f + '.s'), os.path.join(libdir, f.upper() + '.S'))
+for f in ('clib.s', 'clib.idx', 'rt.s', 'rt.idx', 'start.s'):
+    shutil.copy(os.path.join(BUILD, 'tree', 'lib', f), os.path.join(libdir, f.upper()))
 tests = sorted(f for f in os.listdir(os.path.join(HERE, 'pas')) if f.startswith('p_') and f.endswith('.pas'))
 for f in os.listdir(os.path.join(HERE, 'pas')):          # (units and include files that the programs read)
     if (f.endswith('.pas') or f.endswith('.inc')) and not f.startswith('p_'):

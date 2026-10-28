@@ -33,6 +33,7 @@ typedef struct { FILE *f; u16 pos, ph; } wfile;
 static int r_open(rfile *r, const char *path) { r->f = fopen(path, "rb"); return r->f ? 0 : -1; }
 static int r_getc(rfile *r) { return fgetc(r->f); }
 static void r_close(rfile *r) { if (r->f) fclose(r->f); r->f = NULL; }
+static void r_seek(rfile *r, u16 hi, u16 lo) { fseek(r->f, ((long)hi << 16) | lo, SEEK_SET); }
 static int w_open(wfile *w, const char *path) { w->f = fopen(path, "wb+"); w->pos = 0; w->ph = 0; return w->f ? 0 : -1; }
 static void w_putc(wfile *w, int c) { fputc(c, w->f); if (++w->pos == 0) w->ph++; }
 static void w_flush(wfile *w) { fflush(w->f); }
@@ -60,6 +61,7 @@ static int r_getc(rfile *r)
     return r->buf[r->pos++];
 }
 static void r_close(rfile *r) { if (r->fd >= 0) close(r->fd); r->fd = -1; }
+static void r_seek(rfile *r, u16 hi, u16 lo) { u16 rh, rl; seek(r->fd, hi, lo, 0, &rh, &rl); r->pos = r->cnt = 0; }
 static int w_open(wfile *w, const char *path)
 {
     w->fd = open(path, FO_WRITE | FO_CREATE | FO_TRUNC | FO_READ);

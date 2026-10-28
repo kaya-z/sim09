@@ -55,11 +55,13 @@
  *                    the parameter tables are shorter, a limit on the nesting of expressions and statements (the stack of pas1 is 700 bytes).
  *   1.18 2026-10-28  Pascal: units (uses name: the file name.pas is read, interface and implementation become declarations) and include files ({$I name}), both
  *                    done by pas0; the error messages are printed by a program of their own (pmsg).
+ *   1.19 2026-10-28  faster compiles: the library files are sorted and have an index (tools/libsort.py, /LIB/CLIB.IDX); cg copies only the blocks it needs
+ *                    (a compile of hello.pas: 590M cycles before, 150M now).
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.18"
+#define MK09_VERSION    "1.19"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

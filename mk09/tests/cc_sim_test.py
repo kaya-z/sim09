@@ -53,8 +53,10 @@ if lib_s is None:
     sys.exit(1)
 libdir = os.path.join(work, 'lib')                 # the library as cg -L wants it (CC_LIB): only the routines that a program needs are put in
 os.makedirs(libdir)
-open(os.path.join(libdir, 'CLIB.S'), 'w').write(lib_s)
-shutil.copy(os.path.join(cc, 'rt.s'), os.path.join(libdir, 'RT.S'))
+open(os.path.join(work, 'clib0.s'), 'w').write(lib_s)
+for a, b in (('clib0.s', 'CLIB'), (os.path.join(cc, 'rt.s'), 'RT')):      # (sorted, with an index, as the build makes them)
+    subprocess.run([sys.executable, os.path.join(MK, 'tools', 'libsort.py'), a if os.path.isabs(a) else os.path.join(work, a),
+                    os.path.join(libdir, b + '.S'), os.path.join(libdir, b + '.IDX')], check=True)
 shutil.copy(os.path.join(cc, 'start.s'), os.path.join(libdir, 'START.S'))
 tests = sorted(f for f in os.listdir(os.path.join(HERE, 'cc')) if f[:2] in ('t_', 'l_') and f.endswith('.c'))
 tests = [t for t in tests if not names or t[:-2] in names]

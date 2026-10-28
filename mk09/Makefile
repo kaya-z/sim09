@@ -193,7 +193,7 @@ $(B)/clib.s: lib/cc/clib.c $(B)/host_cpp $(B)/host_cc1 $(B)/host_cg
 TREE := $(B)/tree
 $(B)/tree.stamp: $(foreach a,$(APPS),$(B)/$(a).mx) $(wildcard disk/etc/* disk/doc/* disk/bas/* disk/asm/* disk/inc/* disk/pas/*) $(if $(HAVE_SKK),$(B)/skk_$(CHARSET).dic) $(B)/clib.s $(B)/cc1.msg $(B)/pas1.msg lib/cc/start.s lib/cc/rt.s tools/libsort.py Makefile
 	rm -rf $(TREE); mkdir -p $(TREE)/bin $(TREE)/etc $(TREE)/doc $(TREE)/bas $(TREE)/asm $(TREE)/inc $(TREE)/pas $(TREE)/lib $(TREE)/skk
-	cp lib/cc/start.s $(TREE)/lib/start.s; cp $(B)/cc1.msg $(TREE)/lib/cc1.msg; cp $(B)/pas1.msg $(TREE)/lib/pas1.msg; $(PYTHON) tools/libsort.py $(B)/clib.s $(TREE)/lib/clib.s; $(PYTHON) tools/libsort.py lib/cc/rt.s $(TREE)/lib/rt.s
+	cp lib/cc/start.s $(TREE)/lib/start.s; cp $(B)/cc1.msg $(TREE)/lib/cc1.msg; cp $(B)/pas1.msg $(TREE)/lib/pas1.msg; $(PYTHON) tools/libsort.py $(B)/clib.s $(TREE)/lib/clib.s $(TREE)/lib/clib.idx; $(PYTHON) tools/libsort.py lib/cc/rt.s $(TREE)/lib/rt.s $(TREE)/lib/rt.idx
 	for a in $(APPS); do cp $(B)/$$a.mx $(TREE)/bin/$$a.mx; done
 	for d in etc doc bas asm inc pas; do if [ -d disk/$$d ] && [ -n "$$(ls disk/$$d)" ]; then cp disk/$$d/* $(TREE)/$$d/; fi; done
 	printf '# /ETC/RC.SH - run by the shell when the system starts\nstty $(CHARSET)\n' > $(TREE)/etc/rc.sh

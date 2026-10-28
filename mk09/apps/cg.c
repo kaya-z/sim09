@@ -1199,6 +1199,7 @@ static void prescan(void)
 #define POOL    3800
 #define NLIB    2
 static char *libs[NLIB] = { "/LIB/CLIB.S", "/LIB/RT.S" };
+static char *idxs[NLIB] = { "/LIB/CLIB.IDX", "/LIB/RT.IDX" };
 static char pool[POOL];
 static u16 plen;
 static char *names[NNAME];
@@ -1281,49 +1282,65 @@ static void copy_text(wfile *w, const char *path)
     r_close(&r);
 }
 
-static u8 pull_blocks(wfile *w, const char *path)
+/* The blocks are found by the index of the file (/LIB/CLIB.IDX, made by tools/libsort.py), one line for each block:  offset-high offset-low length defs;uses
+ * (the names are separated by commas).  A block that defines a needed name is copied from the file, and what it uses becomes needed.  The text of the library
+ * is not read except for these blocks. */
+static int idx_num(rfile *x, u16 *v, int c)
 {
-    rfile r;
-    char l[104];
-    const char *nm;
-    u16 n;
-    u8 k, copied = 0;
-    u8 in_block = 0, header = 0, want = 0;
-    char head[300];
-    u16 hl = 0;
-    if (r_open(&r, path)) return 0;
-    while (text_line(&r, l)) {
-        k = marker(l, &nm, &n);
-        if (k == 1) {
-            int i;
-            if (!header) { hl = 0; want = 0; in_block = 0; }
-            header = 1;
-            i = find_name(nm, n);
-            if (i >= 0 && state[i] == 0) want = 1;
-            if (hl + strlen(l) + 2 < sizeof(head)) { memcpy(head + hl, l, strlen(l)); hl += (u16)strlen(l); head[hl++] = '\n'; }
-            continue;
-        }
-        if (header) {
-            header = 0;
-            in_block = want;
-            if (want) {
-                u16 p = 0;
-                while (p < hl) {
-                    u16 q = p;
-                    while (q < hl && head[q] != '\n') q++;
-                    if (q - p > 6) add_name(head + p + 6, (u16)(q - p - 6), 1);
-                    p = (u16)(q + 1);
-                }
-                for (p = 0; p < hl; p++) w_putc(w, head[p]);
-                copied = 1;
+    *v = 0;
+    while (c >= '0' && c <= '9') { *v = (u16)(*v * 10 + c - '0'); c = r_getc(x); }
+    return c;
+}
+
+static u8 pull_indexed(wfile *w, const char *lib, const char *idx)
+{
+    rfile x, r;
+    u8 copied = 0;
+    u16 hi, lo, len, p;
+    int c;
+    char dbuf[120], nm[40];
+    if (r_open(&x, idx)) return 0;
+    if (r_open(&r, lib)) { r_close(&x); return 0; }
+    for (c = r_getc(&x); c >= 0;) {
+        u8 want = 0;
+        u16 dl = 0, n;
+        c = idx_num(&x, &hi, c); c = r_getc(&x);
+        c = idx_num(&x, &lo, c); c = r_getc(&x);
+        c = idx_num(&x, &len, c); c = r_getc(&x);
+        while (c >= 0 && c != ';') { if (dl < sizeof(dbuf) - 1) dbuf[dl++] = (char)c; c = r_getc(&x); }
+        dbuf[dl] = 0;
+        for (p = 0; p < dl;) {                       /* the names that the block defines: is one of them needed? */
+            n = 0;
+            while (p + n < dl && dbuf[p + n] != ',') n++;
+            {
+                int k = find_name(dbuf + p, n);
+                if (k >= 0 && state[k] == 0) want = 1;
             }
+            p = (u16)(p + n + 1);
         }
-        if (in_block) {
-            if (k == 2) add_name(nm, n, 0);
-            text_put(w, l);
+        if (want) {
+            for (p = 0; p < dl;) {
+                n = 0;
+                while (p + n < dl && dbuf[p + n] != ',') n++;
+                add_name(dbuf + p, n, 1);
+                p = (u16)(p + n + 1);
+            }
+            r_seek(&r, hi, lo);
+            for (p = 0; p < len; p++) w_putc(w, r_getc(&r));
+            copied = 1;
         }
+        c = r_getc(&x);                              /* the uses */
+        for (;;) {
+            n = 0;
+            while (c >= 0 && c != ',' && c != '\n') { if (n < sizeof(nm) - 1) nm[n++] = (char)c; c = r_getc(&x); }
+            if (want && n) add_name(nm, n, 0);
+            if (c != ',') break;
+            c = r_getc(&x);
+        }
+        if (c == '\n') c = r_getc(&x);
     }
     r_close(&r);
+    r_close(&x);
     return copied;
 }
 
@@ -1336,9 +1353,11 @@ static void link_library(const char *tmp, const char *dst)
     add_name("_mk_start", 9, 0);
 #ifdef CC_HOST
     if (getenv("CC_LIB")) {                 /* (on the PC the library is in a directory of the PC) */
-        static char p0[200], p1[200], p2[200];
+        static char p0[200], p1[200], p2[200], p3[200], p4[200];
         strcpy(p0, getenv("CC_LIB")); strcat(p0, "/CLIB.S"); libs[0] = p0;
         strcpy(p1, getenv("CC_LIB")); strcat(p1, "/RT.S"); libs[1] = p1;
+        strcpy(p3, getenv("CC_LIB")); strcat(p3, "/CLIB.IDX"); idxs[0] = p3;
+        strcpy(p4, getenv("CC_LIB")); strcat(p4, "/RT.IDX"); idxs[1] = p4;
         strcpy(p2, getenv("CC_LIB")); strcat(p2, "/START.S");
         copy_text(&w, p2);
     } else
@@ -1347,7 +1366,7 @@ static void link_library(const char *tmp, const char *dst)
     copy_text(&w, tmp);
     for (pass = 0; pass < 8; pass++) {
         changed = 0;
-        for (i = 0; i < NLIB; i++) if (pull_blocks(&w, libs[i])) changed = 1;
+        for (i = 0; i < NLIB; i++) if (pull_indexed(&w, libs[i], idxs[i])) changed = 1;
         if (!changed) break;
     }
     w_close(&w);
