@@ -24,7 +24,9 @@ typedef int8_t s8;
 #include "types.h"
 #include "mklib.h"
 #include "mkstr.h"
-#define CC_BUF 64
+#ifndef CC_BUF
+#define CC_BUF 64            /* (cg and pas0 have room for a bigger one: -DCC_BUF=256, fewer reads) */
+#endif
 #endif
 
 #ifdef CC_HOST

@@ -57,11 +57,13 @@
  *                    done by pas0; the error messages are printed by a program of their own (pmsg).
  *   1.19 2026-10-28  faster compiles: the library files are sorted and have an index (tools/libsort.py, /LIB/CLIB.IDX); cg copies only the blocks it needs
  *                    (a compile of hello.pas: 590M cycles before, 150M now).
+ *   1.20 2026-10-28  faster compiles, second step: as looks the instructions up by first letter and starts a far JBxx long (3 passes instead of 5),
+ *                    cg stops the library rounds when nothing is needed and does not copy the marker lines (hello.pas: 56M cycles, a tenth of 1.18).
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.19"
+#define MK09_VERSION    "1.20"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

@@ -1209,7 +1209,7 @@ static u8 nnames;
 static int find_name(const char *s, u16 n)
 {
     u8 i;
-    for (i = 0; i < nnames; i++) if (!strncmp(names[i], s, n) && names[i][n] == 0) return i;
+    for (i = 0; i < nnames; i++) if (names[i][0] == s[0] && !strncmp(names[i], s, n) && names[i][n] == 0) return i;
     return -1;
 }
 
@@ -1326,7 +1326,15 @@ static u8 pull_indexed(wfile *w, const char *lib, const char *idx)
                 p = (u16)(p + n + 1);
             }
             r_seek(&r, hi, lo);
-            for (p = 0; p < len; p++) w_putc(w, r_getc(&r));
+            {
+                u8 bol = 1, skip = 0;               /* (the marker lines are comments for the assembler: not copied) */
+                for (p = 0; p < len; p++) {
+                    c = r_getc(&r);
+                    if (bol) skip = c == ';';
+                    bol = c == '\n';
+                    if (!skip) w_putc(w, c);
+                }
+            }
             copied = 1;
         }
         c = r_getc(&x);                              /* the uses */
@@ -1368,6 +1376,8 @@ static void link_library(const char *tmp, const char *dst)
         changed = 0;
         for (i = 0; i < NLIB; i++) if (pull_indexed(&w, libs[i], idxs[i])) changed = 1;
         if (!changed) break;
+        for (i = 0; i < nnames && state[i]; i++) ;
+        if (i == nnames) break;                 /* nothing is needed any more: no round to look again */
     }
     w_close(&w);
     for (i = 0; i < nnames; i++)

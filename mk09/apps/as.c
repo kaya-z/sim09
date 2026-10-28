@@ -55,7 +55,7 @@ static int wr(const void *b, int n) { return write(fout, b, n); }
 #define NSYM    1000
 #define NPOOL   3000            /* the characters of the names */
 #define NHASH   64
-#define NREL    1200 
+#define NREL    1000 
 #define LINEMAX 128
 #define NAMEMAX 17
 
@@ -667,8 +667,15 @@ static void instruction(const op_t *o, const char *s)
         int off = 0;
         u8 lng, idx_ok = jbn < NJB;
         u16 code = o->code;
+        char first;
+        skipws(&s);
+        first = *s;
         v = expr(&s);
         lng = !idx_ok || (jb_long[jbn >> 3] & (1 << (jbn & 7))) != 0;
+        if (!lng && xundef && pass == 1 && first != '@') {       /* a name that is not defined yet and is not a label of the function: most likely far (a call), so long at once */
+            jb_long[jbn >> 3] |= (u8)(1 << (jbn & 7));
+            lng = 1;
+        }
         if (!lng && !xundef) {
             off = v - (pc + 2);
             if (off < -128 || off > 127) {
@@ -901,6 +908,19 @@ static int getline_(char *dst)
     return 1;
 }
 
+static u8 ophead[128], opnext[190];          /* the instructions with the same first letter: index + 1 of the first, of the next one */
+
+static void opindex(void)
+{
+    u8 k, n = 0;
+    while (optab[n].name) n++;
+    for (k = n; k > 0; k--) {
+        u8 c = (u8)optab[k - 1].name[0] & 127;
+        opnext[k - 1] = ophead[c];
+        ophead[c] = k;
+    }
+}
+
 static void assemble_line(char *l)
 {
     char *p = l;
@@ -971,6 +991,11 @@ static void assemble_line(char *l)
         if (inbss) defsym(label, bpc, 1, 1, 0);
         else defsym(label, pc, 1, 0, 0);
     }
+    {                                       /* (the instructions first: most lines; the table is searched among the names with the same first letter) */
+        u8 k;
+        for (k = ophead[(u8)mnem[0] & 127]; k; k = opnext[k - 1])
+            if (!strcmp(optab[k - 1].name, mnem)) { instruction(&optab[k - 1], oper); emitins(); return; }
+    }
     if (!strcmp(mnem, "FCB") || !strcmp(mnem, "BYTE") || !strcmp(mnem, ".BYTE")) { if (inbss) err("data in the bss"); else listdir(0, oper); return; }
     if (!strcmp(mnem, "FDB") || !strcmp(mnem, "WORD") || !strcmp(mnem, ".WORD")) { if (inbss) err("data in the bss"); else listdir(1, oper); return; }
     if (!strcmp(mnem, "FCC")) { if (inbss) err("data in the bss"); else putstring(oper, 0); return; }
@@ -990,11 +1015,7 @@ static void assemble_line(char *l)
         err("directive not supported");
         return;
     }
-    for (o = optab; o->name; o++)
-        if (!strcmp(o->name, mnem)) break;
-    if (!o->name) { err("unknown instruction"); return; }
-    instruction(o, oper);
-    emitins();
+    err("unknown instruction");
 }
 
 static void run_pass(void)
@@ -1067,6 +1088,7 @@ static int run_tail(int argc, char **argv, int at)
 
 int main(int argc, char **argv)
 {
+    opindex();
     int i, tail = argc;
     u8 round;
     const char *src = NULL, *out = NULL;
