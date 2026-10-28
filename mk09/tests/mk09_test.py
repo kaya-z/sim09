@@ -134,7 +134,7 @@ check(re.search(r'^\s*5 receive\s+1\s+[0-9a-f]{4}-[0-9a-f]{4}', out, re.M) is no
 out, rc = run(disk, BOOT + sh('stk', prompt=P) + OFF)
 rows = re.findall(r'^\s*([1-5]) [0-9a-f]{4}-[0-9a-f]{4}\s+(\d+) \(the run ends', out, re.M)
 check(len(rows) == 5 and all(int(r[1]) >= 10 for r in rows), 'stk: the five servers (TTY DISK FS PM MM) have some unused stack left', out[-600:])
-check('MK09 1.10: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
+check('MK09 1.11: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
 
 # ---- several programs at the same time (relocatable programs, the memory manager, & kill mem)
 out, rc = run(disk, BOOT + sh('mem', 'spin &', 'spin &', 'spin &', 'echo hello', 'mem', 'ps', 'kill 7', 'kill 99', 'ps',
@@ -317,7 +317,7 @@ check(re.search(r'^[0-9a-f]{4} A msg$', out, re.M) is not None, 'as -s prints th
 # ---- the C compiler on MK09: cc runs cpp, cc1, cg and as one after the other (each in place of the one before: exec), then the program runs
 ctree = os.path.join(work, 'ctree')
 shutil.copytree(os.path.join(BUILD, 'tree'), ctree, ignore=shutil.ignore_patterns('skk'))
-cprogs = ('t_basic', 't_ctl', 'l_lib', 'l_long', 'm_file')
+cprogs = ('t_basic', 't_ctl', 'l_lib', 'l_long', 'l_float', 'm_file')
 for b in cprogs:
     shutil.copy(os.path.join(HERE, 'cc', b + '.c'), os.path.join(ctree, b[2:].upper() + '.C'))
 open(os.path.join(ctree, 'BADC.C'), 'w').write('int main(void)\n{\n    return x;\n}\n')
@@ -339,7 +339,7 @@ for b in cprogs:
         want = open(os.path.join(HERE, 'cc', b + '.out'), encoding='latin-1').read()
     else:
         exe = os.path.join(work, b + '.gcc')
-        g = subprocess.run(['gcc', '-w', '-fwrapv', '-o', exe, os.path.join(HERE, 'cc', b + '.c')], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        g = subprocess.run(['gcc', '-w', '-fwrapv', '-o', exe, os.path.join(HERE, 'cc', b + '.c'), '-lm'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         want = subprocess.run([exe], stdout=subprocess.PIPE).stdout.decode('latin-1')
     m = re.search(r'/> /%s.MX\n(.*?)/> echo' % n, out, re.S)
     check(m is not None and m.group(1) == want, 'cc: %s compiled on MK09 gives the output of the program' % b, (m.group(1) if m else out[-600:]) + '\nwant:\n' + want)

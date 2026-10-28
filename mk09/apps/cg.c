@@ -1120,9 +1120,11 @@ static void toplevel(void)
             while (*a && i < NAMEM) nm[i++] = *a++;
             nm[i] = 0;
             mangle(nmx, nm);
-            w_puts(&out, ";@ext ");
-            w_puts(&out, nmx);
-            w_putc(&out, '\n');
+            if (!ptag[0]) {             /* (the library says what each routine needs in the routine itself: a list at the end would tie it to the last block) */
+                w_puts(&out, ";@ext ");
+                w_puts(&out, nmx);
+                w_putc(&out, '\n');
+            }
         } else if (!strcmp(opb, ".func")) function(buf);
         else if (!strcmp(opb, ".bss")) {
             char nm[NAMEM + 2], nmx[NAMEM + 2];
@@ -1163,7 +1165,7 @@ static void toplevel(void)
     }
     {
         u8 i;
-        for (i = 0; helper_name[i]; i++)
+        for (i = 0; !ptag[0] && helper_name[i]; i++)
             if (helpers[i]) { w_puts(&out, ";@ext "); w_puts(&out, helper_name[i]); w_putc(&out, '\n'); }
     }
 }

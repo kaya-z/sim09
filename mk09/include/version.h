@@ -37,11 +37,14 @@
  *   1.10 2026-10-28  the C compiler, third step: FILE (fopen fclose fgetc fputc fgets fputs fread fwrite fseek ftell fprintf ...), `long` (32 bits, as objects
  *                    in memory whose operations are library calls), postinc (`*p++` is one load or store with ldb ,x+), the error messages of cc1 in
  *                    /LIB/CC1.MSG (tools/msgsplit.py), the symbol names of as in a pool (640 symbols).
+ *   1.11 2026-10-28  the C compiler, fourth step: float and double (IEEE single precision, both 32 bits; operations are library calls, the constants are
+ *                    made by cpp), printf %f %e %g with width and precision, atof strtod fabs sqrt floor ceil, <math.h>; the relocation table of as
+ *                    is kept as it is written (gaps), local labels have 2 character scopes (820 symbols); the IR file can be over 64 KB.
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.10"
+#define MK09_VERSION    "1.11"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

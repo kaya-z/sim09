@@ -5,6 +5,8 @@ void exit(int code);
 int abs(int v);
 int atoi(char *s);
 long atol(char *s);
+float atof(char *s);
+float strtod(char *s, char **end);
 long labs(long v);
 int rand(void);                         /* 0..32767 */
 void srand(unsigned seed);

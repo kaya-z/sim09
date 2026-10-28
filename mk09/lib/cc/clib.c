@@ -9,6 +9,11 @@ void mk_exit(int code);
 int main(int argc, char **argv);
 unsigned strlen(char *s);
 
+/* the float: arithmetic and conversions on pairs of 16 bit words (fp.c), and the text conversions (fpio.c) */
+#include "fp.c"
+#include "fpio.c"
+int (*__fmtfp)(char *out, __L *f, int conv, int prec);          /* the program that has a float sets it (cc1) */
+
 /* ---------------------------------------------------------------- files */
 static unsigned char __inh = 255, __outh = 255;      /* the standard files when the shell redirected them (255: the console) */
 static char *__argv[34];
@@ -374,15 +379,33 @@ static void __fmt(char *fmt, int *ap)
 {
     char c;
     while (c = *fmt++) {
-        int width = 0, zero = 0, left = 0, n, len, lg = 0;
+        int width = 0, zero = 0, left = 0, n, len, lg = 0, prec = -1;
         unsigned hi, lo;
         char *s;
+        char tb[48];
+        __L fv;
         if (c != '%') { __out(c); continue; }
         for (;; fmt++) { if (*fmt == '-') left = 1; else if (*fmt == '0') zero = 1; else break; }
         while (*fmt >= '0' && *fmt <= '9') width = width * 10 + *fmt++ - '0';
+        if (*fmt == '.') {
+            fmt++;
+            prec = 0;
+            while (*fmt >= '0' && *fmt <= '9') prec = prec * 10 + *fmt++ - '0';
+        }
         if (*fmt == 'l') { fmt++; lg = 1; }
         c = *fmt++;
-        if (lg && (c == 'd' || c == 'u' || c == 'x')) {          /* a long: 2 words, the high one first */
+        if (c == 'f' || c == 'e' || c == 'g' || c == 'E' || c == 'G') {          /* a float: 2 words */
+            fv.hi = *ap++;
+            fv.lo = *ap++;
+            if (prec > 20) prec = 20;
+            if (__fmtfp) len = __fmtfp(tb, &fv, c, prec);
+            else { tb[0] = '?'; tb[1] = 0; len = 1; }
+            s = tb;
+            if (zero && !left && tb[0] == '-') { __out('-'); s++; len--; width--; }
+            if (!left) for (n = len; n < width; n++) __out(zero ? '0' : ' ');
+            while (*s) __out(*s++);
+            if (left) for (n = len; n < width; n++) __out(' ');
+        } else if (lg && (c == 'd' || c == 'u' || c == 'x')) {          /* a long: 2 words, the high one first */
             hi = *ap++;
             lo = *ap++;
             n = 0;
@@ -397,8 +420,9 @@ static void __fmt(char *fmt, int *ap)
         else if (c == 's') {
             s = (char *)*ap++;
             len = strlen(s);
+            if (prec >= 0 && len > prec) len = prec;
             if (!left) for (n = len; n < width; n++) __out(' ');
-            while (*s) __out(*s++);
+            for (n = 0; n < len; n++) __out(s[n]);
             if (left) for (n = len; n < width; n++) __out(' ');
         } else __out(c);
     }
@@ -630,7 +654,6 @@ void qsort(char *base, unsigned n, unsigned size, int (*cmp)(char *, char *))
 
 /* ---------------------------------------------------------------- long: 4 bytes, the high word first.  The compiler calls these with the addresses of the
  * operands (docs/IR.md): __ladd(d, b, a) is  *d = *a + *b;  a function that returns a long leaves it in __lret */
-typedef struct { unsigned hi, lo; } __L;
 __L __lret;
 
 void __itol(__L *d, int v) { d->lo = v; d->hi = v < 0 ? 65535 : 0; }
@@ -810,6 +833,53 @@ long atol(char *s)
 }
 
 long labs(long v) { return v < 0 ? -v : v; }
+
+/* ---------------------------------------------------------------- float (a double is a float) */
+float atof(char *s)
+{
+    float r;
+    __strtof(s, (__L *)&r, 0);
+    return r;
+}
+
+float strtod(char *s, char **end)
+{
+    float r;
+    __strtof(s, (__L *)&r, end);
+    return r;
+}
+
+float fabs(float x) { if (x < 0) return -x; return x; }
+
+float sqrt(float x)               /* Newton's method */
+{
+    float g, h;
+    int i;
+    if (x <= 0) return 0;
+    if (x > 1) g = x / 2; else g = 1;
+    for (i = 0; i < 24; i++) {
+        h = (g + x / g) / 2;
+        if (h == g) break;
+        g = h;
+    }
+    return g;
+}
+
+float floor(float x)
+{
+    long n = (long)x;
+    float f = (float)n;
+    if (f > x) f = f - 1;
+    return f;
+}
+
+float ceil(float x)
+{
+    long n = (long)x;
+    float f = (float)n;
+    if (f < x) f = f + 1;
+    return f;
+}
 
 /* ---------------------------------------------------------------- the start of a program (called by start.s with the start-up block of PM) */
 void mk_start(char *blk)

@@ -34,7 +34,7 @@
 /* ---------------------------------------------------------------- tokens */
 enum {
     T_EOF = 0, T_NUM = 128, T_ID, T_STR,
-    K_VOID, K_CHAR, K_INT, K_SHORT, K_LONG, K_UNSIGNED, K_SIGNED, K_STRUCT, K_UNION, K_ENUM, K_TYPEDEF, K_STATIC, K_EXTERN, K_CONST,
+    K_VOID, K_CHAR, K_INT, K_SHORT, K_LONG, K_UNSIGNED, K_SIGNED, K_FLOAT, K_DOUBLE, K_STRUCT, K_UNION, K_ENUM, K_TYPEDEF, K_STATIC, K_EXTERN, K_CONST,
     K_VOLATILE, K_REGISTER, K_AUTO, K_IF, K_ELSE, K_WHILE, K_DO, K_FOR, K_SWITCH, K_CASE, K_DEFAULT, K_BREAK, K_CONTINUE, K_RETURN,
     K_GOTO, K_SIZEOF,
     T_INC, T_DEC, T_SHL, T_SHR, T_LE, T_GE, T_EQ, T_NE, T_ANDAND, T_OROR, T_ARROW, T_ADDEQ, T_SUBEQ, T_MULEQ, T_DIVEQ, T_MODEQ,
@@ -42,7 +42,7 @@ enum {
 };
 
 static char *keywords[] = {
-    "void", "char", "int", "short", "long", "unsigned", "signed", "struct", "union", "enum", "typedef", "static", "extern", "const",
+    "void", "char", "int", "short", "long", "unsigned", "signed", "float", "double", "struct", "union", "enum", "typedef", "static", "extern", "const",
     "volatile", "register", "auto", "if", "else", "while", "do", "for", "switch", "case", "default", "break", "continue", "return",
     "goto", "sizeof", 0
 };
@@ -246,6 +246,16 @@ static void lex(void)
         tokvh = nh;
         return;
     }
+    if (ch == '@') {                            /* a float constant: cpp made it into @ and 8 hex digits (the bits) */
+        nh = nl = 0;
+        nextch();
+        while ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')) {
+            num_step(16, (u8)(ch <= '9' ? ch - '0' : (ch | 32) - 'a' + 10));
+            nextch();
+        }
+        tok = T_NUM; toklong = 2; tokv = (int)nl; tokvh = nh;
+        return;
+    }
     if (ch == '\'') {
         nextch();
         tok = T_NUM;
@@ -343,7 +353,7 @@ static void expect(u16 t, msgt what)
 }
 
 /* ---------------------------------------------------------------- types */
-enum { TK_VOID, TK_CHAR, TK_INT, TK_PTR, TK_ARR, TK_STRUCT, TK_UNION, TK_FUNC, TK_LONG };
+enum { TK_VOID, TK_CHAR, TK_INT, TK_PTR, TK_ARR, TK_STRUCT, TK_UNION, TK_FUNC, TK_LONG, TK_FLOAT };
 typedef struct ty {
     u8 k, un;
     u16 size;
@@ -351,7 +361,7 @@ typedef struct ty {
     u16 n;          /* array: elements;  struct/union: the first member (index + 1);  function: unused */
 } ty_t;
 static ty_t tys[NTY];
-static u16 nty = 7;
+static u16 nty = 8;
 #define T_VOIDT 0
 #define T_CHART 1
 #define T_UCHART 2
@@ -359,6 +369,8 @@ static u16 nty = 7;
 #define T_UINTT 4
 #define T_LONGT 5
 #define T_ULONGT 6
+#define T_FLOATT 7
+static u8 float_seen;          /* the program has a float: printf gets the means to print it (pointer __fmtfp) */
 
 typedef struct mem {
     char name[NAMEMAX + 1];
@@ -386,7 +398,7 @@ static u16 newty(u8 k, u16 size, u16 base)
 static u16 ptr_to(u16 t)
 {
     u16 i;
-    for (i = 7; i < nty; i++) if (tys[i].k == TK_PTR && tys[i].base == t) return i;
+    for (i = 8; i < nty; i++) if (tys[i].k == TK_PTR && tys[i].base == t) return i;
     return newty(TK_PTR, 2, t);
 }
 
@@ -401,6 +413,8 @@ static u16 func_of(u16 t) { return newty(TK_FUNC, 0, t); }
 static u8 is_ptr(u16 t) { return tys[t].k == TK_PTR || tys[t].k == TK_ARR; }
 static u8 is_int(u16 t) { return tys[t].k == TK_CHAR || tys[t].k == TK_INT; }
 static u8 is_long(u16 t) { return tys[t].k == TK_LONG; }
+static u8 is_flt(u16 t) { return tys[t].k == TK_FLOAT; }
+static u8 is_wide(u16 t) { return tys[t].k >= TK_LONG; }       /* long or float: an object of 4 bytes */
 static u8 is_agg(u16 t) { return tys[t].k == TK_STRUCT || tys[t].k == TK_UNION; }
 static u8 is_unsigned(u16 t) { return tys[t].k == TK_PTR || tys[t].k == TK_ARR || tys[t].un; }
 
@@ -518,7 +532,7 @@ static void rvalue(void)
         u8 k = tys[e_t].k;
         if (k == TK_ARR) { e_t = ptr_to(tys[e_t].base); e_lv = 0; }
         else if (k == TK_FUNC) { e_t = ptr_to(e_t); e_lv = 0; }
-        else if (k == TK_STRUCT || k == TK_UNION || k == TK_LONG) { }
+        else if (k == TK_STRUCT || k == TK_UNION || k >= TK_LONG) { }
         else {
             if (k == TK_CHAR) { ins0(tys[e_t].un ? "load.ub" : "load.b"); e_t = T_INTT; }
             else ins0("load.w");
@@ -607,9 +621,11 @@ static void scale(u16 sz)
  * A long value is always an address on the stack (e_lv = 1): a variable, or a temporary of the frame that holds a result.  The library functions get the
  * addresses:  __ladd(d, b, a) and so on (the stack holds a, b, d: d is the top).  A function returns a long in __lret. */
 enum { LH_ITOL, LH_UTOL, LH_ADD, LH_SUB, LH_MUL, LH_DIV, LH_MOD, LH_UDIV, LH_UMOD, LH_AND, LH_OR, LH_XOR, LH_SHL, LH_SHR, LH_USHR, LH_NEG, LH_COM,
-       LH_NZ, LH_CMP, LH_UCMP, LH_INC, LH_RET, LH_N };
+       LH_NZ, LH_CMP, LH_UCMP, LH_INC, LH_RET,
+       LH_ITOF, LH_UTOF, LH_LTOF, LH_ULTOF, LH_FTOL, LH_FTOI, LH_FADD, LH_FSUB, LH_FMUL, LH_FDIV, LH_FNEG, LH_FNZ, LH_FCMP, LH_FINC, LH_N };
 static char *lh_name[LH_N] = { "__itol", "__utol", "__ladd", "__lsub", "__lmul", "__ldiv", "__lmod", "__ludiv", "__lumod", "__land", "__lor", "__lxor",
-                               "__lshl", "__lshr", "__lushr", "__lneg", "__lcom", "__lnz", "__lcmp", "__lucmp", "__linc", "__lret" };
+                               "__lshl", "__lshr", "__lushr", "__lneg", "__lcom", "__lnz", "__lcmp", "__lucmp", "__linc", "__lret",
+                               "__itof", "__utof", "__ltof", "__ultof", "__ftol", "__ftoi", "__fadd", "__fsub", "__fmul", "__fdiv", "__fneg", "__fnz", "__fcmp", "__finc" };
 static u8 lh_used[LH_N];
 static u16 tmp_used;           /* bytes of temporaries of the statement */
 
@@ -631,9 +647,10 @@ static void lcall(u8 id, u8 n)
     put("\n");
 }
 
-static void long_to_int(void)          /* the low word of the long whose address is on the stack */
+static void wide_to_int(void)          /* the low word of the long whose address is on the stack, or the int of a float */
 {
     u8 un = tys[e_t].un;
+    if (is_flt(e_t)) { lcall(LH_FTOI, 1); e_t = T_INTT; e_lv = 0; return; }
     ins1("const", 2);
     ins0("add");
     ins0("load.w");
@@ -641,27 +658,33 @@ static void long_to_int(void)          /* the low word of the long whose address
     e_lv = 0;
 }
 
-/* e_* is an rvalue: a long is made of it (in a temporary) if it is not one */
-static void to_long(void)
+/* the helper that makes an object of type `to` (long or float) of a value of type `from` (an int in a word, or the address of a long or a float) */
+static u8 conv_id(u16 from, u16 to)
+{
+    u8 un = is_unsigned(from);
+    if (is_flt(to)) return is_long(from) ? (tys[from].un ? LH_ULTOF : LH_LTOF) : (un ? LH_UTOF : LH_ITOF);
+    return is_flt(from) ? LH_FTOL : (un ? LH_UTOL : LH_ITOL);
+}
+
+/* e_* is an rvalue: an object of the kind of tt (long or float) is made of it (in a temporary) if it is not one */
+static void to_wide(u16 tt)
 {
     u16 t;
-    u8 un;
-    if (is_long(e_t)) return;
-    un = is_unsigned(e_t);
+    if (tys[e_t].k == tys[tt].k) return;
     force();
     t = new_temp();
     ins1("laddr", t);
-    lcall(un ? LH_UTOL : LH_ITOL, 2);
+    lcall(conv_id(e_t, tt), 2);
     ins0("drop");
     ins1("laddr", t);
-    e_t = T_LONGT; e_lv = 1; e_c = 0;
+    e_t = tt; e_lv = 1; e_c = 0;
 }
 
 /* the value for a jump: a long becomes an int (0 or not) */
 static void truth(void)
 {
     rv();
-    if (is_long(e_t)) { lcall(LH_NZ, 1); e_t = T_INTT; e_lv = 0; }
+    if (is_wide(e_t)) { lcall(is_flt(e_t) ? LH_FNZ : LH_NZ, 1); e_t = T_INTT; e_lv = 0; }
 }
 
 static u8 long_op_id(u16 op, u8 un)
@@ -686,36 +709,50 @@ static const char *opname(u16 op, u8 un);
 /* op: the operator; the left operand is a constant (lc, lval) or on the stack (lt: its type); the right one is in e_* (rvalue'd); one of them is a long */
 static void binary(u16 op, u8 lc, int lval, u16 lt);
 
-static void long_binary(u16 op, u8 lc, int lval, u16 lt)
+/* the helper of an operator for a long or a float (t: the type of the left operand or of the result) */
+static u8 wide_op_id(u16 op, u16 t)
+{
+    if (is_flt(t)) {
+        if (op != '+' && op != '-' && op != '*' && op != '/') { err("bad operands for a float"); return LH_FADD; }
+        return op == '+' ? LH_FADD : op == '-' ? LH_FSUB : op == '*' ? LH_FMUL : LH_FDIV;
+    }
+    return long_op_id(op, tys[t].un);
+}
+
+static void wide_binary(u16 op, u8 lc, int lval, u16 lt)
 {
     u8 shift = (op == T_SHL || op == T_SHR);
-    u8 un;
-    u16 t, rt = e_t;
+    u8 un, fl;
+    u16 t, rt = e_t, tt;
+    fl = !shift && (is_flt(lt) || is_flt(rt));
     if (shift) {
+        if (is_flt(lt) || is_flt(rt)) { err("a shift of a float"); return; }
         if (!is_long(lt)) {            /* an int shifted by a long: the count is an int */
-            if (is_long(rt)) long_to_int();
+            if (is_long(rt)) wide_to_int();
             binary(op, lc, lval, lt);
             return;
         }
-        if (is_long(rt)) long_to_int();
+        if (is_long(rt)) wide_to_int();
         force();                       /* the count is on the stack */
         un = tys[lt].un;
+        tt = lt;
     } else {
-        if (!is_long(lt)) {            /* the left operand is an int (a constant not emitted yet, or a word under the address of the right one) */
+        un = (is_wide(lt) ? tys[lt].un : is_unsigned(lt)) || (is_wide(rt) ? tys[rt].un : is_unsigned(rt));
+        tt = fl ? T_FLOATT : un ? T_ULONGT : T_LONGT;
+        if (tys[lt].k != tys[tt].k) {      /* the left operand is not of that kind: an int (a constant not emitted yet, or a word under the address of the right one), or a long */
             if (lc) ins1("const", lval); else ins0("swap");
             t = new_temp();
             ins1("laddr", t);
-            lcall(is_unsigned(lt) ? LH_UTOL : LH_ITOL, 2);
+            lcall(conv_id(lt, tt), 2);
             ins0("drop");
             ins1("laddr", t);
             ins0("swap");
-        } else if (!is_long(rt)) {
-            to_long();
+        } else if (tys[rt].k != tys[tt].k) {
+            to_wide(tt);
         }
-        un = (is_long(lt) ? tys[lt].un : is_unsigned(lt)) || (is_long(rt) ? tys[rt].un : is_unsigned(rt));
     }
     if (is_cmp(op)) {
-        lcall(un ? LH_UCMP : LH_CMP, 2);
+        lcall(fl ? LH_FCMP : un ? LH_UCMP : LH_CMP, 2);
         ins1("const", 0);
         ins0(opname(op, 0));
         e_t = T_INTT; e_lv = 0; e_c = 0;
@@ -723,10 +760,10 @@ static void long_binary(u16 op, u8 lc, int lval, u16 lt)
     }
     t = new_temp();
     ins1("laddr", t);
-    lcall(long_op_id(op, un), 3);
+    lcall(wide_op_id(op, tt), 3);
     ins0("drop");
     ins1("laddr", t);
-    e_t = un ? T_ULONGT : T_LONGT; e_lv = 1; e_c = 0;
+    e_t = tt; e_lv = 1; e_c = 0;
 }
 
 /* op: the operator; the left operand is a constant (lc, lval) or on the stack; the right one is in e_* (rvalue'd, not forced) */
@@ -740,7 +777,7 @@ static void binary(u16 op, u8 lc, int lval, u16 lt)
     u8 un;
     u8 ok;
     int v;
-    if (is_long(lt) || is_long(rt)) { long_binary(op, lc, lval, lt); return; }
+    if (is_wide(lt) || is_wide(rt)) { wide_binary(op, lc, lval, lt); return; }
     if (is_agg(lt) || is_agg(rt)) { err("a structure in an expression"); return; }
     if (op == '+' && (lp || rp)) {
         if (lp && rp) { err("two pointers added"); return; }
@@ -888,7 +925,7 @@ static u16 enum_spec(void)
 /* the specifiers of a declaration; storage: 1 typedef 2 static 4 extern */
 static u16 parse_declspec(u8 *storage)
 {
-    u8 un = 0, sg = 0, ch_ = 0, in_ = 0, vd = 0, sh = 0, lg = 0;
+    u8 un = 0, sg = 0, ch_ = 0, in_ = 0, vd = 0, sh = 0, lg = 0, fl = 0;
     u16 t = 0;
     *storage = 0;
     for (;;) {
@@ -903,9 +940,10 @@ static u16 parse_declspec(u8 *storage)
         else if (tok == K_SHORT) sh = 1;
         else if (tok == K_VOID) vd = 1;
         else if (tok == K_LONG) lg = 1;
+        else if (tok == K_FLOAT || tok == K_DOUBLE) fl = 1;
         else if (tok == K_STRUCT || tok == K_UNION) { u8 u = tok == K_UNION; next(); t = struct_spec(u); continue; }
         else if (tok == K_ENUM) { next(); t = enum_spec(); continue; }
-        else if (tok == T_ID && !t && !un && !sg && !ch_ && !in_ && !vd && !sh && !lg) {
+        else if (tok == T_ID && !t && !un && !sg && !ch_ && !in_ && !vd && !sh && !lg && !fl) {
             sym_t *s = find_sym(toks);
             if (s && s->cls == C_TYPEDEF) t = s->ty; else break;
         } else break;
@@ -914,6 +952,7 @@ static u16 parse_declspec(u8 *storage)
     (void)sg;
     if (t) return t;
     if (vd) return T_VOIDT;
+    if (fl) return T_FLOATT;
     if (lg) return un ? T_ULONGT : T_LONGT;
     if (ch_) return un ? T_UCHART : T_CHART;
     if (in_ || sh || un || sg) return un ? T_UINTT : T_INTT;
@@ -1094,7 +1133,7 @@ static void primary(void)
         w_puts(&sf, ".data S"); w_num(&sf, n); w_puts(&sf, " local\n.w "); w_num(&sf, (int)tokvh); w_putc(&sf, ','); w_num(&sf, tokv); w_puts(&sf, "\n.end\n");
         sname(nm, 'S', n);
         insaddr(nm, 0);
-        e_t = tokun ? T_ULONGT : T_LONGT; e_lv = 1;
+        e_t = toklong == 2 ? T_FLOATT : tokun ? T_ULONGT : T_LONGT; e_lv = 1; if (toklong == 2) float_seen = 1;
         next();
     } else if (tok == T_NUM) {
         e_c = 1; e_v = tokv;
@@ -1118,6 +1157,7 @@ static void primary(void)
             } else { err("undeclared name"); s = new_global(nm, C_GLOBAL, T_INTT); s->flags = 2; }
         }
         e_t = s->ty;
+        if (is_flt(e_t) || (tys[e_t].k == TK_FUNC && is_flt(tys[e_t].base))) float_seen = 1;
         switch (s->cls) {
         case C_ENUM: e_c = 1; e_v = s->val; e_t = T_INTT; break;
         case C_LOCAL: ins1("laddr", s->val); e_lv = 1; break;
@@ -1174,7 +1214,7 @@ static void call(void)
             parse_assign();
             if (is_agg(e_t)) err("a structure as an argument");
             rv();
-            if (is_long(e_t)) { ins0("dup"); ins1("const", 2); ins0("add"); ins0("load.w"); ins0("swap"); ins0("load.w"); extra++; }     /* a long: its 2 words */
+            if (is_wide(e_t)) { ins0("dup"); ins1("const", 2); ins0("add"); ins0("load.w"); ins0("swap"); ins0("load.w"); extra++; }     /* a long: its 2 words */
             seg_e[n] = alen;
             n++;
             if (tok == ',') next(); else break;
@@ -1213,7 +1253,7 @@ static void call(void)
         ins1("calli", n + extra);
     }
     e_t = rt; e_lv = 0; e_c = 0; e_fn = 0;
-    if (is_long(rt)) {            /* the function leaves a long in __lret: it is copied into a temporary */
+    if (is_wide(rt)) {            /* the function leaves a long or float in __lret: it is copied into a temporary */
         u16 t = new_temp();
         ins0("drop");
         ins1("laddr", t);
@@ -1234,15 +1274,16 @@ static void incdec(u16 op, u8 post, u8 unused)
     const char *opn = op == T_INC ? "add" : "sub";
     u8 byte = tys[t].k == TK_CHAR;
     if (!e_lv || tys[t].k == TK_ARR || is_agg(t)) { err("++ or -- needs a variable"); return; }
-    if (is_long(t)) {
+    if (is_wide(t)) {
         int d = op == T_INC ? 1 : -1;
+        u8 inc = is_flt(t) ? LH_FINC : LH_INC;
         if (post && !unused) {
             u16 tmp = new_temp();
             ins0("dup"); ins1("laddr", tmp); ins0("swap"); ins1("copy", 4); ins0("drop");
-            ins1("const", d); ins0("swap"); lcall(LH_INC, 2); ins0("drop");
+            ins1("const", d); ins0("swap"); lcall(inc, 2); ins0("drop");
             ins1("laddr", tmp);
         } else {
-            ins0("dup"); ins1("const", d); ins0("swap"); lcall(LH_INC, 2); ins0("drop");
+            ins0("dup"); ins1("const", d); ins0("swap"); lcall(inc, 2); ins0("drop");
         }
         e_lv = 1; e_c = 0;
         return;
@@ -1342,12 +1383,13 @@ static void parse_unary(void)
         parse_cast();
         rvalue();
         if (op == '+') return;
-        if (is_long(e_t)) {
+        if (is_wide(e_t)) {
             u16 t;
-            if (op == '!') { lcall(LH_NZ, 1); e_t = T_INTT; e_lv = 0; ins0("not"); return; }
+            if (op == '!') { lcall(is_flt(e_t) ? LH_FNZ : LH_NZ, 1); e_t = T_INTT; e_lv = 0; ins0("not"); return; }
+            if (op == '~' && is_flt(e_t)) { err("~ of a float"); return; }
             t = new_temp();
             ins1("laddr", t);
-            lcall(op == '-' ? LH_NEG : LH_COM, 2);
+            lcall(op == '-' ? (is_flt(e_t) ? LH_FNEG : LH_NEG) : LH_COM, 2);
             ins0("drop");
             ins1("laddr", t);
             e_lv = 1;
@@ -1439,12 +1481,12 @@ static void parse_cast(void)
             expect(')', "missing ) of the cast");
             parse_cast();
             rvalue();
-            if (is_long(t)) {
-                to_long();
+            if (is_wide(t)) {
+                to_wide(t);
                 e_t = t;
                 return;
             }
-            if (is_long(e_t)) long_to_int();
+            if (is_wide(e_t)) wide_to_int();
             if (tys[t].k == TK_CHAR) {
                 if (e_c) e_v = tys[t].un ? (e_v & 255) : (int)(s8)e_v;
                 else ins0(tys[t].un ? "zx" : "sx");
@@ -1560,8 +1602,8 @@ static void parse_cond(void)
         deflabel(le);
         e_t = is_ptr(t1) ? t1 : is_ptr(t2) ? t2 : (is_unsigned(t1) || is_unsigned(t2)) ? T_UINTT : T_INTT;
         e_c = 0; e_lv = 0;
-        if (is_long(t1) && is_long(t2)) { e_t = t1; e_lv = 1; }
-        else if (is_long(t1) || is_long(t2)) err("a long and an int in ?: (use a cast)");
+        if (is_wide(t1) && tys[t1].k == tys[t2].k) { e_t = t1; e_lv = 1; }
+        else if (is_wide(t1) || is_wide(t2)) err("a long or float and another type in ?: (use a cast)");
     }
 }
 
@@ -1622,13 +1664,13 @@ static void assign_op(u16 op)
     if (op == '=') {
         parse_assign();
         rvalue();
-        if (is_long(lt)) {
-            to_long();
+        if (is_wide(lt)) {
+            to_wide(lt);
             ins1("copy", 4);
             e_t = lt; e_lv = 1; e_c = 0;
             return;
         }
-        if (is_long(e_t)) long_to_int();
+        if (is_wide(e_t)) wide_to_int();
         if (is_agg(lt)) {
             if (!is_agg(e_t) || tys[e_t].size != tys[lt].size) { err("incompatible structures"); return; }
             ins1("copy", (int)tys[lt].size);
@@ -1642,14 +1684,15 @@ static void assign_op(u16 op)
         u16 lt2;
         int lval;
         if (is_agg(lt)) { err("a structure in a compound assignment"); return; }
-        if (is_long(lt)) {                 /* L op= x : a = L, b = x, d = L */
+        if (is_wide(lt)) {                 /* L op= x : a = L, b = x, d = L */
             u8 shift = op == T_SHL || op == T_SHR;
+            if (shift && is_flt(lt)) { err("a shift of a float"); return; }
             ins0("dup");
             parse_assign();
             rvalue();
-            if (shift) { if (is_long(e_t)) long_to_int(); force(); } else to_long();
+            if (shift) { if (is_wide(e_t)) wide_to_int(); force(); } else to_wide(lt);
             ins0("swap");
-            lcall(long_op_id(op, tys[lt].un), 3);
+            lcall(wide_op_id(op, lt), 3);
             ins0("drop");
             e_t = lt; e_lv = 1; e_c = 0;
             return;
@@ -1661,7 +1704,7 @@ static void assign_op(u16 op)
         parse_assign();
         rvalue();
         binary(op, lc, lval, lt2);
-        if (is_long(e_t)) long_to_int();
+        if (is_wide(e_t)) wide_to_int();
         force();
         ins0(byte ? "store.b" : "store.w");
     }
@@ -1698,7 +1741,7 @@ static void parse_expr(void)
 }
 
 /* ---------------------------------------------------------------- declarations of variables and functions */
-static u16 frame_patch;        /* where in the output the size of the frame of this function is written */
+static u16 frame_patch, frame_ph;        /* where in the output the size of the frame of this function is written */
 static u16 cur_ret;
 static const char *curfn;
 
@@ -1718,17 +1761,31 @@ static void emit_zero(wfile *f, u16 n)
     if (n) { w_puts(f, ".z "); w_num(f, n); w_putc(f, '\n'); }
 }
 
+/* the bits of the float that is the int v (unsigned if un) */
+static void int_bits(int v, u8 un, u16 *hi, u16 *lo)
+{
+    u16 sign = 0, a, e = 15;
+    if (!un && v < 0) { sign = 0x8000; a = (u16)(-v); } else a = (u16)v;
+    if (!a) { *hi = 0; *lo = 0; return; }
+    while (!(a & 0x8000)) { a <<= 1; e--; }
+    *hi = sign | ((127 + e) << 7) | ((a >> 8) & 0x7F);
+    *lo = (a & 0xFF) << 8;
+}
+
 /* an initializer expression that must be constant or the address of something: .b/.w/.wa */
 static void init_scalar(wfile *f, u16 t)
 {
     u16 save = alen;
     u8 sv = to_arena;
-    if (is_long(t) && (tok == T_NUM || (tok == '-' && peek() == T_NUM))) {      /* a long constant */
+    if (is_wide(t) && (tok == T_NUM || (tok == '-' && peek() == T_NUM))) {      /* a long or float constant */
         u16 hi, lo;
         u8 neg = tok == '-';
         if (neg) next();
         hi = tokvh; lo = (u16)tokv;
-        if (neg) { lo = (u16)(~lo + 1); hi = (u16)(~hi + (lo == 0)); }
+        if (is_flt(t)) {
+            if (!toklong) int_bits(tokv, tokun, &hi, &lo);          /* (an int: float f = 1;) */
+            if (neg) hi ^= 0x8000;
+        } else if (neg) { lo = (u16)(~lo + 1); hi = (u16)(~hi + (lo == 0)); }
         w_puts(f, ".w "); w_num(f, (int)hi); w_putc(f, ','); w_num(f, (int)lo); w_putc(f, '\n');
         next();
         return;
@@ -1738,10 +1795,16 @@ static void init_scalar(wfile *f, u16 t)
     rvalue();
     to_arena = sv;
     if (e_c) {
-        if (is_long(t)) {
-            w_puts(f, ".w "); w_num(f, e_v < 0 && !is_unsigned(e_t) ? -1 : 0); w_putc(f, ',');
-        } else w_puts(f, tys[t].size == 1 ? ".b " : ".w ");
-        w_num(f, e_v);
+        if (is_flt(t)) {
+            u16 hi, lo;
+            int_bits(e_v, is_unsigned(e_t), &hi, &lo);
+            w_puts(f, ".w "); w_num(f, (int)hi); w_putc(f, ','); w_num(f, (int)lo);
+        } else {
+            if (is_long(t)) {
+                w_puts(f, ".w "); w_num(f, e_v < 0 && !is_unsigned(e_t) ? -1 : 0); w_putc(f, ',');
+            } else w_puts(f, tys[t].size == 1 ? ".b " : ".w ");
+            w_num(f, e_v);
+        }
         w_putc(f, '\n');
     } else {
         /* addr NAME [const k add]... */
@@ -1907,14 +1970,14 @@ static void local_init(u16 off, u16 t)
         if (tok == '{') { br = 1; next(); }
         ins1("laddr", off);
         parse_assign();
-        if (is_long(t)) {
+        if (is_wide(t)) {
             rvalue();
-            to_long();
+            to_wide(t);
             ins1("copy", 4);
             ins0("drop");
         } else {
             rv();
-            if (is_long(e_t)) long_to_int();
+            if (is_wide(e_t)) wide_to_int();
             ins0(tys[t].k == TK_CHAR ? "store.b" : "store.w");
             ins0("drop");
         }
@@ -2199,8 +2262,8 @@ static void statement(void)
         if (tok != ';') {
             parse_expr();
             rvalue();
-            if (is_long(fn_ret)) {          /* a long goes to __lret */
-                to_long();
+            if (is_wide(fn_ret)) {          /* a long or float goes to __lret */
+                to_wide(fn_ret);
                 lh_used[LH_RET] = 1;
                 insaddr("__lret", 0);
                 ins0("swap");
@@ -2208,7 +2271,7 @@ static void statement(void)
                 ins0("drop");
                 ins1("const", 0);
             } else {
-                if (is_long(e_t)) long_to_int();
+                if (is_wide(e_t)) wide_to_int();
                 force();
             }
         } else ins1("const", 0);
@@ -2256,12 +2319,13 @@ static void function_body(const char *name, u16 ft, u8 isstatic)
     nlsym = 0;
     fp = 0; maxfp = 0;
     nloop = 0; ncase = 0; sw_depth = 0; nlabn = 0;
-    for (i = 0; i < np; i++) { new_local(pn[i], C_PARAM, pt[i], (int)slot); slot = (u16)(slot + (is_long(pt[i]) ? 2 : 1)); }
+    for (i = 0; i < np; i++) { new_local(pn[i], C_PARAM, pt[i], (int)slot); slot = (u16)(slot + (is_wide(pt[i]) ? 2 : 1)); }
     curfn = name;
     w_puts(&ir, ".func ");
     w_puts(&ir, name);
     w_puts(&ir, " ");
     frame_patch = w_tell(&ir);
+    frame_ph = w_tellh(&ir);
     w_puts(&ir, "00000");
     if (isstatic) w_puts(&ir, " local");
     w_putc(&ir, '\n');
@@ -2275,7 +2339,7 @@ static void function_body(const char *name, u16 ft, u8 isstatic)
         u16 u = maxfp;
         u8 k;
         for (k = 5; k > 0; k--) { t[k - 1] = (char)('0' + u % 10); u /= 10; }
-        w_patch(&ir, frame_patch, t, 5);
+        w_patch(&ir, frame_ph, frame_patch, t, 5);
     }
     nlsym = 0;
 }
@@ -2382,6 +2446,7 @@ int main(int argc, char **argv)
     tys[T_UINTT].k = TK_INT; tys[T_UINTT].size = 2; tys[T_UINTT].un = 1;
     tys[T_LONGT].k = TK_LONG; tys[T_LONGT].size = 4;
     tys[T_ULONGT].k = TK_LONG; tys[T_ULONGT].size = 4; tys[T_ULONGT].un = 1;
+    tys[T_FLOATT].k = TK_FLOAT; tys[T_FLOATT].size = 4;
     nextch();
     line = 1;
     if (ch == '#') read_marker();
@@ -2394,6 +2459,10 @@ int main(int argc, char **argv)
             w_puts(&ir, gsyms[i].name);
             w_putc(&ir, '\n');
         }
+    }
+    if (float_seen && !find_global("__fmtfp")) {
+        w_puts(&ir, ".extern __fmtf\n");
+        w_puts(&df, ".data __fmtfp\n.wa __fmtf\n.end\n");
     }
     for (i = 0; i < LH_N; i++)
         if (lh_used[i]) { w_puts(&ir, ".extern "); w_puts(&ir, lh_name[i]); w_putc(&ir, '\n'); }

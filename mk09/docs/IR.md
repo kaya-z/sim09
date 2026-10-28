@@ -119,4 +119,4 @@ int sum(int n) { int i, s = 0; for (i = 1; i <= n; i++) s += i; return s; }
 **ない**もの: `float` `double`、ビットフィールド、K&R 形式の関数定義、構造体を値で渡す・返すこと (代入はできる)、`#` と `##`、可変個の引数を持つマクロ。
 名前は 15 文字までが有効。
 
-`long` はこの IR の命令にはない。4 バイトのメモリの対象で、演算は関数の呼び出し (`__ladd` ... [DESIGN.md](DESIGN.md) 17.3)。`postinc` は 3 章。
+`long` と `float` はこの IR の命令にはない。4 バイトのメモリの対象で、演算は関数の呼び出し (`__ladd` ... [DESIGN.md](DESIGN.md) 17.3、float の `__fadd` ... は 17.4)。`postinc` は 3 章。

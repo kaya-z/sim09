@@ -5,7 +5,7 @@
 
 Copyright (c) 2026 YUKARI Semiconductor Devices
 
-**版: 1.10** (2026-10-28。起動のときの `ver` と同じ)。変更の履歴は [DESIGN.md](DESIGN.md) の 16 章。
+**版: 1.11** (2026-10-28。起動のときの `ver` と同じ)。変更の履歴は [DESIGN.md](DESIGN.md) の 16 章。
 
 MK09 は MC6809 用の小さなマイクロカーネルと、その上で動くコマンド、日本語ワードプロセッサ `jwp` です。**プログラムは、シェルのほかに最大 4 本 (タスクの数とメモリの範囲で) 同時に動かせます** (`コマンド &`)。
 **64KB のメモリだけで動き (MMU は使いません)**、カーネルもプログラムも **SD カードから起動時に読み込まれます**。
@@ -86,7 +86,7 @@ HDMI の画面の文字コードは、ビットストリームを作るときに
 
 ## 2. シェルとコマンド
 
-起動すると、まず `MK09 1.10: kernel TTY DISK FS PM MM` の 1 行 (カードにボリュームがなければもう 1 行) が出ます。続いて `MK09` のロゴと `MC6809 microkernel 1.10 ... type help` という案内が出て、`/> ` というプロンプトが出ます (`/` は今のディレクトリです)。
+起動すると、まず `MK09 1.11: kernel TTY DISK FS PM MM` の 1 行 (カードにボリュームがなければもう 1 行) が出ます。続いて `MK09` のロゴと `MC6809 microkernel 1.11 ... type help` という案内が出て、`/> ` というプロンプトが出ます (`/` は今のディレクトリです)。
 1 行を打って Enter で実行します。行の編集は、BS / DEL で 1 文字 (全角文字は 1 文字)、`^U` で行全体の取り消し、`^D` (行の先頭で) でファイル終わりです。
 
 * **コマンドの探し方**: `名前.MX` を今のディレクトリ、次に `/BIN` から探します。名前に `/` があれば、そのパスのとおりです。
@@ -437,8 +437,9 @@ cc -S foo.c                        # アセンブラの文 (foo.s) まで
 
 * **言語**: `char` `int` `short` `unsigned` `signed` `void`、ポインタ、配列、`struct` `union` `enum` `typedef`、関数ポインタ、`static` `extern` `sizeof`、キャスト、
   すべての C89 の演算子と文、初期化子 (配列、構造体、文字列)。前処理 (`#include` `#define` 関数形式も、`#if` `#ifdef` ...)。`int` は 16 ビット。
+  `float` `double` (どちらも IEEE 単精度の 32 ビット。演算はライブラリ。非正規数は 0。`printf` は `%f %e %g` と幅・精度、`atof` `strtod`、`<math.h>` の `fabs` `sqrt` `floor` `ceil`)、
   `long` (32 ビット。`long int` `unsigned long` `L` `UL` の付いた定数、16 ビットを超える定数。演算はライブラリの呼び出しなので遅い。`printf` は `%ld` `%lu` `%lx`、`atol` `labs`)。
-  **ない**もの: `float` `double`、ビットフィールド、K&R 形式の関数定義、構造体を値で渡す・返すこと、`#` と `##`、`switch` の `long`、名前は 15 文字まで。詳しくは [IR.md](IR.md) の 6 章。
+  **ない**もの: ビットフィールド、K&R 形式の関数定義、構造体を値で渡す・返すこと、`#` と `##`、`switch` の `long`、名前は 15 文字まで。詳しくは [IR.md](IR.md) の 6 章。
   エラーのメッセージは `/LIB/CC1.MSG` から読む (`cc1` の大きさのため)。
 * **ヘッダ** (`/INC`。`#include <名前.h>`): `stdio.h` (`printf` `sprintf` `putchar` `puts` `getchar` `readline`、`FILE`: `fopen` `fclose` `fgetc` `fputc` `fgets` `fputs` `fread` `fwrite` `fseek` `ftell` `feof` `fprintf` `fflush` `stdin` `stdout` `stderr`)、`string.h` (`strlen` `strcpy` `strncpy` `strcat` `strcmp` `strncmp` `strchr`
   `strrchr` `strstr` `memcpy` `memmove` `memset` `memcmp`)、`stdlib.h` (`exit` `abs` `atoi` `rand` `srand` `malloc` `free` `calloc` `qsort`)、`ctype.h` (ASCII)、

@@ -52,10 +52,10 @@ static int rd(void *b, int n) { return read(fin, b, n); }
 static int wr(const void *b, int n) { return write(fout, b, n); }
 #endif
 
-#define NSYM    640
+#define NSYM    820 
 #define NPOOL   6400            /* the characters of the names */
 #define NHASH   64
-#define NREL    1700
+#define NREL    1900 
 #define LINEMAX 128
 #define NAMEMAX 17
 
@@ -142,14 +142,12 @@ static void mkname(char *dst, const char *src, u8 n)
 {
     u8 i;
     if (src[0] == '@') {            /* local: '@' + the scope + the name */
-        const char hx[] = "0123456789ABCDEF";
+        const char hx[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
         dst[0] = '@';
-        dst[1] = hx[(scope >> 12) & 15];
-        dst[2] = hx[(scope >> 8) & 15];
-        dst[3] = hx[(scope >> 4) & 15];
-        dst[4] = hx[scope & 15];
-        for (i = 0; i < n - 1 && i < NAMEMAX - 5; i++) dst[5 + i] = src[1 + i];
-        dst[5 + i] = 0;
+        dst[1] = hx[(scope / 62) % 62];
+        dst[2] = hx[scope % 62];
+        for (i = 0; i < n - 1 && i < NAMEMAX - 3; i++) dst[3 + i] = src[1 + i];
+        dst[3 + i] = 0;
     } else {
         for (i = 0; i < n && i < NAMEMAX; i++) dst[i] = src[i];
         dst[i] = 0;
@@ -301,7 +299,8 @@ static int expr(const char **p)
 /* ---------------------------------------------------------------- output */
 static u8 obuf[256];
 static u16 olen;
-static u16 relpos[NREL];
+static u8 reld[NREL];               /* the relocation table as it is written: the gaps between the places (255 = skip 254 bytes) */
+static u16 rlen, lastrel;
 #define NJB 1600                    /* relaxable branches (JBxx) that can be short; the others are long */
 static u8 jb_long[NJB / 8];         /* bit n: the n-th JBxx of the program is long */
 static u16 jbn;                     /* the number of the JBxx that is read now */
@@ -720,12 +719,24 @@ static void instruction(const op_t *o, const char *s)
 }
 
 /* ---------------------------------------------------------------- directives */
+static int addrel(u16 p)
+{
+    u16 g = p - lastrel;
+    u8 k = 0;
+    while (g > 254) { g -= 254; k++; }
+    if (rlen + k + 1 > NREL) return 0;
+    while (k--) reld[rlen++] = 255;
+    reld[rlen++] = (u8)g;
+    lastrel = p;
+    nrel++;
+    return 1;
+}
+
 static void putrel(void)
 {
     /* the instruction in ib has an address with its high byte at ib[irel] */
     if (pass == 2 && irel >= 0 && !raw) {
-        if (nrel < NREL) relpos[nrel++] = (u16)(opos + irel);
-        else err("too many addresses to relocate");
+        if (!addrel((u16)(opos + irel))) err("too many addresses to relocate");
     }
 }
 
@@ -784,8 +795,7 @@ static void listdir(u8 which, const char *s)
         } else {                    /* fdb */
             v = expr(&s);
             if (xrel && pass == 2 && !raw && opos >= 16) {
-                if (nrel < NREL) relpos[nrel++] = (u16)opos;
-                else err("too many addresses to relocate");
+                if (!addrel((u16)opos)) err("too many addresses to relocate");
             }
             emit((u8)((u16)v >> 8));
             emit((u8)v);
@@ -954,7 +964,7 @@ static void assemble_line(char *l)
 static void run_pass(void)
 {
     char l[LINEMAX + 2];
-    pc = 0; bpc = 0; inbss = 0; opos = 0; lineno = 0; scope = 0; nrel = 0; uline = 0; jbn = 0;
+    pc = 0; bpc = 0; inbss = 0; opos = 0; lineno = 0; scope = 0; nrel = 0; rlen = 0; lastrel = 0; uline = 0; jbn = 0;
     srcmode = raw ? 1 : 0;
     sline = 0;
     srctext = as_start;
@@ -1097,18 +1107,9 @@ int main(int argc, char **argv)
     }
     if (!errors && !noout && !raw) {
         /* the relocation table (the format of lib/crt0app.s): the gaps between the places, 255 = skip 254 bytes, 0 = end */
-        u16 cur = 0, j;
-        u8 tb[64];
-        u8 tn = 0;
-        for (j = 0; j < nrel; j++) {
-            u16 g = relpos[j] - cur;
-            while (g > 254) { tb[tn++] = 255; g -= 254; if (tn > 60) { wr(tb, tn); tn = 0; } }
-            tb[tn++] = (u8)g;
-            cur = relpos[j];
-            if (tn > 60) { wr(tb, tn); tn = 0; }
-        }
-        tb[tn++] = 0;
-        wr(tb, tn);
+        u8 z = 0;
+        wr(reld, rlen);
+        wr(&z, 1);
     }
     if (showsyms) print_symbols();
 #ifdef AS_HOST

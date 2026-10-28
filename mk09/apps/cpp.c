@@ -13,6 +13,11 @@
  */
 #include "ccio.h"
 
+/* the float constants (1.5, 2e-3f, .5) are turned into  @ and the 8 hex digits of the IEEE bits  (cc1 reads that) */
+#define FP_HOST
+#include "../lib/cc/fp.c"
+#include "../lib/cc/fpio.c"
+
 #ifdef CC_HOST
 #define fputs_err(m) fputs(m, stderr)
 #else
@@ -97,6 +102,32 @@ static u8 is_active(const char *name)
 
 static void expand(const char *s, char *o, u16 max, u8 depth);
 
+/* the length of the floating constant at s (digits with a point or an exponent, and an f or l), or 0 if it is not one */
+static u16 float_len(const char *s)
+{
+    u16 i = 0, digits = 0, j;
+    u8 dot = 0, ex = 0;
+    while (s[i] >= '0' && s[i] <= '9') { i++; digits++; }
+    if (s[i] == '.') {
+        dot = 1;
+        i++;
+        while (s[i] >= '0' && s[i] <= '9') { i++; digits++; }
+    }
+    if (!digits) return 0;
+    if (s[i] == 'e' || s[i] == 'E') {
+        j = i + 1;
+        if (s[j] == '+' || s[j] == '-') j++;
+        if (s[j] >= '0' && s[j] <= '9') {
+            while (s[j] >= '0' && s[j] <= '9') j++;
+            i = j;
+            ex = 1;
+        }
+    }
+    if (!dot && !ex) return 0;
+    if (s[i] == 'f' || s[i] == 'F' || s[i] == 'l' || s[i] == 'L') i++;
+    return i;
+}
+
 /* the arguments of a call: s is behind '(', the arguments are put into argpool[depth] (expanded), their addresses into args; returns the text behind ')' */
 static const char *get_args(const char *s, char **args, u8 *nargs, u8 depth)
 {
@@ -176,8 +207,29 @@ static void expand(const char *s, char *o, u16 max, u8 depth)
                 PUT(*s++);
             }
             if (*s) PUT(*s++);
-        } else if (c >= '0' && c <= '9') {
-            while (isidc(*s, 0) || *s == '.') PUT(*s++);
+        } else if (c == '@') {                  /* (a float constant that is converted already) */
+            PUT(*s++);
+            while (isidc(*s, 0)) PUT(*s++);
+        } else if ((c >= '0' && c <= '9') || (c == '.' && s[1] >= '0' && s[1] <= '9')) {
+            u16 fl = (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) ? 0 : float_len(s);
+            if (fl) {
+                char tmp[40], hx[9];
+                __L v;
+                u8 k;
+                const char *h = "0123456789ABCDEF";
+                u16 cp = fl;
+                if (cp > 39) cp = 39;
+                memcpy(tmp, s, cp);
+                tmp[cp] = 0;
+                __strtof(tmp, &v, 0);
+                hx[0] = h[v.hi >> 12]; hx[1] = h[(v.hi >> 8) & 15]; hx[2] = h[(v.hi >> 4) & 15]; hx[3] = h[v.hi & 15];
+                hx[4] = h[v.lo >> 12]; hx[5] = h[(v.lo >> 8) & 15]; hx[6] = h[(v.lo >> 4) & 15]; hx[7] = h[v.lo & 15];
+                PUT('@');
+                for (k = 0; k < 8; k++) PUT(hx[k]);
+                s += fl;
+            } else {
+                while (isidc(*s, 0) || *s == '.') PUT(*s++);
+            }
         } else if (isidc(c, 1)) {
             const char *b = s;
             u16 len;

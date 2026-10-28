@@ -221,6 +221,8 @@ fstest: $(B)/fs_host $(B)/mk09.img
 test: all charsets fstest
 	sh tests/portcheck.sh
 	gcc -O1 -o $(B)/sfp_test tests/sfp_test.c -lm && $(B)/sfp_test | tail -1
+	gcc -O0 -w -DFP_HOST -o $(B)/fp_test tests/fp_host_test.c -lm && $(B)/fp_test | tail -1
+	gcc -O0 -w -DFP_HOST -o $(B)/fpio_test tests/fpio_host_test.c -lm && $(B)/fpio_test | tail -1
 	$(PYTHON) tests/mk09_test.py
 	$(PYTHON) tests/jwp_test.py
 	$(PYTHON) tests/fpga_mk09.py

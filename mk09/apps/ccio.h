@@ -29,19 +29,20 @@ typedef int8_t s8;
 
 #ifdef CC_HOST
 typedef struct { FILE *f; } rfile;
-typedef struct { FILE *f; u16 pos; } wfile;
+typedef struct { FILE *f; u16 pos, ph; } wfile;
 static int r_open(rfile *r, const char *path) { r->f = fopen(path, "rb"); return r->f ? 0 : -1; }
 static int r_getc(rfile *r) { return fgetc(r->f); }
 static void r_close(rfile *r) { if (r->f) fclose(r->f); r->f = NULL; }
-static int w_open(wfile *w, const char *path) { w->f = fopen(path, "wb+"); w->pos = 0; return w->f ? 0 : -1; }
-static void w_putc(wfile *w, int c) { fputc(c, w->f); w->pos++; }
+static int w_open(wfile *w, const char *path) { w->f = fopen(path, "wb+"); w->pos = 0; w->ph = 0; return w->f ? 0 : -1; }
+static void w_putc(wfile *w, int c) { fputc(c, w->f); if (++w->pos == 0) w->ph++; }
 static void w_flush(wfile *w) { fflush(w->f); }
 static void w_close(wfile *w) { if (w->f) fclose(w->f); w->f = NULL; }
 static u16 w_tell(wfile *w) { return w->pos; }
-static void w_patch(wfile *w, u16 at, const char *s, u16 n) { fseek(w->f, at, SEEK_SET); fwrite(s, 1, n, w->f); fseek(w->f, 0, SEEK_END); }
+static u16 w_tellh(wfile *w) { return w->ph; }
+static void w_patch(wfile *w, u16 ah, u16 at, const char *s, u16 n) { fseek(w->f, ((long)ah << 16) | at, SEEK_SET); fwrite(s, 1, n, w->f); fseek(w->f, 0, SEEK_END); }
 #else
 typedef struct { int fd; u16 pos, cnt; u8 buf[CC_BUF]; } rfile;
-typedef struct { int fd; u16 len; u16 pos; u8 buf[CC_BUF]; } wfile;
+typedef struct { int fd; u16 len; u16 pos, ph; u8 buf[CC_BUF]; } wfile;
 static int r_open(rfile *r, const char *path)
 {
     r->fd = open(path, FO_READ);
@@ -73,18 +74,19 @@ static void w_flush(wfile *w)
 static void w_putc(wfile *w, int c)
 {
     w->buf[w->len++] = (u8)c;
-    w->pos++;
+    if (++w->pos == 0) w->ph++;
     if (w->len == CC_BUF) w_flush(w);
 }
 static void w_close(wfile *w) { if (w->fd >= 0) { w_flush(w); close(w->fd); } w->fd = -1; }
 static u16 w_tell(wfile *w) { return w->pos; }
-static void w_patch(wfile *w, u16 at, const char *s, u16 n)
+static u16 w_tellh(wfile *w) { return w->ph; }
+static void w_patch(wfile *w, u16 ah, u16 at, const char *s, u16 n)
 {
     u16 rh, rl;
     w_flush(w);
-    seek(w->fd, 0, at, 0, &rh, &rl);
+    seek(w->fd, ah, at, 0, &rh, &rl);
     write(w->fd, s, n);
-    seek(w->fd, 0, w->pos, 0, &rh, &rl);
+    seek(w->fd, w->ph, w->pos, 0, &rh, &rl);
 }
 #endif
 
