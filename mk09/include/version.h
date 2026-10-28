@@ -42,11 +42,13 @@
  *                    is kept as it is written (gaps), local labels have 2 character scopes (820 symbols); the IR file can be over 64 KB.
  *   1.12 2026-10-28  Pascal, first step: pas1 (Pascal to the IR of the C compiler) and the driver pc; integer char boolean, enumerations, ranges, arrays, records,
  *                    pointers, nested procedures and functions (static link), var parameters, case with for repeat while, write/read, new/dispose.
+ *   1.13 2026-10-28  Pascal: real and longint (library calls, like float and long of the C compiler), write/read of them, sqrt sin cos arctan ln exp trunc round ...;
+ *                    as: local labels are kept as keys, not as text (1000 symbols).
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.12"
+#define MK09_VERSION    "1.13"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

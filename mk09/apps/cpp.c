@@ -15,6 +15,7 @@
 
 /* the float constants (1.5, 2e-3f, .5) are turned into  @ and the 8 hex digits of the IEEE bits  (cc1 reads that) */
 #define FP_HOST
+#define FP_PARSE_ONLY
 #include "../lib/cc/fp.c"
 #include "../lib/cc/fpio.c"
 

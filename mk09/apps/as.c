@@ -52,10 +52,10 @@ static int rd(void *b, int n) { return read(fin, b, n); }
 static int wr(const void *b, int n) { return write(fout, b, n); }
 #endif
 
-#define NSYM    820 
-#define NPOOL   6400            /* the characters of the names */
+#define NSYM    1000
+#define NPOOL   3000            /* the characters of the names */
 #define NHASH   64
-#define NREL    1900 
+#define NREL    1200 
 #define LINEMAX 128
 #define NAMEMAX 17
 
@@ -64,7 +64,8 @@ static int wr(const void *b, int n) { return write(fout, b, n); }
 #define F_REL 2     /* the value is an address of the program */
 #define F_BSS 4     /* the address is in the bss: the size of the image is added when it is known */
 typedef struct sym {
-    u16  name;      /* offset in npool */
+    u16  name;      /* offset in npool; a local label (@ and a scope and a letter and a number: @Y12) has no name text: 0x8000 and the high 15 bits of its key */
+    u16  klo;       /* the low 16 bits of the key of a local label: scope (12 bits), letter (6), number (13) */
     int  val;
     u16  defline;
     u8   flags;
@@ -83,18 +84,53 @@ static u8 hashof(const char *s)
     return h & (NHASH - 1);
 }
 
+static u8 b62(char c)
+{
+    if (c >= '0' && c <= '9') return (u8)(c - '0');
+    if (c >= 'A' && c <= 'Z') return (u8)(c - 'A' + 10);
+    return (u8)(c - 'a' + 36);
+}
+
+/* "@" + 2 characters of the scope + a letter + 1 to 4 digits (no 0 in front): the key of the label, so that no text of it is kept (the local labels are most of the names) */
+static u8 lockey(const char *n, u16 *khi, u16 *klo)
+{
+    u16 num = 0, scope, letter;
+    u8 i = 4;
+    if (n[0] != '@' || !n[1] || !n[2]) return 0;
+    if (!((n[3] >= 'A' && n[3] <= 'Z') || (n[3] >= 'a' && n[3] <= 'z'))) return 0;
+    if (n[4] < '1' || n[4] > '9') return 0;
+    for (; n[i]; i++) {
+        if (n[i] < '0' || n[i] > '9' || i > 7) return 0;
+        num = (u16)(num * 10 + n[i] - '0');
+    }
+    if (num > 8191) return 0;
+    scope = (u16)(b62(n[1]) * 62 + b62(n[2]));
+    letter = b62(n[3]);
+    *khi = (u16)(0x8000 | (scope << 3) | (letter >> 3));
+    *klo = (u16)(((letter & 7) << 13) | num);
+    return 1;
+}
+
 static int lookup(const char *n, u8 create)
 {
-    u8 h = hashof(n);
-    u16 i = hashtab[h];
+    u16 khi, klo, i;
+    u8 h, loc = lockey(n, &khi, &klo);
+    h = loc ? (u8)((khi ^ klo ^ (klo >> 6)) & (NHASH - 1)) : hashof(n);
+    i = hashtab[h];
     while (i) {
-        if (!strcmp(npool + syms[i - 1].name, n)) return i - 1;
-        i = syms[i - 1].next;
+        sym_t *y = &syms[i - 1];
+        if (loc ? (y->name == khi && y->klo == klo) : (!(y->name & 0x8000) && !strcmp(npool + y->name, n))) return i - 1;
+        i = y->next;
     }
-    if (!create || nsym >= NSYM || nplen + strlen(n) + 1 > NPOOL) return -1;
-    syms[nsym].name = nplen;
-    strcpy(npool + nplen, n);
-    nplen += (u16)strlen(n) + 1;
+    if (!create || nsym >= NSYM) return -1;
+    if (loc) { syms[nsym].name = khi; syms[nsym].klo = klo; }
+    else {
+        if (nplen + strlen(n) + 1 > NPOOL) return -1;
+        syms[nsym].name = nplen;
+        syms[nsym].klo = 0;
+        strcpy(npool + nplen, n);
+        nplen += (u16)strlen(n) + 1;
+    }
     syms[nsym].flags = 0;
     syms[nsym].val = 0;
     syms[nsym].defline = 0;
@@ -993,7 +1029,9 @@ static void print_symbols(void)
 {
     u16 i;
     for (i = 0; i < nsym; i++) {
-        char *nm = npool + syms[i].name;
+        char *nm;
+        if (syms[i].name & 0x8000) continue;
+        nm = npool + syms[i].name;
         if (nm[0] == '@' || (nm[0] == '_' && nm[1] == '_')) continue;
         LOG("%04x %c %s\n", (u16)(syms[i].val + ((syms[i].flags & F_BSS) ? imgend : 0)), (syms[i].flags & F_REL) ? 'A' : ' ', nm);
     }

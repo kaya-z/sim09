@@ -62,6 +62,7 @@ static int __bzero(u16 *b, u16 n)
     return 1;
 }
 
+#ifndef FP_PARSE_ONLY
 /* the digits of a float (positive, finite):  mode 0: the digits of the integer part (at least one) and then n digits behind the point, *xp = the number of digits of
  * the integer part;  mode 1: n significant digits, *xp = the decimal exponent X of d.ddd * 10^X.  Rounded correctly.  Returns the number of digits in g. */
 static int __fdig(__L *f, char *g, int mode, int n, int *xp)
@@ -199,6 +200,8 @@ int __fmtf(char *out, __L *f, int conv, int prec)
     out[o] = 0;
     return o;
 }
+
+#endif
 
 /* decimal text -> float:  [+-] digits [. digits] [e [+-] digits] ;  *endp = the end of the text.  The result is the nearest float. */
 static void __strtof(char *s, __L *d, char **endp)

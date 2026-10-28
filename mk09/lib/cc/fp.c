@@ -20,17 +20,18 @@ static void __shr1s(u16 *h, u16 *l, u16 *st)           /* (h:l) >>= 1;  *st gets
     *h >>= 1;
 }
 
-static void __shl1(u16 *h, u16 *l)
-{
-    *h = (*h << 1) | (*l >> 15);
-    *l <<= 1;
-}
-
 static void __add32(u16 *h, u16 *l, u16 bh, u16 bl)
 {
     u16 lo = *l + bl;
     *h = *h + bh + (lo < *l);
     *l = lo;
+}
+
+#ifndef FP_PARSE_ONLY            /* (the compilers that only read a decimal number need only the pack and unpack)  */
+static void __shl1(u16 *h, u16 *l)
+{
+    *h = (*h << 1) | (*l >> 15);
+    *l <<= 1;
 }
 
 static void __sub32(u16 *h, u16 *l, u16 bh, u16 bl)
@@ -57,6 +58,7 @@ static void __m16(u16 x, u16 y, u16 *hi, u16 *lo)
     *lo = l;
 }
 
+#endif
 /* ---------------------------------------------------------------- unpack and pack */
 /* the exponent field, the mantissa with the hidden bit as a 24 bit number (mh has 8 bits) */
 static void __unpack(__L *a, u16 *sign, int *e, u16 *mh, u16 *ml)
@@ -87,6 +89,7 @@ static void __pack(__L *d, u16 sign, int e, u16 mh, u16 ml, u16 st)
     d->hi = sign | (e << 7) | ((mh >> 3) & 0x7F);
 }
 
+#ifndef FP_PARSE_ONLY
 /* ---------------------------------------------------------------- + - */
 static void __fadd2(__L *d, __L *b, __L *a, u16 flip)      /* *d = *a + *b, or *a - *b when flip */
 {
@@ -302,3 +305,4 @@ int __ftoi(__L *a)
     __ftol(&t, a);
     return t.lo;
 }
+#endif

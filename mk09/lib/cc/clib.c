@@ -995,3 +995,126 @@ char *__pstr(int slen, int dlen, char *src, char *dst)
     for (i = 0; i < dlen; i++) dst[i] = i < slen ? src[i] : ' ';
     return dst;
 }
+
+/* ---- Pascal: longint and real.  A longint or a real is given to these by its address; a result comes back in __lret (like the long and float of the C compiler) */
+int __pwr(int d, int w, __L *p)
+{
+    char b[48];
+    char *s = b;
+    int n;
+    if (d < 0) {                              /* no digits behind the point: 1.234568E+01, a blank in front of a number that is not negative */
+        n = __fmtf(b + 1, p, 'E', 6);
+        if (b[1] != '-') { b[0] = ' '; n++; } else s = b + 1;
+    } else n = __fmtf(b, p, 'f', d);
+    __ppad(w, n);
+    while (*s) putchar(*s++);
+    return 0;
+}
+
+int __pwg(int w, long *p)
+{
+    char b[16];
+    char *s = b;
+    int n;
+    sprintf(b, "%ld", *p);
+    n = strlen(b);
+    __ppad(w, n);
+    while (*s) putchar(*s++);
+    return 0;
+}
+
+int __prg(long *p)
+{
+    int c, neg = 0;
+    long v = 0;
+    do c = getchar(); while (c == ' ' || c == '\n' || c == '\t' || c == '\r');
+    if (c == '-') { neg = 1; c = getchar(); } else if (c == '+') c = getchar();
+    while (c >= '0' && c <= '9') { v = v * 10 + (c - '0'); c = getchar(); }
+    if (c >= 0) ungetc(c, stdin);
+    *p = neg ? -v : v;
+    return 0;
+}
+
+int __prr(__L *p)
+{
+    char b[40];
+    int c, n = 0;
+    do c = getchar(); while (c == ' ' || c == '\n' || c == '\t' || c == '\r');
+    while (n < 38 && ((c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E')) { b[n++] = c; c = getchar(); }
+    if (c >= 0) ungetc(c, stdin);
+    b[n] = 0;
+    __strtof(b, p, 0);
+    return 0;
+}
+
+long __ptrunc(float *a) { return (long)*a; }
+long __pround(float *a) { float x = *a; return (long)(x < 0 ? x - 0.5 : x + 0.5); }
+float __pint(float *a) { return (float)(long)*a; }
+float __pfrac(float *a) { float x = *a; return x - (float)(long)x; }
+float __pfabs(float *a) { float x = *a; if (x < 0) return -x; return x; }
+float __psqr(float *a) { float x = *a; return x * x; }
+long __plabs(long *a) { long x = *a; if (x < 0) return -x; return x; }
+long __plsqr(long *a) { long x = *a; return x * x; }
+float __psqrt(float *a) { return sqrt(*a); }
+
+/* sin, cos, arctan, ln, exp: series for a small argument (the accuracy is about 6 digits) */
+float __psin(float *a)
+{
+    float x = *a, t, r;
+    long k;
+    k = (long)(x / 6.2831853 + (x < 0 ? -0.5 : 0.5));
+    x = x - (float)k * 6.2831853;                                   /* -pi .. pi */
+    if (x > 1.5707963) x = 3.1415927 - x;
+    else if (x < -1.5707963) x = -3.1415927 - x;                    /* -pi/2 .. pi/2 */
+    t = x * x;
+    r = x * (1 - t / 6 * (1 - t / 20 * (1 - t / 42 * (1 - t / 72 * (1 - t / 110)))));
+    return r;
+}
+
+float __pcos(float *a)
+{
+    float x = *a + 1.5707963;
+    return __psin(&x);
+}
+
+float __patan(float *a)
+{
+    float x = *a, t, r, add = 0;
+    int neg = 0, inv = 0;
+    if (x < 0) { neg = 1; x = -x; }
+    if (x > 1) { inv = 1; x = 1 / x; }
+    if (x > 0.41421356) { x = (x - 1) / (x + 1); add = 0.78539816; }   /* atan x = pi/4 + atan((x-1)/(x+1)) */
+    t = x * x;
+    r = x * (1 - t / 3 * (1 - t * 3 / 5 * (1 - t * 5 / 7 * (1 - t * 7 / 9 * (1 - t * 9 / 11 * (1 - t * 11 / 13))))));
+    r = r + add;
+    if (inv) r = 1.5707963 - r;
+    return neg ? -r : r;
+}
+
+float __pexp(float *a)
+{
+    float x = *a, r, t;
+    long n = (long)(x / 0.6931472 + (x < 0 ? -0.5 : 0.5));
+    int i;
+    x = x - (float)n * 0.6931472;
+    t = x;
+    r = 1 + t * (1 + t / 2 * (1 + t / 3 * (1 + t / 4 * (1 + t / 5 * (1 + t / 6 * (1 + t / 7))))));
+    if (n > 127) n = 127;
+    if (n < -126) return 0;
+    for (i = 0; i < n; i++) r = r * 2;
+    for (i = 0; i > n; i--) r = r / 2;
+    return r;
+}
+
+float __pln(float *a)
+{
+    float x = *a, s, t, r;
+    int e = 0;
+    if (x <= 0) return 0;
+    while (x >= 2) { x = x / 2; e++; }
+    while (x < 1) { x = x * 2; e--; }
+    s = (x - 1) / (x + 1);
+    t = s * s;
+    r = 2 * s * (1 + t / 3 * (1 + t * 3 / 5 * (1 + t * 5 / 7 * (1 + t * 7 / 9 * (1 + t * 9 / 11)))));
+    return r + (float)e * 0.6931472;
+}

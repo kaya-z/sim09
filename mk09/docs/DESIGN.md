@@ -5,7 +5,7 @@
 
 Copyright (c) 2026 YUKARI Semiconductor Devices
 
-**版: 1.12** (2026-10-28)。ソース (`include/version.h` の `MK09_VERSION`) も同じ版です。変更のたびに両方を上げます (16 章の改版履歴)。
+**版: 1.13** (2026-10-28)。ソース (`include/version.h` の `MK09_VERSION`) も同じ版です。変更のたびに両方を上げます (16 章の改版履歴)。
 
 MK09 は MC6809 のための**マイクロカーネル**です。カーネルがするのは、タスクの切り替え、メッセージの受け渡し、タイマ、
 メモリの領域の検査だけで、コンソール、ディスク、ファイル、プログラムの読み込みは、メッセージで話す**サーバ**(普通のタスク)がします。
@@ -444,6 +444,7 @@ BASIC は 1.3 で作り直しました (YSD9000 の MK09 で先に改良され�
 | 1.7 | 2026-10-27 | **MK09 の上の開発環境の第 1 段階: 6809 のアセンブラ `as`** (`apps/as.c`、`apps/as_text.h`、見本 `disk/asm/`、`tests/asm/`)。設計は 17 章 |
 | 1.8 | 2026-10-27 | **MK09 の上の C コンパイラ** (`apps/cpp.c` `cc1.c` `cg.c` `cc.c`、`lib/cc/`、`docs/IR.md`)。中間表現 (IR) を経由する 3 段 + ドライバ。段は PM の新しい要求 `PM_EXEC` で次の段に入れ替わる (待つ親がないので、各段が TPA を全部使える)。プログラムの引数は 32 個まで。PM のコード枠を 0A70 → 0B0A に |
 | 1.9 | 2026-10-27 | C コンパイラの 2 段目: `as` の相対分岐の自動選択 (`jbxx`)、`cg` がそれと「ロードが立てたフラグ」を使う。`cg` の不具合 (比較と分岐の間にスタックへの push が入ってフラグを壊す) を直した。ヘッダ (`/INC`: stdio string stdlib ctype stdarg stddef mklib) とライブラリの拡張 (sprintf、文字列、ctype、malloc、qsort、rand、seek、unlink、mkdir、chdir ...) |
+| 1.13 | 2026-10-28 | Pascal の 2 段目: `real` と `longint` (演算はライブラリ。実数の定数は実行時に `atof`)。`as` の局所ラベルは文字ではなく鍵で持つ (名前 1000 個) |
 | 1.12 | 2026-10-28 | Pascal の 1 段目: `pas1` (Pascal から C と同じ IR へ) とドライバ `pc`。標準 Pascal の中核 ([PASCAL.md](PASCAL.md)) |
 | 1.11 | 2026-10-28 | C コンパイラの 4 段目: `float` / `double` (IEEE 単精度。演算はライブラリ、定数は `cpp` が作る)、`printf` の `%f %e %g` と精度、`atof` `sqrt` など、`math.h`。`as` の再配置の表を詰めた |
 | 1.10 | 2026-10-28 | C コンパイラの 3 段目: `FILE`、`long`、`*p++` の最適化 (`postinc`)。`cc1` のエラーメッセージを `/LIB/CC1.MSG` に (`tools/msgsplit.py`)、`as` の名前を領域にまとめて 640 個に |
