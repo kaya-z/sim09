@@ -32,7 +32,7 @@
 #include "mm.h"
 
 #define HDRSIZE     16
-#define IOBUF       224             /* (the start-up block, ARGMAX = 128, is in the first part of it; the bigger the chunk, the fewer reads when a program is loaded) */
+#define IOBUF       128             /* (the start-up block, ARGMAX = 128, is in the first part of it; the bigger the chunk, the fewer reads when a program is loaded) */
 #define NOH         0xFF
 #define TPA_SIZE    (TPA_END - TPA_BASE)
 
@@ -192,15 +192,15 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
     regn[tid] = pages;
     st = mk_tload(tid, hi - ARGMAX, sb, ARGMAX);    /* (the buffer is the start-up block until now) */
     if (!st) st = mk_tload(tid, base, hdr, HDRSIZE);
-    off = HDRSIZE;
-    while (!st && off < size) {
-        st = fs_rd(h, iobuf, IOBUF);
-        if (st) break;
-        n = rm.a;
-        if (!n) { st = E_FORMAT; break; }
-        if (off + n > size) n = size - off;
-        st = mk_tload(tid, base + off, iobuf, n);
-        off += n;
+    if (!st) {                                      /* the rest of the file goes straight from FS to the memory of the program (FS_READTL) */
+        rm.op = FS_READTL;
+        rm.a = h;
+        rm.b = base + HDRSIZE;
+        rm.c = size - HDRSIZE;
+        rm.d = tid;
+        st = mk_call(TID_FS, &rm);
+        if (!st) st = rm.op;
+        if (!st && rm.a != size - HDRSIZE) st = E_FORMAT;
     }
     if (st) goto out;
     if (hin != NOH) fsc(FS_CHOWN, hin, tid);

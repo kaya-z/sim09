@@ -116,11 +116,10 @@ static u8 cwidth(const u8 *p, u8 n)
         if (n == 4) return 2;
         if (n == 3) {
             if (p[0] >= 0xE3 && p[0] <= 0xED) return 2;     /* CJK, kana, hangul */
-            if (p[0] == 0xEF) {
-                if (p[1] == 0xBD && p[2] >= 0xA1) return 1;  /* halfwidth katakana */
-                if (p[1] == 0xBE && p[2] <= 0x9F) return 1;
-                if (p[1] == 0xBC || p[1] == 0xBD) return 2;  /* fullwidth forms */
-                if (p[1] == 0xBF && p[2] >= 0xA0 && p[2] <= 0xA6) return 2;
+            if (p[0] == 0xEF) {                              /* the last two bytes: EF BC 00 - EF BD A0 fullwidth forms, up to EF BE 9F halfwidth katakana, EF BF A0 - A6 fullwidth signs */
+                u16 c = ((u16)p[1] << 8) | p[2];
+                if (c <= 0xBDA0 && c >= 0xBC00) return 2;
+                if (c >= 0xBFA0 && c <= 0xBFA6) return 2;
             }
         }
         return 1;

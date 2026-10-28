@@ -31,8 +31,12 @@ u8 fsx_get(u8 client, u16 off, void *dst, u16 n)
     return mk_copyfrom(client, off, dst, n);
 }
 
+static u8 tl_tid;                       /* FS_READTL: the data goes to the memory of a new task (PM loads a program), not to a granted buffer */
+static u16 tl_addr;
+
 u8 fsx_put(u8 client, u16 off, const void *src, u16 n)
 {
+    if (tl_tid) return mk_tload(tl_tid, tl_addr + off, src, n);
     return mk_copyto(client, off, src, n);
 }
 
@@ -79,9 +83,14 @@ int main(void)
         case FS_CLOSE:
             r.op = fs_close((u8)m.a);
             break;
+        case FS_READTL:
+            tl_tid = (u8)m.d;
+            tl_addr = m.b;
+            /* fall through */
         case FS_READ:
             r.op = fs_read((u8)m.a, m.src, m.c, &got);
             r.a = got;
+            tl_tid = 0;
             break;
         case FS_WRITE:
             r.op = fs_write((u8)m.a, m.src, m.c, &got);

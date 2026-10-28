@@ -200,7 +200,7 @@ boottab	fcb	0,PRIO_IDLE,0
 	fdb	TTY_CODE,TTY_DATA,TTY_DATA+TTY_DSZ
 	fcb	2,1,0
 	fdb	DISK_CODE,DISK_DATA,DISK_DATA+DISK_DSZ
-	fcb	3,1,0
+	fcb	3,1,1				FS is privileged: it loads programs into new tasks (FS_READTL)
 	fdb	FS_CODE,FS_DATA,FS_DATA+FS_DSZ
 	fcb	4,1,1
 	fdb	PM_CODE,PM_DATA,PM_DATA+PM_DSZ

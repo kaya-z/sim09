@@ -63,11 +63,13 @@
  *                    links them (hello.pas: 30M cycles).  as: another round of pass 1 when a JBxx has an unknown target.
  *   1.22 2026-10-29  faster loading and linking: PM reads a program in chunks of 224 bytes (was 128; the data of MM moved to low memory for the room), cg skips the index lines
  *                    of blocks that are not needed and hashes its names (hello.pas: 24M cycles, 25 times faster than 1.18).
+ *   1.23 2026-10-29  reboot (a program); PM loads a program with ONE request: FS_READTL, FS reads the file into the memory of the new task itself (FS is privileged for
+ *                    tload); the code slots of TTY and FS were adjusted (cwidth is shorter).  hello.pas: 19M cycles.
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.22"
+#define MK09_VERSION    "1.23"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

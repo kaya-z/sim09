@@ -63,6 +63,7 @@
 #define FS_FSTAT    16      /* a = handle -> c:b = size, a = attr */
 #define FS_CHOWN    17      /* a = handle, b = new owner tid (PM) */
 #define FS_TIME     18      /* -> a = date, b = time (FAT format) */
+#define FS_READTL   19      /* like FS_READ, but b = an address in the memory of the new task d (PM, loading a program): no grant, no copy through PM */
 
 #define FO_READ     0x01
 #define FO_WRITE    0x02

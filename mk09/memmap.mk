@@ -23,11 +23,11 @@ TPA_END    = E000
 
 # size of the code slots (the build checks that the code fits)
 K_CSZ      = 0858
-TTY_CSZ    = 08CC
+TTY_CSZ    = 088A
 DISK_CSZ   = 029C
-FS_CSZ     = 27D4
+FS_CSZ     = 2814
 MM_CSZ     = 01C4
-PM_CSZ     = 0B0A
+PM_CSZ     = 0B6A
 
 # size of the data slots (rwdata + bss + stack)
 K_DSZ      = 0260
@@ -35,7 +35,7 @@ TTY_DSZ    = 01C0
 DISK_DSZ   = 0190
 FS_DSZ     = 0780
 MM_DSZ     = 0060
-PM_DSZ     = 01F0
+PM_DSZ     = 0190
 
 # The memory above the I/O page has more room than the data need: the code of these modules is
 # put there (behind the data slots) instead of into the low memory, which the programs need.
