@@ -32,7 +32,7 @@
 #include "mm.h"
 
 #define HDRSIZE     16
-#define IOBUF       128             /* (also the size of the start-up block, ARGMAX) */
+#define IOBUF       224             /* (the start-up block, ARGMAX = 128, is in the first part of it; the bigger the chunk, the fewer reads when a program is loaded) */
 #define NOH         0xFF
 #define TPA_SIZE    (TPA_END - TPA_BASE)
 

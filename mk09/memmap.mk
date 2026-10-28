@@ -35,7 +35,7 @@ TTY_DSZ    = 01C0
 DISK_DSZ   = 0190
 FS_DSZ     = 0780
 MM_DSZ     = 0060
-PM_DSZ     = 0190
+PM_DSZ     = 01F0
 
 # The memory above the I/O page has more room than the data need: the code of these modules is
 # put there (behind the data slots) instead of into the low memory, which the programs need.
@@ -43,5 +43,5 @@ HIGH       = DISK PM MM
 
 # The pages $0110-$02FF are free once the system is up (the boot ROM used $0200 for its sector buffer): the data of these modules
 # (only bss and a little initialised data below $0200) goes there, which leaves room in the high memory.
-LOWDATA    = DISK
+LOWDATA    = DISK MM
 

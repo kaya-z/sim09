@@ -61,11 +61,13 @@
  *                    cg stops the library rounds when nothing is needed and does not copy the marker lines (hello.pas: 56M cycles, a tenth of 1.18).
  *   1.21 2026-10-29  the library is assembled once, at build time (tools/mkobj.py, as -c): /LIB/CLIB.OBJ and RT.OBJ hold the code of the blocks; cg writes OBJ lines and as
  *                    links them (hello.pas: 30M cycles).  as: another round of pass 1 when a JBxx has an unknown target.
+ *   1.22 2026-10-29  faster loading and linking: PM reads a program in chunks of 224 bytes (was 128; the data of MM moved to low memory for the room), cg skips the index lines
+ *                    of blocks that are not needed and hashes its names (hello.pas: 24M cycles, 25 times faster than 1.18).
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.21"
+#define MK09_VERSION    "1.22"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

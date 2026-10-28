@@ -15,7 +15,7 @@ The object file has the code of the blocks, one after the other, as a stream of 
     3 kind n name hi lo   a word that has a name that the block does not define: kind 0, the address of the name is added;
                           kind 1 (the distance of a branch), the address of the name minus the start of the block is added
 The index has one line for each block:  offset-high offset-low length code-size bss-size defs;uses;exports  (the exports are name:kind:offset separated by commas;
-kind 0 code, 1 bss).  cg gives these to as, which links the blocks.
+kind 0 code, 1 bss); the line starts with the number of its characters after that number and a blank (cg skips the blocks it does not need).  cg gives these to as, which links the blocks.
 """
 import os, subprocess, sys, tempfile
 
@@ -129,8 +129,9 @@ with tempfile.TemporaryDirectory() as tmp:
         b = blocks[i]
         rec, csize, bsize, exp = record(b, tmp)
         uses = [u for u in dict.fromkeys(b['uses']) if u not in b['defs']]
-        idx.append('%d %d %d %d %d %s;%s;%s' % (len(obj) >> 16, len(obj) & 65535, len(rec), csize, bsize, ','.join(b['defs']), ','.join(uses),
-                                                ','.join('%s:%d:%d' % e for e in exp)))
+        rest = '%d %d %d %d %d %s;%s;%s' % (len(obj) >> 16, len(obj) & 65535, len(rec), csize, bsize, ','.join(b['defs']), ','.join(uses),
+                                            ','.join('%s:%d:%d' % e for e in exp))
+        idx.append('%d %s' % (len(rest), rest))
         obj += rec
 open(out_obj, 'wb').write(bytes(obj))
 open(out_idx, 'w', encoding='latin-1').write('\n'.join(idx) + '\n')

@@ -1205,10 +1205,16 @@ static char *names[NNAME];
 static u8 state[NNAME];         /* 0 needed, 1 defined by the program or taken from the library */
 static u8 nnames;
 
+static u8 nhead[64], nnext[NNAME];        /* the names with the same hash: index + 1 of the first, of the next */
+
+static u8 name_hash(const char *s, u16 n) { return (u8)((s[n - 1] * 5 + s[n > 2 ? 2 : 0] + n) & 63); }
+
 static int find_name(const char *s, u16 n)
 {
     u8 i;
-    for (i = 0; i < nnames; i++) if (names[i][0] == s[0] && !strncmp(names[i], s, n) && names[i][n] == 0) return i;
+    if (!n) return -1;
+    for (i = nhead[name_hash(s, n)]; i; i = nnext[i - 1])
+        if (names[i - 1][0] == s[0] && !strncmp(names[i - 1], s, n) && names[i - 1][n] == 0) return i - 1;
     return -1;
 }
 
@@ -1225,6 +1231,11 @@ static int add_name(const char *s, u16 n, u8 st)
     names[nnames] = pool + plen;
     plen += n + 1;
     state[nnames] = st;
+    {
+        u8 h = name_hash(s, n);
+        nnext[nnames] = nhead[h];
+        nhead[h] = (u8)(nnames + 1);
+    }
     return nnames++;
 }
 
@@ -1285,10 +1296,10 @@ static void copy_text(wfile *w, const char *path)
  *   offset-high offset-low length code-size bss-size defs;uses;exports        (the names are separated by commas; an export is name:kind:offset)
  * A block that defines a needed name is not copied: the program gets  OBJ file,offset-high,offset-low,code-size,bss-size  and a line  OBJX name,kind,offset  for each name
  * that the block defines, and as links the block (the code of the library is made once, by mkobj, not assembled again for every program).  What the block uses becomes needed. */
-static int idx_num(rfile *x, u16 *v, int c)
+static int idx_num(rfile *x, u16 *v, int c, u16 *cnt)
 {
     *v = 0;
-    while (c >= '0' && c <= '9') { *v = (u16)(*v * 10 + c - '0'); c = r_getc(x); }
+    while (c >= '0' && c <= '9') { *v = (u16)(*v * 10 + c - '0'); c = r_getc(x); (*cnt)++; }
     return c;
 }
 
@@ -1304,19 +1315,21 @@ static u8 pull_indexed(wfile *w, u8 fidx, const char *idx)
 {
     rfile x;
     u8 copied = 0;
-    u16 hi, lo, len, cs, bs, p;
+    u16 hi, lo, len, cs, bs, p, ll, cnt;
     int c;
     char dbuf[120], nm[40], ebuf[200];
     if (r_open(&x, idx)) return 0;
     for (c = r_getc(&x); c >= 0;) {
         u8 want = 0;
         u16 dl = 0, n, el = 0;
-        c = idx_num(&x, &hi, c); c = r_getc(&x);
-        c = idx_num(&x, &lo, c); c = r_getc(&x);
-        c = idx_num(&x, &len, c); c = r_getc(&x);
-        c = idx_num(&x, &cs, c); c = r_getc(&x);
-        c = idx_num(&x, &bs, c); c = r_getc(&x);
-        while (c >= 0 && c != ';') { if (dl < sizeof(dbuf) - 1) dbuf[dl++] = (char)c; c = r_getc(&x); }
+        cnt = 0;
+        c = idx_num(&x, &ll, c, &cnt); c = r_getc(&x); cnt = 1;     /* ll: the length of the rest of the line */
+        c = idx_num(&x, &hi, c, &cnt); c = r_getc(&x); cnt++;
+        c = idx_num(&x, &lo, c, &cnt); c = r_getc(&x); cnt++;
+        c = idx_num(&x, &len, c, &cnt); c = r_getc(&x); cnt++;
+        c = idx_num(&x, &cs, c, &cnt); c = r_getc(&x); cnt++;
+        c = idx_num(&x, &bs, c, &cnt); c = r_getc(&x); cnt++;
+        while (c >= 0 && c != ';') { if (dl < sizeof(dbuf) - 1) dbuf[dl++] = (char)c; c = r_getc(&x); cnt++; }
         dbuf[dl] = 0;
         for (p = 0; p < dl;) {                       /* the names that the block defines: is one of them needed? */
             n = 0;
@@ -1327,41 +1340,43 @@ static u8 pull_indexed(wfile *w, u8 fidx, const char *idx)
             }
             p = (u16)(p + n + 1);
         }
-        if (want) {
-            for (p = 0; p < dl;) {
-                n = 0;
-                while (p + n < dl && dbuf[p + n] != ',') n++;
-                add_name(dbuf + p, n, 1);
-                p = (u16)(p + n + 1);
-            }
+        if (!want) {                                 /* not needed: the rest of the line is skipped (it is in the buffer, mostly) */
+            r_skip(&x, (u16)(ll - cnt));
+            c = r_getc(&x);                          /* the end of the line */
+            c = r_getc(&x);
+            continue;
+        }
+        for (p = 0; p < dl;) {
+            n = 0;
+            while (p + n < dl && dbuf[p + n] != ',') n++;
+            add_name(dbuf + p, n, 1);
+            p = (u16)(p + n + 1);
         }
         c = r_getc(&x);                              /* the uses */
         for (;;) {
             n = 0;
             while (c >= 0 && c != ',' && c != ';') { if (n < sizeof(nm) - 1) nm[n++] = (char)c; c = r_getc(&x); }
-            if (want && n) add_name(nm, n, 0);
+            if (n) add_name(nm, n, 0);
             if (c != ',') break;
             c = r_getc(&x);
         }
         c = r_getc(&x);                              /* the exports */
-        while (c >= 0 && c != '\n') { if (want && el < sizeof(ebuf) - 1) ebuf[el++] = (char)c; c = r_getc(&x); }
-        if (want) {
-            ebuf[el] = 0;
-            w_puts(w, "\tOBJ\t");
-            w_putc(w, '0' + fidx);
-            w_putc(w, ','); put_u(w, hi); w_putc(w, ','); put_u(w, lo); w_putc(w, ','); put_u(w, cs); w_putc(w, ','); put_u(w, bs); w_putc(w, '\n');
-            for (p = 0; p < el;) {                   /* name:kind:offset,name:kind:offset */
-                w_puts(w, "\tOBJX\t");
-                for (; p < el && ebuf[p] != ':'; p++) w_putc(w, ebuf[p]);
-                w_putc(w, ','); p++;
-                for (; p < el && ebuf[p] != ':'; p++) w_putc(w, ebuf[p]);
-                w_putc(w, ','); p++;
-                for (; p < el && ebuf[p] != ','; p++) w_putc(w, ebuf[p]);
-                w_putc(w, '\n'); p++;
-            }
-            copied = 1;
+        while (c >= 0 && c != '\n') { if (el < sizeof(ebuf) - 1) ebuf[el++] = (char)c; c = r_getc(&x); }
+        ebuf[el] = 0;
+        w_puts(w, "\tOBJ\t");
+        w_putc(w, '0' + fidx);
+        w_putc(w, ','); put_u(w, hi); w_putc(w, ','); put_u(w, lo); w_putc(w, ','); put_u(w, cs); w_putc(w, ','); put_u(w, bs); w_putc(w, '\n');
+        for (p = 0; p < el;) {                       /* name:kind:offset,name:kind:offset */
+            w_puts(w, "\tOBJX\t");
+            for (; p < el && ebuf[p] != ':'; p++) w_putc(w, ebuf[p]);
+            w_putc(w, ','); p++;
+            for (; p < el && ebuf[p] != ':'; p++) w_putc(w, ebuf[p]);
+            w_putc(w, ','); p++;
+            for (; p < el && ebuf[p] != ','; p++) w_putc(w, ebuf[p]);
+            w_putc(w, '\n'); p++;
         }
-        if (c == '\n') c = r_getc(&x);
+        copied = 1;
+        c = r_getc(&x);
     }
     r_close(&x);
     return copied;
