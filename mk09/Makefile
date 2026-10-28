@@ -115,7 +115,7 @@ $(eval $(call SYSMOD,mm,MM,30))
 SYSMODS := kernel tty disk fs pm mm
 
 # ---- programs (MX executables): apps/NAME.c -> build/NAME.mx ----
-APPS      := sh as cpp cc1 cg cc pas0 pas1 pmsg pc ls cat echo stty cp mv rm mkdir date df ps hd wc spin stk fstest faults ipcbench dhry more grep life basic kill mem sfptest jwp
+APPS      := sh as cpp cc1 cg cc pas0 pas1 pmsg pc ls cat echo stty cp mv rm mkdir date df ps hd wc spin stk fstest faults ipcbench dhry more grep life basic kill mem reboot sfptest jwp
 STACK_sh  := 640
 STACK_jwp := 1200
 STACK_basic := 1500
