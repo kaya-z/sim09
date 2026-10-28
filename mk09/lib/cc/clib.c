@@ -1118,3 +1118,187 @@ float __pln(float *a)
     r = 2 * s * (1 + t / 3 * (1 + t * 3 / 5 * (1 + t * 5 / 7 * (1 + t * 7 / 9 * (1 + t * 9 / 11)))));
     return r + (float)e * 0.6931472;
 }
+
+/* ---- Pascal: strings (Turbo Pascal: a byte of length, then the characters; 255 at most) */
+char *__pc2s(char *d, int c)
+{
+    d[0] = 1;
+    d[1] = c;
+    return d;
+}
+
+char *__pstrcpy(int max, char *src, char *dst)
+{
+    int i, n = src[0] & 255;
+    if (n > max) n = max;
+    for (i = 1; i <= n; i++) dst[i] = src[i];
+    dst[0] = n;
+    return dst;
+}
+
+char *__pcat(char *b, char *a)                 /* a := a + b (the length at most 255) */
+{
+    int i, n = a[0] & 255, m = b[0] & 255;
+    if (n + m > 255) m = 255 - n;
+    for (i = 1; i <= m; i++) a[n + i] = b[i];
+    a[0] = n + m;
+    return a;
+}
+
+char *__pcat3(char *d, char *b, char *a)       /* d := a + b */
+{
+    int i, n = a[0] & 255;
+    for (i = 0; i <= n; i++) d[i] = a[i];
+    return __pcat(b, d);
+}
+
+int __pscmp(char *b, char *a)                  /* -1, 0, 1: a is before, equal to, after b */
+{
+    int i, n = a[0] & 255, m = b[0] & 255, k = n < m ? n : m;
+    for (i = 1; i <= k; i++) {
+        if ((a[i] & 255) != (b[i] & 255)) return (a[i] & 255) < (b[i] & 255) ? -1 : 1;
+    }
+    if (n == m) return 0;
+    return n < m ? -1 : 1;
+}
+
+char *__pcopy(char *d, int n, int i, char *s)
+{
+    int len = s[0] & 255, k;
+    if (i < 1) i = 1;
+    if (i > len) n = 0;
+    else if (n > len - i + 1) n = len - i + 1;
+    if (n < 0) n = 0;
+    for (k = 0; k < n; k++) d[k + 1] = s[i + k];
+    d[0] = n;
+    return d;
+}
+
+int __ppos(char *s, char *sub)
+{
+    int n = s[0] & 255, m = sub[0] & 255, i, k;
+    for (i = 1; i + m - 1 <= n; i++) {
+        for (k = 0; k < m; k++) if (s[i + k] != sub[k + 1]) break;
+        if (k == m) return i;
+    }
+    return 0;
+}
+
+int __pdelete(int n, int i, char *s)
+{
+    int len = s[0] & 255, k;
+    if (i < 1 || i > len || n < 1) return 0;
+    if (n > len - i + 1) n = len - i + 1;
+    for (k = i; k + n <= len; k++) s[k] = s[k + n];
+    s[0] = len - n;
+    return 0;
+}
+
+int __pinsert(int max, int i, char *s, char *src)
+{
+    int len = s[0] & 255, m = src[0] & 255, k;
+    if (i < 1) i = 1;
+    if (i > len + 1) i = len + 1;
+    if (len + m > max) m = max - len;
+    if (m < 1) return 0;
+    for (k = len; k >= i; k--) s[k + m] = s[k];
+    for (k = 0; k < m; k++) s[i + k] = src[k + 1];
+    s[0] = len + m;
+    return 0;
+}
+
+int __pwstr(int w, char *s)
+{
+    int i, n = s[0] & 255;
+    __ppad(w, n);
+    for (i = 1; i <= n; i++) putchar(s[i]);
+    return 0;
+}
+
+int __prstr(int max, char *dst)                /* up to the end of the line (the line end stays) */
+{
+    int c, n = 0;
+    for (;;) {
+        c = getchar();
+        if (c < 0) break;
+        if (c == '\n') { ungetc(c, stdin); break; }
+        if (c != '\r' && n < max) dst[++n] = c;
+    }
+    dst[0] = n;
+    return 0;
+}
+
+static void __ptext(char *s, char *b, int w)   /* the text b as the string s, right-justified in w */
+{
+    int n = strlen(b), k = 0, i;
+    if (w > n) { while (k < w - n && k < 255) { s[++k] = ' '; } }
+    for (i = 0; i < n && k < 255; i++) s[++k] = b[i];
+    s[0] = k;
+}
+
+int __pstri(char *s, int w, int x)
+{
+    char b[8];
+    sprintf(b, "%d", x);
+    __ptext(s, b, w);
+    return 0;
+}
+
+int __pstrg(char *s, int w, long *x)
+{
+    char b[16];
+    sprintf(b, "%ld", *x);
+    __ptext(s, b, w);
+    return 0;
+}
+
+int __pstrr(char *s, int d, int w, __L *x)
+{
+    char b[48];
+    char *t = b;
+    if (d < 0) {
+        __fmtf(b + 1, x, 'E', 6);
+        if (b[1] != '-') b[0] = ' '; else t = b + 1;
+    } else __fmtf(b, x, 'f', d);
+    __ptext(s, t, w);
+    return 0;
+}
+
+int __pvali(int *code, int *x, char *s)
+{
+    int i = 1, n = s[0] & 255, neg = 0, v = 0;
+    *code = 0;
+    while (i <= n && s[i] == ' ') i++;
+    if (i <= n && (s[i] == '-' || s[i] == '+')) { neg = s[i] == '-'; i++; }
+    if (i > n) { *code = i; *x = 0; return 0; }
+    while (i <= n && s[i] >= '0' && s[i] <= '9') { v = v * 10 + s[i] - '0'; i++; }
+    if (i <= n) *code = i; else *x = neg ? -v : v;
+    return 0;
+}
+
+int __pvalg(int *code, long *x, char *s)
+{
+    int i = 1, n = s[0] & 255, neg = 0;
+    long v = 0;
+    *code = 0;
+    while (i <= n && s[i] == ' ') i++;
+    if (i <= n && (s[i] == '-' || s[i] == '+')) { neg = s[i] == '-'; i++; }
+    if (i > n) { *code = i; *x = 0; return 0; }
+    while (i <= n && s[i] >= '0' && s[i] <= '9') { v = v * 10 + (s[i] - '0'); i++; }
+    if (i <= n) *code = i; else *x = neg ? -v : v;
+    return 0;
+}
+
+int __pvalr(int *code, __L *x, char *s)
+{
+    char b[48], *e;
+    int n = s[0] & 255, i;
+    if (n > 46) n = 46;
+    for (i = 0; i < n; i++) b[i] = s[i + 1];
+    b[n] = 0;
+    __strtof(b, x, &e);
+    *code = (*e == 0 && e != b) ? 0 : (int)(e - b) + 1;
+    return 0;
+}
+
+char __sret[256];                              /* the string that a Pascal function returns */

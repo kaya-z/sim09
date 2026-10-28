@@ -44,11 +44,13 @@
  *                    pointers, nested procedures and functions (static link), var parameters, case with for repeat while, write/read, new/dispose.
  *   1.13 2026-10-28  Pascal: real and longint (library calls, like float and long of the C compiler), write/read of them, sqrt sin cos arctan ln exp trunc round ...;
  *                    as: local labels are kept as keys, not as text (1000 symbols).
+ *   1.14 2026-10-28  Pascal: Turbo Pascal strings (string, string[n], + and comparisons, length copy pos concat upcase delete insert str val, functions that
+ *                    return a string); the IR directive .stack N (cg) and {$M n} (the stack of the program).
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.13"
+#define MK09_VERSION    "1.14"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

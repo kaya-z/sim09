@@ -1125,6 +1125,10 @@ static void toplevel(void)
                 w_puts(&out, nmx);
                 w_putc(&out, '\n');
             }
+        } else if (!strcmp(opb, ".stack")) {             /* the size of the stack of the program (as: STACK) */
+            w_puts(&out, "\tSTACK ");
+            w_puts(&out, field(buf, 1));
+            w_putc(&out, '\n');
         } else if (!strcmp(opb, ".func")) function(buf);
         else if (!strcmp(opb, ".bss")) {
             char nm[NAMEM + 2], nmx[NAMEM + 2];

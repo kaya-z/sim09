@@ -103,8 +103,20 @@ static int hexval(int c)
     return -1;
 }
 
+static u16 stack_size = 2000;       /* the stack of the program: {$M n} */
+
 static void skip_comment(int close2)       /* after { or (* */
 {
+    if (!close2 && ch == '$') {                /* a directive: {$M 4096} sets the stack */
+        nextch();
+        if (ch == 'M' || ch == 'm') {
+            u16 v = 0;
+            nextch();
+            while (ch == ' ') nextch();
+            while (ch >= '0' && ch <= '9') { v = (u16)(v * 10 + ch - '0'); nextch(); }
+            if (v) stack_size = v;
+        }
+    }
     for (;;) {
         if (ch < 0) err("a comment is not closed");
         if (close2) {
@@ -234,7 +246,7 @@ static void expect(u16 t, msgt msg)
 }
 
 /* ---------------------------------------------------------------- types */
-enum { TY_VOID, TY_INT, TY_CHAR, TY_BOOL, TY_ENUM, TY_SUB, TY_ARRAY, TY_REC, TY_PTR, TY_NIL, TY_REAL, TY_LONG };
+enum { TY_VOID, TY_INT, TY_CHAR, TY_BOOL, TY_ENUM, TY_SUB, TY_ARRAY, TY_REC, TY_PTR, TY_NIL, TY_REAL, TY_LONG, TY_STR };
 
 typedef struct {
     u8 k;
@@ -279,6 +291,8 @@ static u8 new_type(u8 k, u16 size)
 
 static u8 is_ord(u8 t) { u8 k = tys[t].k; return k == TY_INT || k == TY_CHAR || k == TY_BOOL || k == TY_ENUM || k == TY_SUB; }
 static u8 is_scalar(u8 t) { return is_ord(t) || tys[t].k == TY_PTR || tys[t].k == TY_NIL; }
+static u8 is_lit(u8 t) { return tys[t].k == TY_ARRAY && tys[t].base == T_CHAR && tys[t].ix == T_INT; }
+static u8 isstr(u8 t) { return tys[t].k == TY_STR || is_lit(t); }
 static u8 is_wide(u8 t) { return tys[t].k == TY_REAL || tys[t].k == TY_LONG; }
 static u8 host(u8 t) { while (tys[t].k == TY_SUB) t = tys[t].base; return t; }
 
@@ -315,6 +329,11 @@ static u8 make_sub(u8 h, int lo, int hi)
 #define ST_PI    18
 #define ST_INT   19
 #define ST_FRAC  20
+#define ST_LENGTH 21
+#define ST_COPY  22
+#define ST_POS   23
+#define ST_CONCAT 24
+#define ST_UPCASE 25
 #define ST_WRITE 40
 #define ST_WRITELN 41
 #define ST_READ  42
@@ -324,6 +343,10 @@ static u8 make_sub(u8 h, int lo, int hi)
 #define ST_HALT  46
 #define ST_INC   47
 #define ST_DEC   48
+#define ST_DELETE 49
+#define ST_INSERT 50
+#define ST_STR   51
+#define ST_VAL   52
 
 /* ---------------------------------------------------------------- symbols */
 enum { SK_CONST, SK_TYPE, SK_VAR, SK_PROC, SK_FUNC, SK_STD };
@@ -381,11 +404,14 @@ static sym_t *new_sym(const char *n, u8 kind)
 /* a name that is declared again in the same block is an error: the symbols of the block are above the mark */
 static u16 scope_mark;
 /* the predefined names do not take a place in the table until they are used */
+#define NSTD 38
 static char *pre_names[] = { "abs", "sqr", "odd", "ord", "chr", "succ", "pred", "eof", "eoln", "write", "writeln", "read", "readln", "new", "dispose", "halt", "inc", "dec",
                              "trunc", "round", "sqrt", "sin", "cos", "arctan", "ln", "exp", "pi", "int", "frac",
+                             "length", "copy", "pos", "concat", "upcase", "delete", "insert", "str", "val",
                              "integer", "char", "boolean", "byte", "real", "single", "double", "extended", "longint", "true", "false", "maxint", 0 };
 static u8 pre_val[] = { ST_ABS, ST_SQR, ST_ODD, ST_ORD, ST_CHR, ST_SUCC, ST_PRED, ST_EOF, ST_EOLN, ST_WRITE, ST_WRITELN, ST_READ, ST_READLN, ST_NEW, ST_DISPOSE, ST_HALT, ST_INC, ST_DEC,
                         ST_TRUNC, ST_ROUND, ST_SQRT, ST_SIN, ST_COS, ST_ARCTAN, ST_LN, ST_EXP, ST_PI, ST_INT, ST_FRAC,
+                        ST_LENGTH, ST_COPY, ST_POS, ST_CONCAT, ST_UPCASE, ST_DELETE, ST_INSERT, ST_STR, ST_VAL,
                         T_INT, T_CHAR, T_BOOL, T_BYTE, TYP_REAL, TYP_REAL, TYP_REAL, TYP_REAL, TYP_LONG, 1, 0, 0 };
 
 static int lookup(const char *n)
@@ -396,9 +422,9 @@ static int lookup(const char *n)
     if (i >= 0) return i;
     for (k = 0; pre_names[k]; k++) if (!strcmp(pre_names[k], n)) break;
     if (!pre_names[k]) return -1;
-    if (k < 29) { s = new_sym(n, SK_STD); s->val = pre_val[k]; }
-    else if (k < 38) { s = new_sym(n, SK_TYPE); s->ty = pre_val[k]; }
-    else { s = new_sym(n, SK_CONST); s->ty = k == 40 || k == 39 ? T_BOOL : T_INT; s->val = k == 40 ? 32767 : pre_val[k]; }
+    if (k < NSTD) { s = new_sym(n, SK_STD); s->val = pre_val[k]; }
+    else if (k < NSTD + 9) { s = new_sym(n, SK_TYPE); s->ty = pre_val[k]; }
+    else { s = new_sym(n, SK_CONST); s->ty = k == NSTD + 11 ? T_INT : T_BOOL; s->val = k == NSTD + 11 ? 32767 : pre_val[k]; }
     s->level = 0;
     return (int)(s - syms);
 }
@@ -444,7 +470,9 @@ static u8 e_lv;     /* the address of the object is on the stack (a scalar is no
 static u8 e_c;      /* a constant: e_v, nothing is emitted yet */
 static int e_v;
 static u8 e_word;   /* the object is a word in an argument slot, whatever its type */
-static u8 e_str;    /* the value is a string constant (an array of char): the length is e_v */
+static u8 e_str;    /* the value is a string constant (the address of a string with its length in front): the length is e_v; its type is an array of char */
+static u8 e_tmp;    /* the value is a temporary string of 255 characters that can be appended to */
+static u8 bin_ltmp; /* the left operand of the binary operator is such a string */
 
 static void expression(void);
 static void statement(void);
@@ -513,7 +541,7 @@ static void use_sym(sym_t *s)
     }
 }
 
-static u16 new_temp(u8 size)
+static u16 new_temp(u16 size)
 {
     u16 o = fpv[cur_level];
     fpv[cur_level] = (u16)(o + size);
@@ -547,8 +575,21 @@ typedef struct { u8 t; char name[NAMEMAX + 1]; } fwdptr_t;
 static fwdptr_t fwdptrs[6];
 static u8 nfwd;
 
+static u8 str_ty(int n)             /* string[n]: the length (a byte) and n characters */
+{
+    u8 i, t;
+    for (i = 1; i < nty; i++) if (tys[i].k == TY_STR && tys[i].hi == n) return i;
+    t = new_type(TY_STR, (u16)(n + 1));
+    tys[t].base = T_CHAR;
+    tys[t].ix = T_INT;
+    tys[t].lo = 0;
+    tys[t].hi = n;
+    return t;
+}
+
 static u8 find_type(const char *n)
 {
+    if (!strcmp(n, "string")) return str_ty(255);
     int i = lookup(n);
     if (i < 0 || syms[i].kind != SK_TYPE) err("a type name is expected");
     return syms[i].ty;
@@ -658,6 +699,18 @@ static u8 parse_type(void)
         if (n > 256) tys[e].size = 2;
         return e;
     }
+    if (tok == T_ID && !strcmp(toks, "string")) {
+        int n = 255;
+        u8 ty;
+        next();
+        if (tok == '[') {
+            next();
+            n = const_value(&ty);
+            if (n < 1 || n > 255) err("the length of a string is 1 to 255");
+            expect(']', "a ] is expected");
+        }
+        return str_ty(n);
+    }
     if (tok == T_ID) {
         int i = lookup(toks);
         if (i >= 0 && syms[i].kind == SK_TYPE) { t = syms[i].ty; next(); return t; }
@@ -691,7 +744,7 @@ static char strpool[300];
 static u16 strlen_pool;
 
 /* the text of a string as data; the address is put on the stack */
-static void string_literal(const char *s, u16 len)
+static void string_literal(const char *s, u16 len, u8 pre)
 {
     char nm[8];
     u16 i;
@@ -699,7 +752,9 @@ static void string_literal(const char *s, u16 len)
     pname(nm, 'S', nstr);
     w_puts(&sf, ".data ");
     w_puts(&sf, nm);
-    w_puts(&sf, " local\n.s \"");
+    w_puts(&sf, " local\n");
+    if (pre) { w_puts(&sf, ".b "); w_num(&sf, (int)len); w_putc(&sf, '\n'); }
+    w_puts(&sf, ".s \"");
     for (i = 0; i < len; i++) {
         u8 c = (u8)s[i];
         if (c == '"' || c == '\\') { w_putc(&sf, '\\'); w_putc(&sf, c); }
@@ -717,7 +772,7 @@ static void string_literal(const char *s, u16 len)
 /* a real constant: the text is converted when the program runs */
 static void real_text(const char *t, u16 len)
 {
-    string_literal(t, len);
+    string_literal(t, len, 0);
     inscall("atof", 1);
 }
 
@@ -871,6 +926,62 @@ static void wide_binary(u16 op, u8 lc, int lv, u8 lt)
     e_t = tt; e_lv = 1; e_c = 0;
 }
 
+/* ---------------------------------------------------------------- strings (Turbo Pascal): the length in a byte, then the characters.  A literal is such a string too
+ * (its type is an array of char with the index type integer); a value is the address of the string.  The runtime is in clib.c (__p...). */
+
+/* the char value in e_* becomes a string of one character in a temporary */
+static void char_to_str(void)
+{
+    u16 t = new_temp(2);
+    rvalue();
+    ins1("laddr", t);
+    inscall("__pc2s", 2);
+    e_t = str_ty(255);
+    e_lv = 1;
+    e_tmp = 0;
+}
+
+static void str_value(void)             /* e_* is made a string (an address) */
+{
+    if (host(e_t) == T_CHAR && !isstr(e_t)) char_to_str();
+    else if (!isstr(e_t)) err("a string is expected");
+}
+
+/* the right operand is in e_*; the left one is on the stack (type lt), or a char constant (lc, lv) */
+static void str_binary(u16 op, u8 lc, int lv, u8 lt, u8 cmp)
+{
+    u8 ltmp = bin_ltmp;
+    u16 t;
+    if (!cmp && op != '+') err("bad operands for a string");
+    str_value();
+    if (!isstr(lt)) {
+        if (host(lt) != T_CHAR) err("a string is expected");
+        if (lc) ins1("const", lv); else ins0("swap");
+        t = new_temp(2);
+        ins1("laddr", t);
+        inscall("__pc2s", 2);
+        ins0("swap");
+        ltmp = 0;
+    }
+    e_str = 0;
+    if (cmp) {
+        inscall("__pscmp", 2);
+        ins1("const", 0);
+        ins0(cmpname(op));
+        e_t = T_BOOL; e_lv = 0; e_tmp = 0;
+        return;
+    }
+    if (ltmp) inscall("__pcat", 2);
+    else {
+        t = new_temp(256);
+        ins1("laddr", t);
+        inscall("__pcat3", 3);
+    }
+    e_t = str_ty(255);
+    e_lv = 1;
+    e_tmp = 1;
+}
+
 static void std_call(int id);
 static void call_user(int si);
 static void lret_to_temp(u8 ty);
@@ -887,7 +998,7 @@ static u8 same_type(u8 a, u8 b)
 }
 
 static void need_ord(void) { if (!is_ord(e_t)) err("an ordinal value is expected"); }
-static void need_val(void) { if (!is_ord(e_t) && !is_wide(e_t)) err("a value is expected"); }
+static void need_val(void) { if (!is_ord(e_t) && !is_wide(e_t) && !isstr(e_t)) err("a value is expected"); }
 
 static int find_field(u8 t, const char *n)
 {
@@ -910,7 +1021,7 @@ static void selectors(void)
                 u8 at = e_t;
                 int lo;
                 u16 es;
-                if (tys[at].k != TY_ARRAY) err("an array is expected");
+                if (tys[at].k != TY_ARRAY && tys[at].k != TY_STR) err("an array is expected");
                 lo = tys[at].lo;
                 es = tys[tys[at].base].size;
                 expression();
@@ -964,29 +1075,6 @@ static void expression_bool(void)
     if (host(e_t) != T_BOOL) err("a boolean value is expected");
 }
 
-static int fold(u16 op, int a, int b)
-{
-    switch (op) {
-    case '+': return a + b;
-    case '-': return a - b;
-    case '*': return a * b;
-    case K_DIV: if (!b) err("division by zero"); return a / b;
-    case K_MOD: if (!b) err("division by zero"); return a % b;
-    case K_AND: return a & b;
-    case K_OR: return a | b;
-    case K_XOR: return a ^ b;
-    case K_SHL: return a << b;
-    case K_SHR: return a >> b;
-    case '=': return a == b;
-    case T_NE: return a != b;
-    case '<': return a < b;
-    case T_LE: return a <= b;
-    case '>': return a > b;
-    case T_GE: return a >= b;
-    }
-    return 0;
-}
-
 static const char *opname(u16 op)
 {
     switch (op) {
@@ -1014,6 +1102,7 @@ static void binary(u16 op, u8 lc, int lv, u8 lt, u8 cmp)
 {
     u8 rt = e_t, lb = host(lt), rb = host(rt);
     u8 rest;
+    if (isstr(lt) || isstr(rt)) { str_binary(op, lc, lv, lt, cmp); return; }
     if (is_wide(lt) || is_wide(rt) || op == '/') {
         if (!(is_wide(lt) || (is_ord(lt) && lb == T_INT)) || !(is_wide(rt) || (is_ord(rt) && rb == T_INT))) err("a number is expected");
         wide_binary(op, lc, lv, lt);
@@ -1037,12 +1126,8 @@ static void binary(u16 op, u8 lc, int lv, u8 lt, u8 cmp)
         }
     }
     e_str = 0;
-    if (lc && e_c) {
-        e_v = fold(op, lv, e_v);
-        e_t = rest;
-        return;
-    }
-    if (lc) { rvalue(); ins1("const", lv); ins0("swap"); }
+    if (lc && e_c) { ins1("const", lv); ins1("const", e_v); e_c = 0; }
+    else if (lc) { rvalue(); ins1("const", lv); ins0("swap"); }
     else if (e_c) { ins1("const", e_v); e_c = 0; }
     else rvalue();
     ins0(opname(op));
@@ -1053,7 +1138,7 @@ static void binary(u16 op, u8 lc, int lv, u8 lt, u8 cmp)
 
 static void string_const(sym_t *s)
 {
-    string_literal(strpool + s->val, tys[s->ty].size);
+    string_literal(strpool + s->val, tys[s->ty].size, 1);
     e_t = s->ty;
     e_lv = 1;
     e_str = 1;
@@ -1062,7 +1147,7 @@ static void string_const(sym_t *s)
 
 static void factor(void)
 {
-    e_c = 0; e_lv = 0; e_word = 0; e_str = 0;
+    e_c = 0; e_lv = 0; e_word = 0; e_str = 0; e_tmp = 0;
     if (tok == T_NUM) {
         if (tokh) { wide_literal(tokh, (u16)tokv); e_t = TYP_LONG; e_lv = 1; }
         else { e_c = 1; e_v = tokv; e_t = T_INT; }
@@ -1074,8 +1159,7 @@ static void factor(void)
     } else if (tok == T_STR) {
         if (toklen == 1) { e_c = 1; e_v = (u8)toks[0]; e_t = T_CHAR; }
         else {
-            if (toklen == 0) err("an empty string");
-            string_literal(toks, toklen);
+            string_literal(toks, toklen, 1);
             e_t = str_type(toklen);
             e_lv = 1;
             e_str = 1;
@@ -1152,7 +1236,7 @@ static void term(void)
     factor();
     for (;;) {
         u16 op = tok;
-        u8 lc, lt;
+        u8 lc, lt, lm;
         int lv;
         if (!(op == '*' || op == '/' || op == K_DIV || op == K_MOD || op == K_AND || op == K_SHL || op == K_SHR)) break;
         next();
@@ -1172,9 +1256,10 @@ static void term(void)
             e_t = T_BOOL;
             continue;
         }
-        lc = e_c; lv = e_v; lt = e_t;
+        lc = e_c; lv = e_v; lt = e_t; lm = e_tmp;
         if (!lc) rvalue();
         factor();
+        bin_ltmp = lm;
         binary(op, lc, lv, lt, 0);
     }
 }
@@ -1199,7 +1284,7 @@ static void simple(void)
     }
     for (;;) {
         u16 op = tok;
-        u8 lc, lt;
+        u8 lc, lt, lm;
         int lv;
         if (!(op == '+' || op == '-' || op == K_OR || op == K_XOR)) break;
         next();
@@ -1219,9 +1304,10 @@ static void simple(void)
             e_t = T_BOOL;
             continue;
         }
-        lc = e_c; lv = e_v; lt = e_t;
+        lc = e_c; lv = e_v; lt = e_t; lm = e_tmp;
         if (!lc) rvalue();
         term();
+        bin_ltmp = lm;
         binary(op, lc, lv, lt, 0);
     }
 }
@@ -1256,6 +1342,8 @@ static void coerce(u8 dst)
         if (tys[e_t].k == TY_LONG && host(dst) == T_INT) wide_to_int();
         if (!same_type(dst, e_t)) err("the types do not match");
         rvalue();
+    } else if (tys[dst].k == TY_STR) {
+        str_value();
     } else if (tys[dst].k == TY_ARRAY || tys[dst].k == TY_REC) {
         if (!(e_t == dst || (tys[e_t].k == tys[dst].k && tys[e_t].size == tys[dst].size && !e_str))) err("the types do not match");
     } else err("this type cannot be assigned");
@@ -1264,15 +1352,16 @@ static void coerce(u8 dst)
 /* the result of a library function or of a function that returns a longint or a real is in __lret: it is copied to a temporary (the call has pushed its result: dropped) */
 static void lret_to_temp(u8 ty)
 {
-    u16 t = new_temp(4);
+    u16 sz = tys[ty].size, t = new_temp(sz);
     ins0("drop");
     ins1("laddr", t);
-    insaddr("__lret");
-    ins1("copy", 4);
+    insaddr(sz == 4 ? "__lret" : "__sret");
+    ins1("copy", sz);
     lh_used[LH_RET] = 1;
     e_t = ty;
     e_lv = 1;
     e_c = 0;
+    e_tmp = tys[ty].k == TY_STR;
 }
 
 static void call_user(int si)
@@ -1304,7 +1393,7 @@ static void call_user(int si)
     put("\n");
     e_c = 0; e_lv = 0; e_word = 0; e_str = 0;
     e_t = s->kind == SK_FUNC ? s->ty : T_VOID;
-    if (s->kind == SK_FUNC && is_wide(s->ty)) lret_to_temp(s->ty);
+    if (s->kind == SK_FUNC && !is_scalar(s->ty)) lret_to_temp(s->ty);
 }
 
 static void arg_open(void) { expect('(', "a ( is expected"); }
@@ -1328,7 +1417,10 @@ static void write_items(u8 ln)
         next();
         for (;;) {
             expression();
-            if (e_str || (tys[e_t].k == TY_ARRAY && tys[tys[e_t].base].k == TY_CHAR)) {
+            if (isstr(e_t)) {
+                width_arg();
+                inscall("__pwstr", 2);
+            } else if (tys[e_t].k == TY_ARRAY && tys[tys[e_t].base].k == TY_CHAR) {
                 ins1("const", tys[e_t].size);
                 width_arg();
                 inscall("__pws", 3);
@@ -1376,7 +1468,8 @@ static void read_items(u8 ln)
             if (!e_lv || e_c) err("a variable is expected");
             t = e_t;
             w = e_word;
-            if (tys[t].k == TY_REAL) { inscall("__prr", 1); ins0("drop"); }
+            if (tys[t].k == TY_STR) { ins1("const", tys[t].hi); inscall("__prstr", 2); ins0("drop"); }
+            else if (tys[t].k == TY_REAL) { inscall("__prr", 1); ins0("drop"); }
             else if (tys[t].k == TY_LONG) { inscall("__prg", 1); ins0("drop"); }
             else {
                 if (host(t) == T_CHAR) inscall("__prc", 0);
@@ -1403,6 +1496,20 @@ static void real_fn(const char *name, u8 result)
     inscall(name, 1);
     lret_to_temp(result);
     arg_close();
+}
+
+static void str_arg(void)
+{
+    expression();
+    str_value();
+}
+
+static void int_arg(void)
+{
+    expression();
+    narrow();
+    rvalue();
+    if (host(e_t) != T_INT) err("an integer is expected");
 }
 
 static void std_call(int id)
@@ -1451,6 +1558,52 @@ static void std_call(int id)
         inscall(id == ST_EOF ? "__peof" : "__peoln", 0);
         if (tok == '(') { next(); if (tok == T_ID) next(); arg_close(); }
         e_c = 0; e_lv = 0; e_t = T_BOOL;
+        break;
+    case ST_LENGTH:
+        arg_open(); expression();
+        if (!isstr(e_t)) err("a string is expected");
+        ins0("load.ub");
+        e_t = T_INT; e_lv = 0; e_tmp = 0; e_str = 0;
+        arg_close();
+        break;
+    case ST_COPY:
+        arg_open(); str_arg();
+        expect(',', "a , is expected"); int_arg();
+        expect(',', "a , is expected"); int_arg();
+        {
+            u16 t = new_temp(256);
+            ins1("laddr", t);
+            inscall("__pcopy", 4);
+        }
+        e_t = str_ty(255); e_lv = 1; e_tmp = 1; e_str = 0;
+        arg_close();
+        break;
+    case ST_POS:
+        arg_open(); str_arg();
+        expect(',', "a , is expected"); str_arg();
+        inscall("__ppos", 2);
+        e_t = T_INT; e_lv = 0; e_tmp = 0; e_str = 0;
+        arg_close();
+        break;
+    case ST_CONCAT:
+        arg_open(); str_arg();
+        while (tok == ',') {
+            u8 lt = e_t, lm = e_tmp;
+            next();
+            expression();
+            bin_ltmp = lm;
+            str_binary('+', 0, 0, lt, 0);
+        }
+        arg_close();
+        break;
+    case ST_UPCASE:
+        arg_open(); expression();
+        if (host(e_t) != T_CHAR) err("a char is expected");
+        rvalue();
+        inscall("toupper", 1);
+        ins0("zx");
+        e_t = T_CHAR;
+        arg_close();
         break;
     case ST_TRUNC: real_fn("__ptrunc", TYP_LONG); break;
     case ST_ROUND: real_fn("__pround", TYP_LONG); break;
@@ -1527,6 +1680,65 @@ static void std_stat(int id)
         arg_close();
         break;
     }
+    case ST_DELETE:
+        arg_open();
+        expression();
+        if (!e_lv || tys[e_t].k != TY_STR) err("a string variable is expected");
+        expect(',', "a , is expected"); int_arg();
+        expect(',', "a , is expected"); int_arg();
+        inscall("__pdelete", 3);
+        ins0("drop");
+        arg_close();
+        break;
+    case ST_INSERT: {
+        u8 mx;
+        arg_open();
+        str_arg();
+        expect(',', "a , is expected");
+        expression();
+        if (!e_lv || tys[e_t].k != TY_STR) err("a string variable is expected");
+        mx = (u8)tys[e_t].hi;
+        expect(',', "a , is expected"); int_arg();
+        ins1("const", mx);
+        inscall("__pinsert", 4);
+        ins0("drop");
+        arg_close();
+        break;
+    }
+    case ST_STR: {
+        u8 k;
+        arg_open();
+        expression();
+        k = tys[e_t].k;
+        if (k != TY_REAL && k != TY_LONG) { narrow(); rvalue(); if (host(e_t) != T_INT) err("a number is expected"); }
+        if (tok == ':') { next(); int_arg(); } else ins1("const", 0);
+        if (k == TY_REAL) {
+            if (tok == ':') { next(); int_arg(); } else ins1("const", -1);
+        }
+        expect(',', "a , is expected");
+        expression();
+        if (!e_lv || tys[e_t].k != TY_STR) err("a string variable is expected");
+        inscall(k == TY_REAL ? "__pstrr" : k == TY_LONG ? "__pstrg" : "__pstri", k == TY_REAL ? 4 : 3);
+        ins0("drop");
+        arg_close();
+        break;
+    }
+    case ST_VAL: {
+        u8 k;
+        arg_open();
+        str_arg();
+        expect(',', "a , is expected");
+        expression();
+        k = tys[e_t].k;
+        if (!e_lv || e_c || (k != TY_REAL && k != TY_LONG && host(e_t) != T_INT)) err("a number variable is expected");
+        expect(',', "a , is expected");
+        expression();
+        if (!e_lv || host(e_t) != T_INT) err("an integer variable is expected");
+        inscall(k == TY_REAL ? "__pvalr" : k == TY_LONG ? "__pvalg" : "__pvali", 3);
+        ins0("drop");
+        arg_close();
+        break;
+    }
     default:
         err("this standard routine is not a statement");
     }
@@ -1541,7 +1753,16 @@ static void assignment(void)
     w = e_word;
     expect(T_ASSIGN, "a := is expected");
     expression();
+    if (tys[t].k == TY_STR) {
+        str_value();
+        ins1("const", tys[t].hi);
+        inscall("__pstrcpy", 3);
+        ins0("drop");
+        return;
+    }
     if (e_str && tys[t].k == TY_ARRAY && tys[tys[t].base].k == TY_CHAR) {
+        ins1("const", 1);
+        ins0("add");
         ins1("const", tys[t].size);
         ins1("const", e_v);
         inscall("__pstr", 4);
@@ -1570,8 +1791,14 @@ static void result_assign(int fi)
     if (f->off) { ins1("const", f->off); ins0("add"); }
     expect(T_ASSIGN, "a := is expected");
     expression();
-    coerce(f->ty);
-    if (is_scalar(f->ty)) emit_store(f->ty, 0); else ins1("copy", 4);
+    if (tys[f->ty].k == TY_STR) {
+        str_value();
+        ins1("const", tys[f->ty].hi);
+        inscall("__pstrcpy", 3);
+    } else {
+        coerce(f->ty);
+        if (is_scalar(f->ty)) emit_store(f->ty, 0); else ins1("copy", 4);
+    }
     ins0("drop");
 }
 
@@ -1989,7 +2216,7 @@ static void proc_decl(u8 isfunc)
             expect(':', "a : is expected");
             if (tok != T_ID) err("a type name is expected");
             s->ty = find_type(toks);
-            if (!is_scalar(s->ty) && !is_wide(s->ty)) err("a function returns a simple value");
+            if (!is_scalar(s->ty) && !is_wide(s->ty) && tys[s->ty].k != TY_STR) err("a function returns a simple value");
             next();
         }
     } else {
@@ -2080,10 +2307,10 @@ static void block(int fs)
     }
     if (tok != K_END) stat_list(K_END, K_END);
     expect(K_END, "end is expected");
-    if (isfunc && is_wide(syms[fs].ty)) {
-        insaddr("__lret");
+    if (isfunc && !is_scalar(syms[fs].ty)) {
+        insaddr(tys[syms[fs].ty].size == 4 ? "__lret" : "__sret");
         ins1("laddr", res);
-        ins1("copy", 4);
+        ins1("copy", tys[syms[fs].ty].size);
         ins0("drop");
         ins1("const", 0);
         ins0("ret");
@@ -2173,6 +2400,7 @@ int main(int argc, char **argv)
     maxfpv[0] = 0;
     active_fn[0] = -1;
     block(-1);
+    put(".stack "); putn(stack_size); put("\n");
     if (tok != '.') err("a . is expected at the end of the program");
     {
         u8 k;
