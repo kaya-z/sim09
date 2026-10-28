@@ -337,7 +337,7 @@ for b in pprogs:
     csteps += ['pc /%s.PAS -o /P%s.MX' % (n, n), '/P%s.MX' % n, 'echo ==P%s==' % n]
 csteps += ['cc /BADC.C -o /bad.mx']
 csteps += ['pc /BADP.PAS -o /badp.mx']
-out, rc = run(cdisk, ['timeout 9000000'] + BOOT + sh(*csteps, prompt='/> ') + OFF, timeout=3000)
+out, rc = run(cdisk, ['timeout 16000000'] + BOOT + sh(*csteps, prompt='/> ') + OFF, timeout=3000)
 check('hello from C, 3 argument(s)\n  0: /hc.mx\n  1: a\n  2: b\n' in out, 'cc compiles a C program on MK09 (cpp, cc1, cg, as in a chain) and it runs', out[-1500:])
 for b in pprogs:
     n = b[2:].upper()

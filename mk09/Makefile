@@ -122,7 +122,7 @@ STACK_basic := 1500
 STACK_as := 700
 STACK_cpp := 4000
 STACK_cc1 := 2100
-STACK_pas1 := 700
+STACK_pas1 := 750
 STACK_pas0 := 700
 STACK_cg := 1500
 $(B)/as.o: apps/as_text.h

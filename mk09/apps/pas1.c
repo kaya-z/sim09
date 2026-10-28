@@ -26,7 +26,7 @@
 #endif
 #define NAMEMAX 12
 #define STRMAX  160
-#define NLEV    8
+#define NLEV    4
 #define NWITH   6
 
 #include "pastok.h"
@@ -1170,10 +1170,10 @@ static void factor(void)
         next();
     } else if (tok == '(') {
         next();
-        nest += 3;
-        if (nest > 40) err("the expression is nested too deep");
+        nest += 11;                           /* (about 5 bytes of stack for each unit) */
+        if (nest > 78) err("the expression is nested too deep");
         expression();
-        nest -= 3;
+        nest -= 11;
         expect(')', "a ) is expected");
     } else if (tok == K_NOT) {
         next();
@@ -2166,8 +2166,8 @@ static void for_statement(void)
 static void statement(void)
 {
     u16 save = fpv[cur_level];
-    nest += 2;
-    if (nest > 40) err("the statements are nested too deep");
+    nest += 4;
+    if (nest > 78) err("the statements are nested too deep");
     if (tok == T_NUM) {            /* a label */
         deflabel((u16)(20000 + tokv));
         next();
@@ -2254,7 +2254,7 @@ static void statement(void)
     default:
         break;                       /* the empty statement */
     }
-    nest -= 2;
+    nest -= 4;
     fpv[cur_level] = save;
 }
 

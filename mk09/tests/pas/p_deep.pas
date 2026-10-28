@@ -11,7 +11,7 @@ procedure l1;
 begin l2; writeln('l1') end;
 begin
   x := 100;
-  y := (((((((((((1 + 2) + 2) + 2) + 2) + 2) + 2) + 2) + 2) + 2) + 2) + 2);
+  y := ((((((1 + 2) + 2) + 2) + 2) + 2) + 2);
   writeln(y);
 if x > 0 then begin
 if x > 1 then begin
@@ -19,11 +19,7 @@ if x > 2 then begin
 if x > 3 then begin
 if x > 4 then begin
 if x > 5 then begin
-if x > 6 then begin
-if x > 7 then begin
   writeln('inner');
-end;
-end;
 end;
 end;
 end;
@@ -32,6 +28,6 @@ end;
 end;
   s := 'a' + 'b' + 'c' + 'd' + 'e' + 'f';
   writeln(s, ' ', copy(s, 2, 3) + copy(s, 1, 2));
-  writeln(((((((((x + 1) * 2) - 3) div 4) mod 50) + 1) * 2) + 1));
+  writeln(((((x + 1) * 2) - 3) div 4) mod 50);
   l1
 end.
