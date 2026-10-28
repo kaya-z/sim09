@@ -49,33 +49,33 @@ int main(int argc, char **argv)
     av[n++] = ";";
     av[n++] = "pas0";
     av[n++] = "-o";
-    av[n++] = "_.tok";
+    av[n++] = "_t";
     av[n++] = (char *)src;
     av[n++] = ";";
     av[n++] = "pas1";
     av[n++] = "-o";
-    av[n++] = "_.ir";
-    av[n++] = "_.tok";
+    av[n++] = "_i";
+    av[n++] = "_t";
     av[n++] = ";";
     av[n++] = "cg";
     av[n++] = "-pp";
-    av[n++] = "_.ir";
+    av[n++] = "_i";
     if (!stop_s) av[n++] = "-L";
     av[n++] = "-o";
-    av[n++] = stop_s ? (char *)out : "_.A";
+    av[n++] = stop_s ? (char *)out : "_a";
     if (!stop_s) {
         av[n++] = ";";
         av[n++] = "as";
         av[n++] = "-o";
         av[n++] = (char *)out;
-        av[n++] = "_.A";
+        av[n++] = "_a";
     }
     if (!keep) {
         av[n++] = ";";
         av[n++] = "rm";
-        av[n++] = "_.tok";
-        av[n++] = "_.ir";
-        if (!stop_s) av[n++] = "_.A";
+        av[n++] = "_t";
+        av[n++] = "_i";
+        if (!stop_s) av[n++] = "_a";
     }
     if (verbose) {
         for (i = 2; i < n; i++) { putstr(av[i]); putstr(av[i][0] == ';' ? "\n" : " "); }
