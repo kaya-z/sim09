@@ -87,12 +87,13 @@ static void err(msgt msg)
         rfile r;
         int c;
         u8 n = 1;
-        printf("%s:%u: ", fname, line);
+        char nb[7];
+        putstr(fname); putchar(':'); utoa_(line, nb, 10); putstr(nb); putstr(": ");
         if (!r_open(&r, "/LIB/CC1.MSG")) {
             while (n < msg && (c = r_getc(&r)) >= 0) if (c == '\n') n++;
             while ((c = r_getc(&r)) >= 0 && c != '\n') putchar(c);
             r_close(&r);
-        } else printf("error %u", (u16)msg);
+        } else { putstr("error "); utoa_(msg, nb, 10); putstr(nb); }
         putchar('\n');
     }
 #else
@@ -107,6 +108,17 @@ static int cc_atoi(const char *p)
     if (*p == '-') { neg = 1; p++; } else if (*p == '+') p++;
     while (*p >= '0' && *p <= '9') v = v * 10 + (*p++ - '0');
     return neg ? -v : v;
+}
+
+/* the name "S<n>" (a string) or "V<n>" (a static variable) */
+static void sname(char *d, char pre, u16 n)
+{
+    char t[6];
+    u8 k = 0, m = 0;
+    d[k++] = pre;
+    do { t[m++] = (char)('0' + n % 10); n /= 10; } while (n);
+    while (m) d[k++] = t[--m];
+    d[k] = 0;
 }
 
 static void nextch(void) { ch = r_getc(&in); }
@@ -1035,37 +1047,39 @@ static int const_expr(void)
     return v;
 }
 
-static void string_literal(void)
+/* the characters of the string token as the text of a .s line */
+static void put_text(wfile *f)
 {
-    /* a string: its bytes go to the data file; the value is its address */
     u16 i;
+    for (i = 0; i < toklen; i++) {
+        u8 c = (u8)toks[i];
+        if (c >= 32 && c < 127 && c != '"' && c != '\\') w_putc(f, c);
+        else {
+            const char *hx = "0123456789ABCDEF";
+            w_puts(f, "\\x");
+            w_putc(f, hx[c >> 4]);
+            w_putc(f, hx[c & 15]);
+        }
+    }
+}
+
+/* the string token as a data item S<n>; its address is pushed (the token is not consumed) */
+static void string_data(void)
+{
+    char nm[8];
     u16 n = ++nstat;
     w_puts(&sf, ".data S");
     w_num(&sf, n);
     w_puts(&sf, " local\n.s \"");
-    for (i = 0; i < toklen; i++) {
-        u8 c = (u8)toks[i];
-        if (c >= 32 && c < 127 && c != '"' && c != '\\') w_putc(&sf, c);
-        else {
-            const char *hx = "0123456789ABCDEF";
-            w_puts(&sf, "\\x");
-            w_putc(&sf, hx[c >> 4]);
-            w_putc(&sf, hx[c & 15]);
-        }
-    }
+    put_text(&sf);
     w_puts(&sf, "\"\n.b 0\n.end\n");
-    {
-        char nm[8];
-        u8 k = 0;
-        u16 u = n;
-        char t[6];
-        u8 m = 0;
-        nm[k++] = 'S';
-        do { t[m++] = (char)('0' + u % 10); u /= 10; } while (u);
-        while (m) nm[k++] = t[--m];
-        nm[k] = 0;
-        insaddr(nm, 0);
-    }
+    sname(nm, 'S', n);
+    insaddr(nm, 0);
+}
+
+static void string_literal(void)
+{
+    string_data();
     e_t = ptr_to(T_CHART);
     e_lv = 0; e_c = 0; e_fn = 0;
     next();
@@ -1077,13 +1091,8 @@ static void primary(void)
     if (tok == T_NUM && (toklong || tokvh)) {
         u16 n = ++nstat;
         char nm[8];
-        u8 k = 0, m = 0;
-        char d[6];
         w_puts(&sf, ".data S"); w_num(&sf, n); w_puts(&sf, " local\n.w "); w_num(&sf, (int)tokvh); w_putc(&sf, ','); w_num(&sf, tokv); w_puts(&sf, "\n.end\n");
-        nm[k++] = 'S';
-        do { d[m++] = (char)('0' + n % 10); n /= 10; } while (n);
-        while (m) nm[k++] = d[--m];
-        nm[k] = 0;
+        sname(nm, 'S', n);
         insaddr(nm, 0);
         e_t = tokun ? T_ULONGT : T_LONGT; e_lv = 1;
         next();
@@ -1115,13 +1124,7 @@ static void primary(void)
         case C_PARAM: ins1("paddr", s->val); e_lv = 1; break;
         case C_STATIC: {
             char t[8];
-            u8 k = 0, m = 0;
-            char d[6];
-            int u = s->val;
-            t[k++] = 'V';
-            do { d[m++] = (char)('0' + u % 10); u /= 10; } while (u);
-            while (m) t[k++] = d[--m];
-            t[k] = 0;
+            sname(t, 'V', (u16)s->val);
             insaddr(t, 0);
             e_lv = 1;
             break;
@@ -1787,13 +1790,8 @@ static u16 init_data(wfile *f, u16 t)
         u16 et = tys[t].base;
         u16 n = tys[t].n, i = 0;
         if (tok == T_STR && tys[et].k == TK_CHAR) {
-            u16 j;
             w_puts(f, ".s \"");
-            for (j = 0; j < toklen; j++) {
-                u8 c = (u8)toks[j];
-                if (c >= 32 && c < 127 && c != '"' && c != '\\') w_putc(f, c);
-                else { const char *hx = "0123456789ABCDEF"; w_puts(f, "\\x"); w_putc(f, hx[c >> 4]); w_putc(f, hx[c & 15]); }
-            }
+            put_text(f);
             w_puts(f, "\"\n");
             i = toklen;
             if (!n || i < n) { w_puts(f, ".b 0\n"); i++; }
@@ -1856,32 +1854,11 @@ static void local_init(u16 off, u16 t)
         u16 et = tys[t].base, n = tys[t].n, i = 0;
         u16 es = tys[et].size;
         if (tok == T_STR && tys[et].k == TK_CHAR) {
-            u16 j;
             u16 len = toklen + 1;
             if (!n) { n = len; tys[t].n = n; tys[t].size = n; }
             /* copy the string from a literal */
             ins1("laddr", off);
-            {
-                u16 u = ++nstat;
-                char nm[8];
-                u8 kk = 0, m = 0;
-                char d[6];
-                w_puts(&sf, ".data S"); w_num(&sf, u); w_puts(&sf, " local\n.s \"");
-                for (j = 0; j < toklen; j++) {
-                    u8 c = (u8)toks[j];
-                    if (c >= 32 && c < 127 && c != '"' && c != '\\') w_putc(&sf, c);
-                    else { const char *hx = "0123456789ABCDEF"; w_puts(&sf, "\\x"); w_putc(&sf, hx[c >> 4]); w_putc(&sf, hx[c & 15]); }
-                }
-                w_puts(&sf, "\"\n.b 0\n.end\n");
-                nm[kk++] = 'S';
-                {
-                    u16 uu = u;
-                    do { d[m++] = (char)('0' + uu % 10); uu /= 10; } while (uu);
-                }
-                while (m) nm[kk++] = d[--m];
-                nm[kk] = 0;
-                insaddr(nm, 0);
-            }
+            string_data();
             ins1("copy", len > n ? n : len);
             ins0("drop");
             next();
@@ -1967,17 +1944,9 @@ static void local_decl(void)
             sym_t *s;
             u16 u = ++nstat;
             char vn[10];
-            u8 kk = 0, m = 0;
-            char d[6];
             s = new_local(nm, C_STATIC, t, (int)u);
             (void)s;
-            vn[kk++] = 'V';
-            {
-                u16 uu = u;
-                do { d[m++] = (char)('0' + uu % 10); uu /= 10; } while (uu);
-            }
-            while (m) vn[kk++] = d[--m];
-            vn[kk] = 0;
+            sname(vn, 'V', u);
             if (tok == '=') {
                 next();
                 data_item_label(vn, 1);
