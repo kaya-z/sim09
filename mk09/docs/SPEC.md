@@ -5,7 +5,7 @@
 
 Copyright (c) 2026 YUKARI Semiconductor Devices
 
-**版: 1.16** (2026-10-28。ソースの `include/version.h` の `MK09_VERSION` と同じ。MX 形式の版は 2)。変更の履歴は [DESIGN.md](DESIGN.md) の 16 章。
+**版: 1.17** (2026-10-28。ソースの `include/version.h` の `MK09_VERSION` と同じ。MX 形式の版は 2)。変更の履歴は [DESIGN.md](DESIGN.md) の 16 章。
 
 MK09 の外から見える決まり (システムコール、メッセージ、サーバの要求、ファイルの形式、ハードウェアの前提) を書きます。
 どうしてそうなっているかは [DESIGN.md](DESIGN.md)、使い方は [MANUAL.md](MANUAL.md) にあります。

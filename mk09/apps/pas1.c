@@ -15,15 +15,17 @@
 #define NSYM    400
 #define NTY     300
 #define NFLD    300
-#define NPAR    200
+#define NPAR    400
+#define NPN     40
 #else
 #define NSYM    90
 #define NTY     60
 #define NFLD    56
-#define NPAR    40
+#define NPAR    120
+#define NPN     16
 #endif
 #define NAMEMAX 12
-#define STRMAX  255
+#define STRMAX  160
 #define NLEV    8
 #define NWITH   6
 
@@ -124,7 +126,7 @@ static void expect(u16 t, msgt msg)
 }
 
 /* ---------------------------------------------------------------- types */
-enum { TY_VOID, TY_INT, TY_CHAR, TY_BOOL, TY_ENUM, TY_SUB, TY_ARRAY, TY_REC, TY_PTR, TY_NIL, TY_REAL, TY_LONG, TY_STR, TY_SET, TY_FILE };
+enum { TY_VOID, TY_INT, TY_CHAR, TY_BOOL, TY_ENUM, TY_SUB, TY_ARRAY, TY_REC, TY_PTR, TY_NIL, TY_REAL, TY_LONG, TY_STR, TY_SET, TY_FILE, TY_PROC };
 
 typedef struct {
     u8 ix;              /* array: the index type */
@@ -172,9 +174,8 @@ static u8 new_type(u8 k, u16 size)
 }
 
 static u8 is_ord(u8 t) { u8 k = ty_k[t]; return k == TY_INT || k == TY_CHAR || k == TY_BOOL || k == TY_ENUM || k == TY_SUB; }
-static u8 is_scalar(u8 t) { return is_ord(t) || ty_k[t] == TY_PTR || ty_k[t] == TY_NIL; }
-static u8 is_lit(u8 t) { return ty_k[t] == TY_ARRAY && ty_base[t] == T_CHAR && tys[t].ix == T_INT; }
-static u8 isstr(u8 t) { return ty_k[t] == TY_STR || is_lit(t); }
+static u8 is_scalar(u8 t) { return is_ord(t) || ty_k[t] == TY_PTR || ty_k[t] == TY_NIL || ty_k[t] == TY_PROC; }
+static u8 isstr(u8 t) { return ty_k[t] == TY_STR; }
 static u8 is_wide(u8 t) { return ty_k[t] == TY_REAL || ty_k[t] == TY_LONG; }
 static u8 host(u8 t) { while (ty_k[t] == TY_SUB) t = ty_base[t]; return t; }
 
@@ -258,14 +259,16 @@ typedef struct {
     u8 kind, flags, level, ty;
     int val;            /* a constant; the number of a procedure; a standard routine */
     u16 off;            /* variable: the offset in the frame (or the number of the argument); function: the offset of the result */
-    u8 np, pf;          /* procedure: the number of parameters, the first in pars */
+    u8 np, pf, pn;      /* procedure: the number of parameters, the first in par_ty, the first name in par_name */
 } sym_t;
 
-typedef struct { char name[NAMEMAX + 1]; u8 ty, byref; } par_t;
+/* the parameters of a procedure: type and var in tables that last; the names only while the procedure is compiled (or until its forward declaration has its body) */
+static u8 par_ty[NPAR], par_ref[NPAR];
+static char par_name[NPN][NAMEMAX + 1];
+static u8 npn;
 
 static sym_t syms[NSYM];
 static u16 nsym;
-static par_t pars[NPAR];
 static u16 npar;
 static u8 cur_level;             /* the level of the body that is compiled: 0 the program */
 static u16 fpv[NLEV + 1], maxfpv[NLEV + 1];
@@ -372,6 +375,9 @@ static int e_v;
 static u8 e_word;   /* the object is a word in an argument slot, whatever its type */
 static u8 e_str;    /* the value is a string constant (the address of a string with its length in front): the length is e_v; its type is an array of char */
 static u8 e_tmp;    /* the value is a temporary string of 255 characters that can be appended to */
+static u8 nest;        /* how deep the parser is (parentheses and statements): the stack of pas1 is small */
+static u8 want_proc;   /* the type of the procedural value that the expression is to make (the name of a procedure is its address), or 0 */
+static u8 e_called; /* the expression was a call of a procedural variable */
 static u8 bin_ltmp; /* the left operand of the binary operator is such a string */
 /* a temporary word: stored from the top of the stack, loaded */
 static void st_temp(u16 t) { ins1("laddr", t); ins0("swap"); ins0("store.w"); ins0("drop"); }
@@ -491,6 +497,27 @@ static int const_value(u8 *ty)           /* [+-] number | char | name */
 
 /* ---------------------------------------------------------------- type declarations */
 static u8 parse_type(void);
+static void param_list(sym_t *s);
+static u8 find_type(const char *n);
+
+/* the rest of a procedural type, after the keyword (and the name, in a parameter list): the parameters, and the type of the result of a function */
+static u8 proc_type(u8 isf)
+{
+    sym_t tp;
+    u8 t;
+    param_list(&tp);
+    npn = tp.pn;
+    t = new_type(TY_PROC, 2);
+    tys[t].f = tp.pf;
+    tys[t].nf = tp.np;
+    if (isf) {
+        expect(':', "a : is expected");
+        if (tok != T_ID) err("a type name is expected");
+        ty_base[t] = find_type(toks);
+        next();
+    }
+    return t;
+}
 
 typedef struct { u8 t; char name[NAMEMAX + 1]; } fwdptr_t;
 static fwdptr_t fwdptrs[6];
@@ -599,6 +626,11 @@ static u8 parse_type(void)
         return el;
     }
     if (tok == K_RECORD) { next(); return parse_record(); }
+    if (tok == K_PROCEDURE || tok == K_FUNCTION) {
+        u8 isf = tok == K_FUNCTION;
+        next();
+        return proc_type(isf);
+    }
     if (tok == K_FILE) {                   /* file of T; a text file has no base type (0) */
         u8 b = 0;
         next();
@@ -666,20 +698,7 @@ static u8 parse_type(void)
 }
 
 /* ---------------------------------------------------------------- strings */
-static u8 str_type(u16 len)
-{
-    u8 i, t;
-    for (i = 1; i < nty; i++)
-        if (ty_k[i] == TY_ARRAY && ty_base[i] == T_CHAR && tys[i].lo == 1 && tys[i].hi == (int)len && tys[i].ix == T_INT) return i;
-    t = new_type(TY_ARRAY, len);
-    ty_base[t] = T_CHAR;
-    tys[t].ix = T_INT;
-    tys[t].lo = 1;
-    tys[t].hi = (int)len;
-    return t;
-}
-
-static char strpool[240];
+static char strpool[200];
 static u16 strlen_pool;
 
 /* the text of a string as data; the address is put on the stack */
@@ -961,6 +980,7 @@ static void set_binary(u16 op)
 
 static void std_call(int id);
 static void call_user(int si);
+static void call_var(void);
 static void lret_to_temp(u8 ty);
 static void factor(void);
 static void expression(void);
@@ -1043,6 +1063,7 @@ static void selectors(void)
             e_word = 0;
         } else break;
     }
+    if (ty_k[e_t] == TY_PROC && tok == '(') call_var();
 }
 
 static void expression_bool(void)
@@ -1080,7 +1101,7 @@ static void binary(u16 op, u8 lc, int lv, u8 lt, u8 cmp)
     u8 rt = e_t, lb = host(lt), rb = host(rt);
     u8 rest;
     if (ty_k[lt] == TY_SET) { set_binary(op); return; }
-    if (isstr(lt) || isstr(rt)) { str_binary(op, lc, lv, lt, cmp); return; }
+    if (isstr(lt) || isstr(rt) || (op == '+' && lb == T_CHAR && rb == T_CHAR)) { str_binary(op, lc, lv, lt, cmp); return; }
     if (is_wide(lt) || is_wide(rt) || op == '/') {
         if (!(is_wide(lt) || (is_ord(lt) && lb == T_INT)) || !(is_wide(rt) || (is_ord(rt) && rb == T_INT))) err("a number is expected");
         wide_binary(op, lc, lv, lt);
@@ -1116,16 +1137,19 @@ static void binary(u16 op, u8 lc, int lv, u8 lt, u8 cmp)
 
 static void string_const(sym_t *s)
 {
-    string_literal(strpool + s->val, ty_size[s->ty], 1);
+    string_literal(strpool + s->val, tys[s->ty].hi, 1);
     e_t = s->ty;
     e_lv = 1;
     e_str = 1;
-    e_v = ty_size[s->ty];
+    e_v = tys[s->ty].hi;
 }
 
 static void factor(void)
 {
-    e_c = 0; e_lv = 0; e_word = 0; e_str = 0; e_tmp = 0;
+    u8 wp;
+    e_c = 0; e_lv = 0; e_word = 0; e_str = 0; e_tmp = 0; e_called = 0;
+    wp = want_proc;
+    want_proc = 0;
     if (tok == T_NUM) {
         if (tokh) { wide_literal(tokh, (u16)tokv); e_t = TYP_LONG; e_lv = 1; }
         else { e_c = 1; e_v = tokv; e_t = T_INT; }
@@ -1138,7 +1162,7 @@ static void factor(void)
         if (toklen == 1) { e_c = 1; e_v = (u8)toks[0]; e_t = T_CHAR; }
         else {
             string_literal(toks, toklen, 1);
-            e_t = str_type(toklen);
+            e_t = str_ty(toklen);
             e_lv = 1;
             e_str = 1;
             e_v = (int)toklen;
@@ -1146,7 +1170,10 @@ static void factor(void)
         next();
     } else if (tok == '(') {
         next();
+        nest += 3;
+        if (nest > 40) err("the expression is nested too deep");
         expression();
+        nest -= 3;
         expect(')', "a ) is expected");
     } else if (tok == K_NOT) {
         next();
@@ -1210,7 +1237,7 @@ static void factor(void)
         s = &syms[i];
         switch (s->kind) {
         case SK_CONST:
-            if (ty_k[s->ty] == TY_ARRAY) string_const(s);
+            if (ty_k[s->ty] == TY_STR) string_const(s);
             else if (s->ty == TYP_REAL) { real_text(strpool + s->val, s->off); lret_to_temp(TYP_REAL); }
             else if (is_wide(s->ty)) { wide_literal((u16)s->val, s->off); e_t = s->ty; e_lv = 1; }
             else { e_c = 1; e_v = s->val; e_t = s->ty; }
@@ -1225,8 +1252,16 @@ static void factor(void)
             selectors();
             break;
         case SK_FUNC:
+        case SK_PROC:
             next();
-            call_user(i);
+            if (wp && tok != '(') {                 /* the procedure itself, as a value */
+                char nm[8];
+                if (s->level != 0) err("only a procedure of the program can be a value");
+                pname(nm, 'P', (u16)s->val);
+                insaddr(nm);
+                e_t = wp;
+            } else if (s->kind == SK_PROC) err("a procedure in an expression");
+            else call_user(i);
             break;
         case SK_STD:
             next();
@@ -1385,28 +1420,36 @@ static void lret_to_temp(u8 ty)
     e_tmp = ty_k[ty] == TY_STR;
 }
 
-static void call_user(int si)
+/* the arguments of a call, written as they are read (the first first); np parameters, the first one in par_ty[pf] */
+static void call_args(u8 pf, u8 np)
 {
-    sym_t *s = &syms[si];
-    u8 j, total = s->np;
-    if (s->level >= 1) { frame_ref(s->level); total++; }
-    if (s->np) {
+    u8 j;
+    if (np) {
         expect('(', "a ( is expected");
-        for (j = 0; j < s->np; j++) {
-            par_t *p = &pars[s->pf + j];
+        for (j = 0; j < np; j++) {
+            u8 pt = par_ty[pf + j];
             if (j) expect(',', "a , is expected");
+            want_proc = ty_k[pt] == TY_PROC ? pt : 0;
             expression();
-            if (p->byref) {
+            if (par_ref[pf + j]) {
                 if (!e_lv || e_c) err("a variable is expected for a var parameter");
-                if (e_t != p->ty && !(is_ord(e_t) && is_ord(p->ty) && host(e_t) == host(p->ty) && ty_size[e_t] == ty_size[p->ty])) err("the types do not match");
+                if (e_t != pt && !(is_ord(e_t) && is_ord(pt) && host(e_t) == host(pt) && ty_size[e_t] == ty_size[pt])) err("the types do not match");
                 if (e_word) err("a parameter cannot be passed by reference here");
             } else {
-                coerce(p->ty);
-                if (!is_scalar(p->ty) && !e_lv) err("a value of this type cannot be passed");
+                coerce(pt);
+                if (!is_scalar(pt) && !e_lv) err("a value of this type cannot be passed");
             }
         }
         expect(')', "a ) is expected");
-    }
+    } else if (tok == '(') { next(); expect(')', "a ) is expected"); }
+}
+
+static void call_user(int si)
+{
+    sym_t *s = &syms[si];
+    u8 total = s->np;
+    if (s->level >= 1) { frame_ref(s->level); total++; }
+    call_args(s->pf, s->np);
     put("\tcall P");
     putn(s->val);
     put(" ");
@@ -1415,6 +1458,21 @@ static void call_user(int si)
     e_c = 0; e_lv = 0; e_word = 0; e_str = 0;
     e_t = s->kind == SK_FUNC ? s->ty : T_VOID;
     if (s->kind == SK_FUNC && !is_scalar(s->ty)) lret_to_temp(s->ty);
+}
+
+/* e_* is a variable of a procedural type (its address is on the stack): it is called; the pointer goes first, under the arguments */
+static void call_var(void)
+{
+    u8 t = e_t;
+    ins0("load.w");
+    call_args((u8)tys[t].f, tys[t].nf);
+    put("\tcalli ");
+    putn(tys[t].nf);
+    put("\n");
+    e_c = 0; e_lv = 0; e_word = 0; e_str = 0;
+    e_t = ty_base[t];
+    if (e_t && !is_scalar(e_t)) lret_to_temp(e_t);
+    e_called = 1;
 }
 
 static void arg_open(void) { expect('(', "a ( is expected"); }
@@ -1919,10 +1977,13 @@ static void assignment(void)
 {
     u8 t, w;
     expression();
+    if (tok != T_ASSIGN && e_called) { ins0("drop"); return; }          /* p(args); */
     if (!e_lv || e_c) err("a variable is expected");
     t = e_t;
     w = e_word;
+    if (tok != T_ASSIGN && ty_k[t] == TY_PROC) { call_var(); ins0("drop"); return; }   /* p; */
     expect(T_ASSIGN, "a := is expected");
+    want_proc = ty_k[t] == TY_PROC ? t : 0;
     expression();
     if (ty_k[t] == TY_STR) {
         str_value();
@@ -2105,6 +2166,8 @@ static void for_statement(void)
 static void statement(void)
 {
     u16 save = fpv[cur_level];
+    nest += 2;
+    if (nest > 40) err("the statements are nested too deep");
     if (tok == T_NUM) {            /* a label */
         deflabel((u16)(20000 + tokv));
         next();
@@ -2191,6 +2254,7 @@ static void statement(void)
     default:
         break;                       /* the empty statement */
     }
+    nest -= 2;
     fpv[cur_level] = save;
 }
 
@@ -2296,7 +2360,7 @@ static void const_section(void)
             if (strlen_pool + toklen + 1 > sizeof(strpool)) err("too many string constants");
             memcpy(strpool + strlen_pool, toks, toklen);
             s = new_sym(nm, SK_CONST);
-            s->ty = str_type(toklen);
+            s->ty = str_ty(toklen);
             s->val = (int)strlen_pool;
             strlen_pool += toklen;
             next();
@@ -2365,19 +2429,30 @@ static void type_section(void)
 
 static void param_list(sym_t *s)
 {
-    u8 np = 0;
-    s->pf = (u8)npar;
+    u8 bt[16], br[16], n = 0, k;           /* (kept here until the list is complete: a procedural parameter has a list of its own) */
+    s->pn = npn;
     if (tok == '(') {
         next();
         for (;;) {
-            u8 byref = 0, first = (u8)npar, i, t;
+            u8 byref = 0, first = n, i, t;
+            if (tok == K_PROCEDURE || tok == K_FUNCTION) {          /* a procedural parameter: function f(x: integer): integer */
+                u8 isf = tok == K_FUNCTION;
+                next();
+                if (tok != T_ID) err("a name is expected");
+                if (n >= 16 || npn >= NPN) err("too many parameters");
+                strcpy(par_name[npn++], toks);
+                br[n] = 0;
+                next();
+                bt[n++] = proc_type(isf);
+                if (tok == ';') { next(); continue; }
+                break;
+            }
             if (tok == K_VAR) { byref = 1; next(); }
             for (;;) {
                 if (tok != T_ID) err("a name is expected");
-                if (npar >= NPAR) err("too many parameters");
-                strcpy(pars[npar].name, toks);
-                pars[npar].byref = byref;
-                npar++;
+                if (n >= 16 || npn >= NPN) err("too many parameters");
+                strcpy(par_name[npn++], toks);
+                br[n++] = byref;
                 next();
                 if (tok == ',') { next(); continue; }
                 break;
@@ -2386,33 +2461,35 @@ static void param_list(sym_t *s)
             if (tok != T_ID) err("a type name is expected");
             t = find_type(toks);
             next();
-            for (i = first; i < npar; i++) pars[i].ty = t;
+            for (i = first; i < n; i++) bt[i] = t;
             if (tok == ';') { next(); continue; }
             break;
         }
         expect(')', "a ) is expected");
     }
-    np = (u8)(npar - s->pf);
-    s->np = np;
+    if (npar + n > NPAR) err("too many parameters");
+    s->pf = (u8)npar;
+    s->np = n;
+    for (k = 0; k < n; k++) { par_ty[npar] = bt[k]; par_ref[npar++] = br[k]; }
 }
 
 static void enter_params(sym_t *f)
 {
     u8 j;
     for (j = 0; j < f->np; j++) {
-        par_t *p = &pars[f->pf + j];
+        u8 pt = par_ty[f->pf + j];
         u8 slot = (u8)(f->np - 1 - j);
         sym_t *s;
-        check_new(p->name);
-        s = new_sym(p->name, SK_VAR);
-        s->ty = p->ty;
+        check_new(par_name[f->pn + j]);
+        s = new_sym(par_name[f->pn + j], SK_VAR);
+        s->ty = pt;
         s->val = slot;
-        if (p->byref) { s->flags = F_PARAM | F_BYREF; s->off = slot; }
-        else if (is_scalar(p->ty)) { s->flags = F_PARAM; s->off = slot; }
+        if (par_ref[f->pf + j]) { s->flags = F_PARAM | F_BYREF; s->off = slot; }
+        else if (is_scalar(pt)) { s->flags = F_PARAM; s->off = slot; }
         else {
             s->flags = F_COPYIN;
             s->off = fpv[cur_level];
-            fpv[cur_level] = (u16)(fpv[cur_level] + ty_size[p->ty]);
+            fpv[cur_level] = (u16)(fpv[cur_level] + ty_size[pt]);
             if (fpv[cur_level] > maxfpv[cur_level]) maxfpv[cur_level] = fpv[cur_level];
         }
     }
@@ -2444,7 +2521,13 @@ static void proc_decl(u8 isfunc)
         }
     } else {
         s = &syms[si];
-        if (tok == '(') { u16 keep = npar; param_list(s); npar = keep; s->np = syms[si].np; }
+        if (tok == '(') {                       /* the parameters again (Turbo Pascal): the first list stays */
+            u8 pf = s->pf, pn = s->pn, np = s->np, k = npn;
+            u16 kp = npar;
+            param_list(s);
+            s->pf = pf; s->pn = pn; s->np = np;
+            npar = kp; npn = k;
+        }
         if (isfunc && tok == ':') { next(); next(); }
     }
     expect(';', "a ; is expected");
@@ -2465,6 +2548,7 @@ static void proc_decl(u8 isfunc)
     active_fn[cur_level] = isfunc ? si : -1;
     enter_params(s);
     block(si);
+    if (npn == s->pn + s->np) npn = s->pn;
     nsym = base;
     scope_mark = oldmark;
     cur_level--;

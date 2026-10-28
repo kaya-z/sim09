@@ -12,7 +12,7 @@
 #include "pastok.h"
 
 #define NAMEMAX 12
-#define STRMAX  255
+#define STRMAX  160
 
 static rfile in;
 static wfile out;

@@ -51,11 +51,13 @@
  *                    separate from pas1 so that pas1 fits in the transient area.
  *   1.16 2026-10-28  Pascal: uses (skipped) and a few routines of the crt unit (clrscr gotoxy textcolor ...), random randomize paramcount paramstr, word shortint
  *                    smallint, {$M stack,heap}, output/input as the first argument; fixes (ord of an enum).
+ *   1.17 2026-10-28  Pascal: procedural types and parameters (function(x: integer): integer; calls through variables, tables of procedures), char + char,
+ *                    the parameter tables are shorter, a limit on the nesting of expressions and statements (the stack of pas1 is 700 bytes).
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.16"
+#define MK09_VERSION    "1.17"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

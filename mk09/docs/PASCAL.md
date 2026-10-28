@@ -1,6 +1,6 @@
 # MK09 の Pascal コンパイラ
 
-**版: 1.16** (2026-10-28)
+**版: 1.17** (2026-10-28)
 
 MK09 の上で動く Pascal コンパイラ。C コンパイラ ([IR.md](IR.md)) と同じ**中間表現 (IR)** に出し、`cg` と `as` とライブラリ (`/LIB/CLIB.S`) を共用する。
 
@@ -67,7 +67,16 @@ Turbo Pascal の文字列: 長さ 1 バイトのあとに文字 (`string` = `str
 * `{$M スタック,ヒープ}`: プログラムのスタックとヒープ (`new` が使う領域) の大きさ。既定は 2000 と 3000。
 * `write(output, ...)` と `read(input, ...)` の最初の `output` `input` は読み飛ばす。
 
-## 7. 限界
+## 7. 手続き型 (1.17)
 
-手続き型 (関数のポインタ)、可変レコード、`real` の型つき定数、`packed` の意味 (読み飛ばす)、`unit` `uses` (`uses` は読み込まない) はない。範囲検査もない。
+* `type op = function(a, b: integer): integer;` `type act = procedure(n: integer);` の変数は 2 バイト (手続きのアドレス)。`f := add;` (名前だけを書くとアドレス)、`f(3, 4)` (変数を通した呼び出し。
+  引数なしなら `act;`)、配列の要素や構造体のフィールドにもできる。呼び出しは IR の `calli`。
+* 標準 Pascal の**手続き・関数の引数**: `procedure each(first, last: integer; procedure action(n: integer));` と
+  `function integrate(function fx(x: real): real; a, b: real; n: integer): real;`。
+* 値にできるのは**プログラムの直下の**手続き・関数だけ (入れ子の手続きは静的リンクが要るので不可)。
+* 式の入れ子 (かっこ 13 段) と文の入れ子 (20 段) には上限がある (`pas1` のスタックが 700 バイトなので)。超えるとエラー。
+
+## 8. 限界
+
+可変レコード、`real` の型つき定数、`packed` の意味 (読み飛ばす)、`unit` `uses` (`uses` は読み込まない) はない。範囲検査もない。
 `pas1` は TPA にほぼ一杯 (本体 34KB + 表 6KB + スタック 1KB): 次の機能は、何かを削るか、段を分けないと入らない。名前は 12 文字まで。
