@@ -419,8 +419,8 @@ loop	ldx	#buf		; 名前  命令  オペランド  ; コメント (空白かタ�
 
   fd 0 1 2 は標準入力・標準出力・標準エラー出力です (シェルが `<` `>` `|` で付け替えていれば、そのファイル)。上の関数がしないこと (ディレクトリ、`seek`、`spawn` など) は、
   [SPEC.md](SPEC.md) のメッセージとシステムコール (`SWI`、A = 番号) を直接使います。
-* **大きさ**: `as` は約 40KB (コード 21KB + 表 18KB + スタック 0.7KB) を使うので、ほかのプログラムを同時に走らせる余裕は少なくなります。1 つのソースに、名前が約 440 個、
-  アドレスが約 2200 個まで。1 行は 128 文字まで。
+* **大きさ**: `as` は約 40KB (コード 21KB + 表 18KB + スタック 0.7KB) を使うので、ほかのプログラムを同時に走らせる余裕は少なくなります。1 つのソースに、名前が約 500 個、
+  アドレスが約 1700 個まで。1 行は 128 文字まで。
 
 ### 5.3 C で書く (`cc`)
 
@@ -438,10 +438,10 @@ cc -S foo.c                        # アセンブラの文 (foo.s) まで
 * **言語**: `char` `int` `short` `unsigned` `signed` `void`、ポインタ、配列、`struct` `union` `enum` `typedef`、関数ポインタ、`static` `extern` `sizeof`、キャスト、
   すべての C89 の演算子と文、初期化子 (配列、構造体、文字列)。前処理 (`#include` `#define` 関数形式も、`#if` `#ifdef` ...)。`int` は 16 ビット。
   **ない**もの: `long` `float` `double`、ビットフィールド、K&R 形式の関数定義、構造体を値で渡す・返すこと、`#` と `##`、名前は 15 文字まで。詳しくは [IR.md](IR.md) の 6 章。
-* **ヘッダ** (`/INC`。`#include <名前.h>`): `stdio.h` (`printf` `sprintf` `putchar` `puts` `getchar` `readline` `fflush`)、`string.h` (`strlen` `strcpy` `strncpy` `strcat` `strcmp` `strncmp` `strchr`
+* **ヘッダ** (`/INC`。`#include <名前.h>`): `stdio.h` (`printf` `sprintf` `putchar` `puts` `getchar` `readline`、`FILE`: `fopen` `fclose` `fgetc` `fputc` `fgets` `fputs` `fread` `fwrite` `fseek` `ftell` `feof` `fprintf` `fflush` `stdin` `stdout` `stderr`)、`string.h` (`strlen` `strcpy` `strncpy` `strcat` `strcmp` `strncmp` `strchr`
   `strrchr` `strstr` `memcpy` `memmove` `memset` `memcmp`)、`stdlib.h` (`exit` `abs` `atoi` `rand` `srand` `malloc` `free` `calloc` `qsort`)、`ctype.h` (ASCII)、
   `stdarg.h` (`va_list` `va_start` `va_arg` `va_end`: 引数は 2 バイトずつなので、`char` も `va_arg(ap, int)` で読む)、`stddef.h` (`NULL` `size_t`)、
-  `mklib.h` (MK09 のファイル: `open` `close` `read` `write` `seek` `unlink` `mkdir` `chdir` `getcwd` と `FO_*` `E_*`)。`FILE` はなく、標準入出力は `printf` などと `read(0, ...)` `write(1, ...)`。
+  `mklib.h` (MK09 のファイル: `open` `close` `read` `write` `seek` `unlink` `mkdir` `chdir` `getcwd` と `FO_*` `E_*`)。`FILE` は 6 個まで同時に開ける (標準の 3 つを含む)。`fseek` `ftell` の位置は 16 ビット。
   1 つのソースの名前の表が小さい (約 130) ので、使うヘッダだけを入れる。
 * **ライブラリ**: `/LIB/CLIB.S` (上の関数を C で書いたもの) と `/LIB/RT.S` (掛け算・割り算・シフトとシステムコール)。使うものだけが入る。`malloc` は bss の 3000 バイトの領域から取る。
   `printf` は `%d %u %x %c %s %%`、幅、`-` と `0`。`main(argc, argv)` から始まり、`return` の値が終了コード。

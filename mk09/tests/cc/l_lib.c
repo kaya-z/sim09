@@ -60,5 +60,36 @@ int main(void)
     srand(7);
     i = rand();
     printf("%d\n", i >= 0);
+    {
+        FILE *f = fopen("ftest.txt", "w");
+        char line[40];
+        int c;
+        fprintf(f, "line %d\n", 1);
+        fputs("second line\n", f);
+        fputc('x', f); fputc('y', f); fputc('\n', f);
+        fclose(f);
+        f = fopen("ftest.txt", "r");
+        fgets(line, 40, f);
+        printf("[%s]", line);
+        c = fgetc(f);
+        ungetc(c, f);
+        printf("%c %d\n", c, ftell(f));
+        fgets(line, 40, f);
+        printf("[%s]", line);
+        fseek(f, 5, 0);
+        printf("%c", fgetc(f));
+        fseek(f, 0, 2);
+        printf(" %d %d\n", ftell(f), fgetc(f) == EOF);
+        printf("%d\n", feof(f) != 0);
+        fclose(f);
+        f = fopen("ftest.txt", "a");
+        fprintf(f, "tail\n");
+        fclose(f);
+        f = fopen("ftest.txt", "r");
+        printf("%d ", (int)fread(line, 1, 30, f));
+        fclose(f);
+        printf("%d %d\n", remove("ftest.txt"), fopen("ftest.txt", "r") == NULL);
+        fprintf(stdout, "to stdout %d\n", 5);
+    }
     return 0;
 }

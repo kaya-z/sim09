@@ -51,6 +51,11 @@ cc = os.path.join(MK, 'lib', 'cc')
 lib_s, _ = compile_c(os.path.join(cc, 'clib.c'), 'clib', 'l')
 if lib_s is None:
     sys.exit(1)
+libdir = os.path.join(work, 'lib')                 # the library as cg -L wants it (CC_LIB): only the routines that a program needs are put in
+os.makedirs(libdir)
+open(os.path.join(libdir, 'CLIB.S'), 'w').write(lib_s)
+shutil.copy(os.path.join(cc, 'rt.s'), os.path.join(libdir, 'RT.S'))
+shutil.copy(os.path.join(cc, 'start.s'), os.path.join(libdir, 'START.S'))
 tests = sorted(f for f in os.listdir(os.path.join(HERE, 'cc')) if f[:2] in ('t_', 'l_') and f.endswith('.c'))
 tests = [t for t in tests if not names or t[:-2] in names]
 tree = os.path.join(work, 'tree')
@@ -68,8 +73,13 @@ for t in tests:
     else:
         out, code = irsim.run(ir)
     want[base] = out
-    allsrc = open(os.path.join(cc, 'start.s')).read() + s + lib_s + open(os.path.join(cc, 'rt.s')).read()
-    open(os.path.join(tree, base.upper()[:8] + '.S'), 'w').write(allsrc)
+    a_f = os.path.join(work, base + '.A')
+    p = subprocess.run([os.path.join(work, 'cg'), '-pp', '-L', os.path.join(work, base + '.ir'), '-o', a_f], stdout=subprocess.PIPE,
+                       stderr=subprocess.STDOUT, cwd=work, env=dict(os.environ, CC_LIB=libdir))
+    if p.returncode:
+        check(False, base + ': cg -L', p.stdout.decode())
+        continue
+    shutil.copy(a_f, os.path.join(tree, base.upper()[:8] + '.S'))
 disk = os.path.join(work, 'disk.img')
 subprocess.run([sys.executable, '-X', 'utf8', os.path.join(MK, 'tools', 'mkdisk.py'), '-o', disk, '--boot', os.path.join(BUILD, 'boot.img'),
                 '--size-mb', '16', tree], check=True, stdout=subprocess.DEVNULL)

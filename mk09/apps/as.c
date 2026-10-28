@@ -52,9 +52,9 @@ static int rd(void *b, int n) { return read(fin, b, n); }
 static int wr(const void *b, int n) { return write(fout, b, n); }
 #endif
 
-#define NSYM    460
+#define NSYM    520
 #define NHASH   64
-#define NREL    2200
+#define NREL    1700
 #define LINEMAX 128
 #define NAMEMAX 17
 

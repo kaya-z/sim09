@@ -104,8 +104,32 @@ int getcwd(char *buf, unsigned n)
     return r < 0 ? r : 0;
 }
 
-/* ---------------------------------------------------------------- stdio */
-int fflush(void)
+/* ---------------------------------------------------------------- stdio: the console buffer, FILE */
+/* stdout is the buffer __obuf (written at a newline); stderr is not buffered; the other files and stdin have a buffer of 64 bytes each */
+struct _FILE {
+    int fd;                    /* the handle; stdin 0, stdout 1, stderr 2 */
+    unsigned char mode;        /* 1 read, 2 write */
+    unsigned char eof, err;
+    int unget;                 /* a character pushed back, or -1 */
+    unsigned char pos, len;    /* reading: the next character and how many there are;  writing: how many are waiting */
+    char buf[64];
+};
+typedef struct _FILE FILE;
+#define NFILE 6
+static FILE __files[NFILE];
+FILE *stdin = __files;
+FILE *stdout = __files + 1;
+FILE *stderr = __files + 2;
+
+static void __initfiles(void)
+{
+    if (__files[0].mode) return;
+    __files[0].mode = 1; __files[0].fd = 0; __files[0].unget = -1;
+    __files[1].mode = 2; __files[1].fd = 1; __files[1].unget = -1;
+    __files[2].mode = 2; __files[2].fd = 2; __files[2].unget = -1;
+}
+
+int fflush_out(void)
 {
     unsigned char n = __olen;
     __olen = 0;
@@ -113,11 +137,74 @@ int fflush(void)
     return 0;
 }
 
+static int __flushf(FILE *f)
+{
+    unsigned char n = f->len;
+    f->len = 0;
+    if (n && write(f->fd, f->buf, n) != n) { f->err = 1; return -1; }
+    return 0;
+}
+
+int fflush(FILE *f)
+{
+    if (!f || f->fd == 1) return fflush_out();
+    if (f->mode == 2) return __flushf(f);
+    return 0;
+}
+
 int putchar(int c)
 {
     __obuf[__olen++] = c;
-    if (c == 10 || __olen >= 80) fflush();
+    if (c == 10 || __olen >= 80) fflush_out();
     return c;
+}
+
+int fputc(int c, FILE *f)
+{
+    char ch;
+    __initfiles();
+    if (f->fd == 1) return putchar(c);
+    if (f->fd == 2) { ch = c; write(2, &ch, 1); return c & 255; }
+    if (f->mode != 2) return -1;
+    f->buf[f->len++] = c;
+    if (f->len >= 64 && __flushf(f)) return -1;
+    return c & 255;
+}
+
+int fgetc(FILE *f)
+{
+    int c, n;
+    __initfiles();
+    if (f->fd == 0) fflush_out();
+    if (f->unget >= 0) { c = f->unget; f->unget = -1; return c; }
+    if (f->mode != 1) return -1;
+    if (f->pos >= f->len) {
+        n = read(f->fd, f->buf, 64);
+        if (n <= 0) { f->eof = 1; return -1; }
+        f->pos = 0;
+        f->len = n;
+    }
+    return f->buf[f->pos++] & 255;
+}
+
+int ungetc(int c, FILE *f)
+{
+    if (c < 0 || f->unget >= 0) return -1;
+    f->unget = c;
+    f->eof = 0;
+    return c;
+}
+
+int putc(int c, FILE *f) { return fputc(c, f); }
+int getc(FILE *f) { return fgetc(f); }
+int getchar(void) { return fgetc(stdin); }
+int feof(FILE *f) { return f->eof; }
+int ferror(FILE *f) { return f->err; }
+
+int fputs(char *s, FILE *f)
+{
+    while (*s) fputc(*s++, f);
+    return 0;
 }
 
 int puts(char *s)
@@ -127,13 +214,92 @@ int puts(char *s)
     return 0;
 }
 
-int getchar(void)
+char *fgets(char *buf, int n, FILE *f)
 {
-    char c;
-    fflush();
-    if (read(0, &c, 1) != 1) return -1;
-    return c & 255;
+    int c, i = 0;
+    while (i < n - 1) {
+        c = fgetc(f);
+        if (c < 0) break;
+        buf[i++] = c;
+        if (c == 10) break;
+    }
+    if (!i) return 0;
+    buf[i] = 0;
+    return buf;
 }
+
+unsigned fread(char *p, unsigned size, unsigned n, FILE *f)
+{
+    unsigned i, k, total = size * n;
+    int c;
+    for (i = 0; i < total; i++) {
+        c = fgetc(f);
+        if (c < 0) break;
+        p[i] = c;
+    }
+    return size ? i / size : 0;
+}
+
+unsigned fwrite(char *p, unsigned size, unsigned n, FILE *f)
+{
+    unsigned i, total = size * n;
+    for (i = 0; i < total; i++) if (fputc(p[i], f) < 0) break;
+    return size ? i / size : 0;
+}
+
+FILE *fopen(char *path, char *mode)
+{
+    FILE *f;
+    int fl, fd, i;
+    __initfiles();
+    if (mode[0] == 'r') fl = mode[1] == '+' ? 3 : 1;
+    else if (mode[0] == 'w') fl = 2 | 4 | 8 | (mode[1] == '+' ? 1 : 0);
+    else if (mode[0] == 'a') fl = 2 | 4 | 16;
+    else return 0;
+    for (i = 3; i < NFILE; i++) if (!__files[i].mode) break;
+    if (i == NFILE) return 0;
+    fd = open(path, fl);
+    if (fd < 0) return 0;
+    f = __files + i;
+    f->fd = fd;
+    f->mode = (mode[0] == 'r' && mode[1] != '+') ? 1 : 2;
+    f->eof = f->err = f->pos = f->len = 0;
+    f->unget = -1;
+    return f;
+}
+
+int fclose(FILE *f)
+{
+    int r = 0;
+    if (f->mode == 2) r = fflush(f);
+    if (f->fd >= 3) close(f->fd);
+    f->mode = 0;
+    return r;
+}
+
+int fseek(FILE *f, int off, int whence)
+{
+    int r;
+    if (f->mode == 2) __flushf(f);
+    else if (whence == 1) off -= f->len - f->pos;      /* (the characters that are read already but not used) */
+    f->pos = f->len = 0;
+    f->unget = -1;
+    f->eof = 0;
+    r = seek(f->fd, off, whence);
+    return r < 0 ? -1 : 0;
+}
+
+int ftell(FILE *f)
+{
+    int r;
+    if (f->mode == 2) __flushf(f);
+    r = seek(f->fd, 0, 1);
+    if (f->mode == 1) r -= f->len - f->pos;
+    if (f->unget >= 0) r--;
+    return r;
+}
+
+int remove(char *path) { return unlink(path); }
 
 /* a line from the standard input without the newline; returns the length, or -1 at the end of the input */
 int readline(char *buf, int n)
@@ -151,7 +317,9 @@ int readline(char *buf, int n)
 
 void exit(int code)
 {
-    fflush();
+    int i;
+    fflush_out();
+    for (i = 3; i < NFILE; i++) if (__files[i].mode == 2) fflush(__files + i);      /* (only the files that are open) */
     mk_exit(code);
 }
 
@@ -203,6 +371,18 @@ static void __fmt(char *fmt, int *ap)
 int printf(char *fmt, ...)
 {
     __out = putchar;
+    __fmt(fmt, (int *)&fmt + 1);
+    return 0;
+}
+
+static FILE *__of;
+
+static void __putf(int c) { fputc(c, __of); }
+
+int fprintf(FILE *f, char *fmt, ...)
+{
+    __of = f;
+    __out = __putf;
     __fmt(fmt, (int *)&fmt + 1);
     return 0;
 }
