@@ -1,0 +1,15 @@
+  1: disk 1 from A to B
+  2: disk 2 from A to C
+  3: disk 1 from B to C
+  4: disk 3 from A to B
+  5: disk 1 from C to A
+  6: disk 2 from C to B
+  7: disk 1 from A to B
+  8: disk 4 from A to C
+  9: disk 1 from B to C
+ 10: disk 2 from B to A
+ 11: disk 1 from C to A
+ 12: disk 3 from B to C
+ 13: disk 1 from A to B
+ 14: disk 2 from A to C
+ 15: disk 1 from B to C

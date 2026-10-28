@@ -461,7 +461,8 @@ pc /hello.pas -o /hello.mx        # 出力を決めないと、.pas を .mx に�
 ```
 `pc` は `pas1` (Pascal から IR) → `cg` → `as` を、`cc` と同じやり方 (段が互いの場所を引き継ぐ) で走らせます。言語、作り、限界は [PASCAL.md](PASCAL.md)。
 標準 Pascal の中核 (`integer` `char` `boolean`、列挙、部分範囲、配列、レコード、ポインタ、入れ子の手続きと関数、`var` 引数、`case` `with` `for` `repeat` `while`、
-`write` `writeln` `read` `readln`) が使えます。C のライブラリを共用するので、プログラムは約 3KB のライブラリを含めて小さく済みます。
+`write` `writeln` `read` `readln`)、`real` `longint` `string` `set` `file`、手続き型、ユニット (`uses`) が使えます。見本が `/pas` にあります (`hello` `primes` `hanoi` `calc`)。
+C のライブラリを共用するので、プログラムは約 3KB のライブラリを含めて小さく済みます。詳しくは [PASCAL.md](PASCAL.md)。
 
 ## 6. 困ったとき
 

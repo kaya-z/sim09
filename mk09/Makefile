@@ -191,11 +191,11 @@ $(B)/clib.s: lib/cc/clib.c $(B)/host_cpp $(B)/host_cc1 $(B)/host_cg
 	cd $(B) && ./host_cpp ../lib/cc/clib.c -o clib.i && ./host_cc1 clib.i -o clib.ir && ./host_cg -pl clib.ir -o clib.s
 
 TREE := $(B)/tree
-$(B)/tree.stamp: $(foreach a,$(APPS),$(B)/$(a).mx) $(wildcard disk/etc/* disk/doc/* disk/bas/* disk/asm/* disk/inc/*) $(if $(HAVE_SKK),$(B)/skk_$(CHARSET).dic) $(B)/clib.s $(B)/cc1.msg $(B)/pas1.msg lib/cc/start.s lib/cc/rt.s Makefile
-	rm -rf $(TREE); mkdir -p $(TREE)/bin $(TREE)/etc $(TREE)/doc $(TREE)/bas $(TREE)/asm $(TREE)/inc $(TREE)/lib $(TREE)/skk
+$(B)/tree.stamp: $(foreach a,$(APPS),$(B)/$(a).mx) $(wildcard disk/etc/* disk/doc/* disk/bas/* disk/asm/* disk/inc/* disk/pas/*) $(if $(HAVE_SKK),$(B)/skk_$(CHARSET).dic) $(B)/clib.s $(B)/cc1.msg $(B)/pas1.msg lib/cc/start.s lib/cc/rt.s Makefile
+	rm -rf $(TREE); mkdir -p $(TREE)/bin $(TREE)/etc $(TREE)/doc $(TREE)/bas $(TREE)/asm $(TREE)/inc $(TREE)/pas $(TREE)/lib $(TREE)/skk
 	cp lib/cc/start.s $(TREE)/lib/start.s; cp $(B)/cc1.msg $(TREE)/lib/cc1.msg; cp $(B)/pas1.msg $(TREE)/lib/pas1.msg; cp $(B)/clib.s $(TREE)/lib/clib.s; cp lib/cc/rt.s $(TREE)/lib/rt.s
 	for a in $(APPS); do cp $(B)/$$a.mx $(TREE)/bin/$$a.mx; done
-	for d in etc doc bas asm inc; do if [ -d disk/$$d ] && [ -n "$$(ls disk/$$d)" ]; then cp disk/$$d/* $(TREE)/$$d/; fi; done
+	for d in etc doc bas asm inc pas; do if [ -d disk/$$d ] && [ -n "$$(ls disk/$$d)" ]; then cp disk/$$d/* $(TREE)/$$d/; fi; done
 	printf '# /ETC/RC.SH - run by the shell when the system starts\nstty $(CHARSET)\n' > $(TREE)/etc/rc.sh
 	if [ -n "$(HAVE_SKK)" ]; then cp $(B)/skk_$(CHARSET).dic $(TREE)/skk/skk.dic; fi
 	iconv -f UTF-8 -t $(ICONV_$(CHARSET)) disk/doc/guide.txt > $(TREE)/doc/guide.txt
@@ -231,6 +231,7 @@ test: all charsets fstest
 	gcc -O1 -o $(B)/sfp_test tests/sfp_test.c -lm && $(B)/sfp_test | tail -1
 	gcc -O0 -w -DFP_HOST -o $(B)/fp_test tests/fp_host_test.c -lm && $(B)/fp_test | tail -1
 	gcc -O0 -w -DFP_HOST -o $(B)/fpio_test tests/fpio_host_test.c -lm && $(B)/fpio_test | tail -1
+	$(PYTHON) tests/pas_test.py
 	$(PYTHON) tests/mk09_test.py
 	$(PYTHON) tests/jwp_test.py
 	$(PYTHON) tests/fpga_mk09.py

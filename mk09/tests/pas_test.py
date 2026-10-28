@@ -36,13 +36,15 @@ for f in os.listdir(os.path.join(HERE, 'pas')):          # (units and include fi
     if (f.endswith('.pas') or f.endswith('.inc')) and not f.startswith('p_'):
         shutil.copy(os.path.join(HERE, 'pas', f), os.path.join(work, f))
 tests = [t for t in tests if not names or t[:-4] in names]
+samples = sorted('d_' + f for f in os.listdir(os.path.join(MK, 'disk', 'pas')) if f.endswith('.pas') and os.path.exists(os.path.join(HERE, 'pas', 'd_' + f[:-4] + '.out')))
+tests += [t for t in samples if not names or t[:-4] in names]       # (the sample programs of the disk: tests/pas/d_NAME.out is what they print)
 tree = os.path.join(work, 'tree')
 shutil.copytree(os.path.join(BUILD, 'tree'), tree, ignore=shutil.ignore_patterns('skk'))
 ok = []
 for t in tests:
     base = t[:-4]
     src = os.path.join(work, base + '.pas')
-    shutil.copy(os.path.join(HERE, 'pas', t), src)
+    shutil.copy(os.path.join(MK, 'disk', 'pas', t[2:]) if t.startswith('d_') else os.path.join(HERE, 'pas', t), src)
     p = subprocess.run([os.path.join(work, 'pas0'), '-o', os.path.join(work, base + '.tok'), src], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=work)
     if p.returncode:
         check(False, base + ': pas0', p.stdout.decode())
