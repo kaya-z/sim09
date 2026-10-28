@@ -46,11 +46,14 @@
  *                    as: local labels are kept as keys, not as text (1000 symbols).
  *   1.14 2026-10-28  Pascal: Turbo Pascal strings (string, string[n], + and comparisons, length copy pos concat upcase delete insert str val, functions that
  *                    return a string); the IR directive .stack N (cg) and {$M n} (the stack of the program).
+ *   1.15 2026-10-28  Pascal: set (32 bytes, in and + - * = <> <= >=, include exclude), text files and file of T (assign reset rewrite append close seek eof eoln
+ *                    filepos filesize, write(f, ...) read(f, ...)), goto and label, break continue exit, typed constants; the first stage pas0 (the lexer) is
+ *                    separate from pas1 so that pas1 fits in the transient area.
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.14"
+#define MK09_VERSION    "1.15"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

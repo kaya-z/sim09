@@ -3,7 +3,7 @@
 /*
  * pas1 - the front end of the Pascal compiler of MK09: Pascal in, IR out (docs/IR.md, docs/PASCAL.md)
  *
- *   pas1 [-o out.ir] file.pas
+ *   pas1 -o out.ir file.pas
  *
  * One pass, no tree: the expressions are written to the IR as they are read (the IR is a stack machine).  The IR goes to cg, then to as, like the C compiler.
  * Integers are 16 bits.  A procedure takes its arguments from the left, the first one pushed first (so the argument j of n is `paddr n-1-j`); a procedure
@@ -18,40 +18,26 @@
 #define NPAR    200
 #else
 #define NSYM    100
-#define NTY     70
-#define NFLD    70
-#define NPAR    50
+#define NTY     66
+#define NFLD    60
+#define NPAR    44
 #endif
-#define NAMEMAX 15
-#define STRMAX  160
+#define NAMEMAX 12
+#define STRMAX  255
 #define NLEV    8
 #define NWITH   6
 
-/* ---------------------------------------------------------------- tokens */
-enum {
-    T_EOF = 0, T_NUM = 128, T_ID, T_STR, T_REAL, T_ASSIGN, T_LE, T_GE, T_NE, T_DOTDOT,
-    K_AND, K_ARRAY, K_BEGIN, K_CASE, K_CONST, K_DIV, K_DO, K_DOWNTO, K_ELSE, K_END, K_FILE, K_FOR, K_FORWARD, K_FUNCTION, K_GOTO, K_IF, K_IN, K_LABEL,
-    K_MOD, K_NIL, K_NOT, K_OF, K_OR, K_PACKED, K_PROCEDURE, K_PROGRAM, K_RECORD, K_REPEAT, K_SET, K_THEN, K_TO, K_TYPE, K_UNTIL, K_VAR, K_WHILE, K_WITH,
-    K_XOR, K_SHL, K_SHR
-};
-
-static char *keywords[] = {
-    "and", "array", "begin", "case", "const", "div", "do", "downto", "else", "end", "file", "for", "forward", "function", "goto", "if", "in", "label",
-    "mod", "nil", "not", "of", "or", "packed", "procedure", "program", "record", "repeat", "set", "then", "to", "type", "until", "var", "while", "with",
-    "xor", "shl", "shr", 0
-};
+#include "pastok.h"
 
 static rfile in;
 static wfile ir, sf;           /* the code and the data; the strings */
-static char fname[120];
+static char fname[80];
 static u16 line = 1;
-static int ch;
 static u16 tok;
 static int tokv;
 static u16 tokh;               /* the high word of a number (a constant above 65535 is a longint); of a real: tokv is the high word and tokh the low word */
 static char toks[STRMAX + 2];
 static u16 toklen;
-static u16 pend;               /* a token that was found while reading a number (the .. of 1..5) */
 
 static void cleanup(void);
 
@@ -87,156 +73,29 @@ static void err(msgt msg)
     exit(1);
 }
 
-static void nextch(void) { ch = r_getc(&in); if (ch == '\n') line++; }
-
-static int isidc(int c, u8 first)
-{
-    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_') return 1;
-    return !first && c >= '0' && c <= '9';
-}
-
-static int hexval(int c)
-{
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    return -1;
-}
-
+/* ---------------------------------------------------------------- the tokens (written by pas0) */
 static u16 stack_size = 2000;       /* the stack of the program: {$M n} */
 
-static void skip_comment(int close2)       /* after { or (* */
-{
-    if (!close2 && ch == '$') {                /* a directive: {$M 4096} sets the stack */
-        nextch();
-        if (ch == 'M' || ch == 'm') {
-            u16 v = 0;
-            nextch();
-            while (ch == ' ') nextch();
-            while (ch >= '0' && ch <= '9') { v = (u16)(v * 10 + ch - '0'); nextch(); }
-            if (v) stack_size = v;
-        }
-    }
-    for (;;) {
-        if (ch < 0) err("a comment is not closed");
-        if (close2) {
-            if (ch == '*') { nextch(); if (ch == ')') { nextch(); return; } continue; }
-        } else if (ch == '}') { nextch(); return; }
-        nextch();
-    }
-}
-
-static void add_tok(int c) { if (toklen < STRMAX) toks[toklen++] = (char)c; else err("a string is too long"); }
+static u16 rw(void) { u16 h = (u16)r_getc(&in); return (u16)((h << 8) | (u16)r_getc(&in)); }
 
 static void next(void)
 {
-    if (pend) { tok = pend; pend = 0; return; }
+    int t, n, i;
     for (;;) {
-        while (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') nextch();
-        if (ch == '{') { nextch(); skip_comment(0); continue; }
-        if (ch == '(') {
-            nextch();
-            if (ch == '*') { nextch(); skip_comment(1); continue; }
-            tok = '(';
-            return;
-        }
-        if (ch == '/') {
-            nextch();
-            if (ch == '/') { while (ch >= 0 && ch != '\n') nextch(); continue; }
-            tok = '/';
-            return;
-        }
-        break;
+        t = r_getc(&in);
+        if (t == TK_LINE) line = rw();
+        else if (t == TK_STACK) stack_size = rw();
+        else if (t == TK_FILE) { n = r_getc(&in); for (i = 0; i < n; i++) fname[i] = (char)r_getc(&in); fname[n] = 0; }
+        else break;
     }
-    if (ch < 0) { tok = T_EOF; return; }
-    if (isidc(ch, 1)) {
-        u8 k = 0;
-        while (isidc(ch, 0)) {
-            int c = ch;
-            if (c >= 'A' && c <= 'Z') c += 32;
-            if (k < NAMEMAX) toks[k++] = (char)c;
-            nextch();
-        }
-        toks[k] = 0;
-        tok = T_ID;
-        for (k = 0; keywords[k]; k++) if (!strcmp(keywords[k], toks)) { tok = (u16)(K_AND + k); break; }
-        return;
-    }
-    if ((ch >= '0' && ch <= '9') || ch == '$') {
-        u16 v = 0, vh = 0, a, b, lo, mid;
-        u8 isreal = 0, n = 0;
-        if (ch == '$') {
-            nextch();
-            if (hexval(ch) < 0) err("a hexadecimal number is expected");
-            while (hexval(ch) >= 0) { vh = (u16)((vh << 4) | (v >> 12)); v = (u16)(v * 16 + hexval(ch)); nextch(); }
-        } else {
-            while (ch >= '0' && ch <= '9') {
-                a = v & 255; b = v >> 8;
-                lo = (u16)(a * 10 + ch - '0');
-                mid = (u16)(b * 10 + (lo >> 8));
-                v = (u16)((lo & 255) | (mid << 8));
-                vh = (u16)(vh * 10 + (mid >> 8));
-                if (n < 30) toks[n++] = (char)ch;
-                nextch();
-            }
-            if (ch == '.') {
-                nextch();
-                if (ch >= '0' && ch <= '9') {
-                    isreal = 1;
-                    toks[n++] = '.';
-                    while (ch >= '0' && ch <= '9') { if (n < 40) toks[n++] = (char)ch; nextch(); }
-                } else if (ch == '.') { nextch(); pend = T_DOTDOT; }
-                else pend = '.';
-            }
-            if (!pend && (ch == 'e' || ch == 'E')) {
-                isreal = 1;
-                toks[n++] = 'e';
-                nextch();
-                if (ch == '+' || ch == '-') { toks[n++] = (char)ch; nextch(); }
-                if (ch < '0' || ch > '9') err("an exponent is expected");
-                while (ch >= '0' && ch <= '9') { if (n < 46) toks[n++] = (char)ch; nextch(); }
-            }
-            if (isreal) {                      /* (the text stays in toks: the program converts it when it runs: atof) */
-                toks[n] = 0;
-                toklen = n;
-                tok = T_REAL;
-                return;
-            }
-        }
-        tokv = (int)v;
-        tokh = vh;
-        tok = T_NUM;
-        return;
-    }
-    if (ch == '\'' || ch == '#') {
-        toklen = 0;
-        for (;;) {
-            if (ch == '\'') {
-                nextch();
-                for (;;) {
-                    if (ch < 0 || ch == '\n') err("a string is not closed");
-                    if (ch == '\'') { nextch(); if (ch != '\'') break; }
-                    add_tok(ch);
-                    nextch();
-                }
-            } else if (ch == '#') {
-                int v = 0;
-                nextch();
-                while (ch >= '0' && ch <= '9') { v = v * 10 + ch - '0'; nextch(); }
-                add_tok(v);
-            } else break;
-        }
+    if (t < 0) t = T_EOF;
+    tok = (u16)t;
+    if (t == T_NUM) { tokv = (int)rw(); tokh = rw(); }
+    else if (t == T_ID || t == T_STR || t == T_REAL) {
+        toklen = (u16)r_getc(&in);
+        for (i = 0; i < (int)toklen; i++) toks[i] = (char)r_getc(&in);
         toks[toklen] = 0;
-        tok = T_STR;
-        return;
     }
-    tok = (u16)ch;
-    nextch();
-    if (tok == ':' && ch == '=') { nextch(); tok = T_ASSIGN; }
-    else if (tok == '<' && ch == '=') { nextch(); tok = T_LE; }
-    else if (tok == '<' && ch == '>') { nextch(); tok = T_NE; }
-    else if (tok == '>' && ch == '=') { nextch(); tok = T_GE; }
-    else if (tok == '.' && ch == '.') { nextch(); tok = T_DOTDOT; }
 }
 
 static void expect(u16 t, msgt msg)
@@ -246,7 +105,7 @@ static void expect(u16 t, msgt msg)
 }
 
 /* ---------------------------------------------------------------- types */
-enum { TY_VOID, TY_INT, TY_CHAR, TY_BOOL, TY_ENUM, TY_SUB, TY_ARRAY, TY_REC, TY_PTR, TY_NIL, TY_REAL, TY_LONG, TY_STR };
+enum { TY_VOID, TY_INT, TY_CHAR, TY_BOOL, TY_ENUM, TY_SUB, TY_ARRAY, TY_REC, TY_PTR, TY_NIL, TY_REAL, TY_LONG, TY_STR, TY_SET, TY_FILE };
 
 typedef struct {
     u8 k;
@@ -274,6 +133,7 @@ static u16 nfld;
 #define T_BYTE  5
 #define TYP_REAL  6
 #define TYP_LONG 7
+#define TYP_TEXT 8
 
 static u8 new_type(u8 k, u16 size)
 {
@@ -334,6 +194,9 @@ static u8 make_sub(u8 h, int lo, int hi)
 #define ST_POS   23
 #define ST_CONCAT 24
 #define ST_UPCASE 25
+#define ST_FILEPOS 26
+#define ST_FILESIZE 27
+#define ST_IORESULT 28
 #define ST_WRITE 40
 #define ST_WRITELN 41
 #define ST_READ  42
@@ -347,6 +210,17 @@ static u8 make_sub(u8 h, int lo, int hi)
 #define ST_INSERT 50
 #define ST_STR   51
 #define ST_VAL   52
+#define ST_BREAK 53
+#define ST_CONTINUE 54
+#define ST_EXIT  55
+#define ST_INCLUDE 56
+#define ST_EXCLUDE 57
+#define ST_ASSIGN 58
+#define ST_RESET 59
+#define ST_REWRITE 60
+#define ST_APPEND 61
+#define ST_CLOSE 62
+#define ST_SEEK 63
 
 /* ---------------------------------------------------------------- symbols */
 enum { SK_CONST, SK_TYPE, SK_VAR, SK_PROC, SK_FUNC, SK_STD };
@@ -354,6 +228,7 @@ enum { SK_CONST, SK_TYPE, SK_VAR, SK_PROC, SK_FUNC, SK_STD };
 #define F_BYREF  2      /* the slot holds the address */
 #define F_COPIED 4      /* a parameter that an inner procedure uses: copied to the frame */
 #define F_FWD    8
+#define F_STATIC 32     /* a typed constant: a variable in the data (the name T<val>) */
 #define F_COPYIN 16     /* a value parameter of a big type: copied to the frame when the procedure starts */
 
 typedef struct {
@@ -404,15 +279,15 @@ static sym_t *new_sym(const char *n, u8 kind)
 /* a name that is declared again in the same block is an error: the symbols of the block are above the mark */
 static u16 scope_mark;
 /* the predefined names do not take a place in the table until they are used */
-#define NSTD 38
+#define NSTD 52
 static char *pre_names[] = { "abs", "sqr", "odd", "ord", "chr", "succ", "pred", "eof", "eoln", "write", "writeln", "read", "readln", "new", "dispose", "halt", "inc", "dec",
                              "trunc", "round", "sqrt", "sin", "cos", "arctan", "ln", "exp", "pi", "int", "frac",
-                             "length", "copy", "pos", "concat", "upcase", "delete", "insert", "str", "val",
-                             "integer", "char", "boolean", "byte", "real", "single", "double", "extended", "longint", "true", "false", "maxint", 0 };
+                             "length", "copy", "pos", "concat", "upcase", "delete", "insert", "str", "val", "break", "continue", "exit", "include", "exclude", "assign", "reset", "rewrite", "append", "close", "seek", "filepos", "filesize", "ioresult",
+                             "integer", "char", "boolean", "byte", "real", "single", "double", "extended", "longint", "text", "true", "false", "maxint", 0 };
 static u8 pre_val[] = { ST_ABS, ST_SQR, ST_ODD, ST_ORD, ST_CHR, ST_SUCC, ST_PRED, ST_EOF, ST_EOLN, ST_WRITE, ST_WRITELN, ST_READ, ST_READLN, ST_NEW, ST_DISPOSE, ST_HALT, ST_INC, ST_DEC,
                         ST_TRUNC, ST_ROUND, ST_SQRT, ST_SIN, ST_COS, ST_ARCTAN, ST_LN, ST_EXP, ST_PI, ST_INT, ST_FRAC,
-                        ST_LENGTH, ST_COPY, ST_POS, ST_CONCAT, ST_UPCASE, ST_DELETE, ST_INSERT, ST_STR, ST_VAL,
-                        T_INT, T_CHAR, T_BOOL, T_BYTE, TYP_REAL, TYP_REAL, TYP_REAL, TYP_REAL, TYP_LONG, 1, 0, 0 };
+                        ST_LENGTH, ST_COPY, ST_POS, ST_CONCAT, ST_UPCASE, ST_DELETE, ST_INSERT, ST_STR, ST_VAL, ST_BREAK, ST_CONTINUE, ST_EXIT, ST_INCLUDE, ST_EXCLUDE, ST_ASSIGN, ST_RESET, ST_REWRITE, ST_APPEND, ST_CLOSE, ST_SEEK, ST_FILEPOS, ST_FILESIZE, ST_IORESULT,
+                        T_INT, T_CHAR, T_BOOL, T_BYTE, TYP_REAL, TYP_REAL, TYP_REAL, TYP_REAL, TYP_LONG, TYP_TEXT, 1, 0, 0 };
 
 static int lookup(const char *n)
 {
@@ -423,8 +298,8 @@ static int lookup(const char *n)
     for (k = 0; pre_names[k]; k++) if (!strcmp(pre_names[k], n)) break;
     if (!pre_names[k]) return -1;
     if (k < NSTD) { s = new_sym(n, SK_STD); s->val = pre_val[k]; }
-    else if (k < NSTD + 9) { s = new_sym(n, SK_TYPE); s->ty = pre_val[k]; }
-    else { s = new_sym(n, SK_CONST); s->ty = k == NSTD + 11 ? T_INT : T_BOOL; s->val = k == NSTD + 11 ? 32767 : pre_val[k]; }
+    else if (k < NSTD + 10) { s = new_sym(n, SK_TYPE); s->ty = pre_val[k]; }
+    else { s = new_sym(n, SK_CONST); s->ty = k == NSTD + 12 ? T_INT : T_BOOL; s->val = k == NSTD + 12 ? 32767 : pre_val[k]; }
     s->level = 0;
     return (int)(s - syms);
 }
@@ -473,6 +348,17 @@ static u8 e_word;   /* the object is a word in an argument slot, whatever its ty
 static u8 e_str;    /* the value is a string constant (the address of a string with its length in front): the length is e_v; its type is an array of char */
 static u8 e_tmp;    /* the value is a temporary string of 255 characters that can be appended to */
 static u8 bin_ltmp; /* the left operand of the binary operator is such a string */
+static u16 brk_l[8], cont_l[8];        /* the labels of break and continue of the loops that are open */
+static u8 nloop;
+static u16 cur_exit;                   /* the end of the function (exit) */
+
+static void loop_open(u16 brk, u16 cont)
+{
+    if (nloop >= 8) err("loops are nested too deep");
+    brk_l[nloop] = brk;
+    cont_l[nloop++] = cont;
+}
+
 
 static void expression(void);
 static void statement(void);
@@ -511,6 +397,12 @@ static void frame_ref(u8 lvl)
 static void var_addr(sym_t *s)
 {
     e_word = 0;
+    if (s->flags & F_STATIC) {
+        char tn[8];
+        pname(tn, 'T', (u16)s->val);
+        insaddr(tn);
+        return;
+    }
     if (s->level == 0) {
         char nm[20];
         gname(nm, s->name);
@@ -678,6 +570,24 @@ static u8 parse_type(void)
         return el;
     }
     if (tok == K_RECORD) { next(); return parse_record(); }
+    if (tok == K_FILE) {                   /* file of T; a text file has no base type (0) */
+        u8 b = 0;
+        next();
+        if (tok == K_OF) { next(); b = parse_type(); }
+        t = new_type(TY_FILE, 2);
+        tys[t].base = b;
+        return t;
+    }
+    if (tok == K_SET) {                    /* a set is 32 bytes whatever its base type is */
+        u8 b;
+        next();
+        expect(K_OF, "of is expected");
+        b = parse_type();
+        if (!is_ord(b)) err("the base type of a set is an ordinal type");
+        t = new_type(TY_SET, 32);
+        tys[t].base = b;
+        return t;
+    }
     if (tok == '(') {                      /* an enumeration */
         u8 e = new_type(TY_ENUM, 1);
         int n = 0;
@@ -744,16 +654,23 @@ static char strpool[300];
 static u16 strlen_pool;
 
 /* the text of a string as data; the address is put on the stack */
+static void put_s(const char *s, u16 len);
 static void string_literal(const char *s, u16 len, u8 pre)
 {
     char nm[8];
-    u16 i;
     nstr++;
     pname(nm, 'S', nstr);
     w_puts(&sf, ".data ");
     w_puts(&sf, nm);
     w_puts(&sf, " local\n");
     if (pre) { w_puts(&sf, ".b "); w_num(&sf, (int)len); w_putc(&sf, '\n'); }
+    put_s(s, len);
+    w_puts(&sf, ".b 0\n.end\n");
+    insaddr(nm);
+}
+static void put_s(const char *s, u16 len)
+{
+    u16 i;
     w_puts(&sf, ".s \"");
     for (i = 0; i < len; i++) {
         u8 c = (u8)s[i];
@@ -765,8 +682,7 @@ static void string_literal(const char *s, u16 len, u8 pre)
             w_putc(&sf, "0123456789ABCDEF"[c & 15]);
         }
     }
-    w_puts(&sf, "\"\n.b 0\n.end\n");
-    insaddr(nm);
+    w_puts(&sf, "\"\n");
 }
 
 /* a real constant: the text is converted when the program runs */
@@ -982,6 +898,38 @@ static void str_binary(u16 op, u8 lc, int lv, u8 lt, u8 cmp)
     e_tmp = 1;
 }
 
+/* sets: 32 bytes, the bit e of byte e/8; the type of a constructor is a set of 0..255 */
+static u8 set_ty(void)
+{
+    u8 i, t;
+    for (i = 1; i < nty; i++) if (tys[i].k == TY_SET && tys[i].base == T_BYTE) return i;
+    t = new_type(TY_SET, 32);
+    tys[t].base = T_BYTE;
+    return t;
+}
+
+/* the operands are on the stack: the left one, the right one (addresses of sets) */
+static void set_binary(u16 op)
+{
+    u16 t;
+    if (tys[e_t].k != TY_SET) err("a set is expected");
+    if (op == '+' || op == '-' || op == '*') {
+        t = new_temp(32);
+        ins1("laddr", t);
+        inscall(op == '+' ? "__psetu" : op == '-' ? "__psetd" : "__pseti", 3);
+        ins0("drop");
+        ins1("laddr", t);
+        e_t = set_ty();
+        e_lv = 1;
+        return;
+    }
+    if (op == T_GE) ins0("swap");
+    inscall(op == '=' || op == T_NE ? "__pseteq" : "__psetsub", 2);
+    if (op == T_NE) ins0("not");
+    e_t = T_BOOL;
+    e_lv = 0;
+}
+
 static void std_call(int id);
 static void call_user(int si);
 static void lret_to_temp(u8 ty);
@@ -998,7 +946,7 @@ static u8 same_type(u8 a, u8 b)
 }
 
 static void need_ord(void) { if (!is_ord(e_t)) err("an ordinal value is expected"); }
-static void need_val(void) { if (!is_ord(e_t) && !is_wide(e_t) && !isstr(e_t)) err("a value is expected"); }
+static void need_val(void) { if (!is_ord(e_t) && !is_wide(e_t) && !isstr(e_t) && tys[e_t].k != TY_SET) err("a value is expected"); }
 
 static int find_field(u8 t, const char *n)
 {
@@ -1102,6 +1050,7 @@ static void binary(u16 op, u8 lc, int lv, u8 lt, u8 cmp)
 {
     u8 rt = e_t, lb = host(lt), rb = host(rt);
     u8 rest;
+    if (tys[lt].k == TY_SET) { set_binary(op); return; }
     if (isstr(lt) || isstr(rt)) { str_binary(op, lc, lv, lt, cmp); return; }
     if (is_wide(lt) || is_wide(rt) || op == '/') {
         if (!(is_wide(lt) || (is_ord(lt) && lb == T_INT)) || !(is_wide(rt) || (is_ord(rt) && rb == T_INT))) err("a number is expected");
@@ -1182,6 +1131,35 @@ static void factor(void)
     } else if (tok == K_NIL) {
         e_c = 1; e_v = 0; e_t = T_NILT;
         next();
+    } else if (tok == '[') {                    /* a set: a temporary of 32 bytes */
+        u16 t = new_temp(32);
+        next();
+        ins1("laddr", t);
+        inscall("__pset0", 1);
+        ins0("drop");
+        while (tok != ']') {
+            expression();
+            narrow();
+            need_ord();
+            rvalue();
+            if (tok == T_DOTDOT) {
+                next();
+                expression();
+                need_ord();
+                rvalue();
+                ins1("laddr", t);
+                inscall("__psetr", 3);
+            } else {
+                ins1("laddr", t);
+                inscall("__pseta", 2);
+            }
+            ins0("drop");
+            if (tok == ',') next(); else break;
+        }
+        expect(']', "a ] is expected");
+        ins1("laddr", t);
+        e_t = set_ty();
+        e_lv = 1;
     } else if (tok == T_ID) {
         int w, i, f;
         sym_t *s;
@@ -1319,6 +1297,18 @@ static void expression(void)
     u16 op;
     simple();
     op = tok;
+    if (op == K_IN) {
+        need_ord();
+        next();
+        lc = e_c; lv = e_v;
+        if (!lc) rvalue();
+        simple();
+        if (tys[e_t].k != TY_SET) err("a set is expected");
+        if (lc) { ins1("const", lv); ins0("swap"); }
+        inscall("__pin", 2);
+        e_t = T_BOOL; e_lv = 0; e_c = 0;
+        return;
+    }
     if (op == '=' || op == T_NE || op == '<' || op == T_LE || op == '>' || op == T_GE) {
         next();
         lc = e_c; lv = e_v; lt = e_t;
@@ -1342,6 +1332,8 @@ static void coerce(u8 dst)
         if (tys[e_t].k == TY_LONG && host(dst) == T_INT) wide_to_int();
         if (!same_type(dst, e_t)) err("the types do not match");
         rvalue();
+    } else if (tys[dst].k == TY_SET) {
+        if (tys[e_t].k != TY_SET) err("the types do not match");
     } else if (tys[dst].k == TY_STR) {
         str_value();
     } else if (tys[dst].k == TY_ARRAY || tys[dst].k == TY_REC) {
@@ -1411,13 +1403,45 @@ static void width_arg(void)
     } else ins1("const", 0);
 }
 
+/* a file in e_*: its value (the pointer to the record of the runtime) is put on the stack; returns the size of an element (0 for a text) */
+static u8 file_value(void)
+{
+    if (tys[e_t].k != TY_FILE) err("a file is expected");
+    ins0("load.w");
+    return tys[e_t].base ? (u8)tys[tys[e_t].base].size : 0;
+}
+
 static void write_items(u8 ln)
 {
+    u8 fl = 0, es = 0, first = 1, fb = 0;
     if (tok == '(') {
         next();
         for (;;) {
             expression();
-            if (isstr(e_t)) {
+            if (first && tys[e_t].k == TY_FILE) {          /* write(f, ...): f is the file to write to until the end of the statement */
+                fl = 1;
+                fb = tys[e_t].base;
+                es = file_value();
+                inscall("__psetout", 1);
+                ins0("drop");
+                first = 0;
+                if (tok == ',') { next(); continue; }
+                break;
+            }
+            first = 0;
+            if (es) {                                      /* an element of a file of T: its bytes are written */
+                coerce(fb);
+                if (is_scalar(fb)) {
+                    u16 t = new_temp(2);
+                    ins1("laddr", t);
+                    ins0("swap");
+                    emit_store(fb, 0);
+                    ins0("drop");
+                    ins1("laddr", t);
+                }
+                ins1("const", es);
+                inscall("__pfwr", 2);
+            } else if (isstr(e_t)) {
                 width_arg();
                 inscall("__pwstr", 2);
             } else if (tys[e_t].k == TY_ARRAY && tys[tys[e_t].base].k == TY_CHAR) {
@@ -1456,19 +1480,37 @@ static void write_items(u8 ln)
         arg_close();
     }
     if (ln) { inscall("__pwl", 0); ins0("drop"); }
+    if (fl) { ins1("const", 0); inscall("__psetout", 1); ins0("drop"); }
 }
 
 static void read_items(u8 ln)
 {
+    u8 fl = 0, es = 0, first = 1, fb = 0;
     if (tok == '(') {
         next();
         for (;;) {
             u8 t, w;
             expression();
+            if (first && tys[e_t].k == TY_FILE) {
+                fl = 1;
+                fb = tys[e_t].base;
+                es = file_value();
+                inscall("__psetin", 1);
+                ins0("drop");
+                first = 0;
+                if (tok == ',') { next(); continue; }
+                break;
+            }
+            first = 0;
             if (!e_lv || e_c) err("a variable is expected");
             t = e_t;
             w = e_word;
-            if (tys[t].k == TY_STR) { ins1("const", tys[t].hi); inscall("__prstr", 2); ins0("drop"); }
+            if (es) {
+                if (!same_type(fb, t)) err("the types do not match");
+                ins1("const", es);
+                inscall("__pfrd", 2);
+                ins0("drop");
+            } else if (tys[t].k == TY_STR) { ins1("const", tys[t].hi); inscall("__prstr", 2); ins0("drop"); }
             else if (tys[t].k == TY_REAL) { inscall("__prr", 1); ins0("drop"); }
             else if (tys[t].k == TY_LONG) { inscall("__prg", 1); ins0("drop"); }
             else {
@@ -1484,6 +1526,7 @@ static void read_items(u8 ln)
         arg_close();
     }
     if (ln) { inscall("__prl", 0); ins0("drop"); }
+    if (fl) { ins1("const", 0); inscall("__psetin", 1); ins0("drop"); }
 }
 
 /* a library function of one argument that takes the address of a real (the argument is converted) and returns a real or a longint in __lret */
@@ -1555,9 +1598,19 @@ static void std_call(int id)
         break;
     case ST_EOF:
     case ST_EOLN:
-        inscall(id == ST_EOF ? "__peof" : "__peoln", 0);
-        if (tok == '(') { next(); if (tok == T_ID) next(); arg_close(); }
-        e_c = 0; e_lv = 0; e_t = T_BOOL;
+    case ST_FILEPOS:
+    case ST_FILESIZE:
+        if (tok == '(') {
+            arg_open();
+            expression();
+            file_value();
+            arg_close();
+            inscall(id == ST_EOF ? "__pfeof" : id == ST_EOLN ? "__pfeoln" : id == ST_FILEPOS ? "__pfpos" : "__pfsize", 1);
+        } else inscall(id == ST_EOF ? "__peof" : "__peoln", 0);
+        e_c = 0; e_lv = 0; e_t = id == ST_FILEPOS || id == ST_FILESIZE ? T_INT : T_BOOL;
+        break;
+    case ST_IORESULT:
+        e_c = 1; e_v = 0; e_t = T_INT;
         break;
     case ST_LENGTH:
         arg_open(); expression();
@@ -1680,6 +1733,58 @@ static void std_stat(int id)
         arg_close();
         break;
     }
+    case ST_ASSIGN:
+        arg_open();
+        expression();
+        if (!e_lv || tys[e_t].k != TY_FILE) err("a file variable is expected");
+        expect(',', "a , is expected");
+        str_arg();
+        inscall("__passign", 2);
+        ins0("drop");
+        arg_close();
+        break;
+    case ST_RESET:
+    case ST_REWRITE:
+    case ST_APPEND:
+    case ST_CLOSE:
+    case ST_SEEK: {
+        u8 es;
+        arg_open();
+        expression();
+        es = file_value();
+        if (id == ST_SEEK) {
+            expect(',', "a , is expected");
+            int_arg();
+            inscall("__pfseek", 2);
+        } else if (id == ST_CLOSE) inscall("__pfclose", 1);
+        else {
+            ins1("const", es);
+            inscall(id == ST_RESET ? "__preset" : id == ST_REWRITE ? "__prewrite" : "__pappend", 2);
+        }
+        ins0("drop");
+        arg_close();
+        break;
+    }
+    case ST_BREAK:
+    case ST_CONTINUE:
+        if (!nloop) err("not in a loop");
+        insl("jmp", id == ST_BREAK ? brk_l[nloop - 1] : cont_l[nloop - 1]);
+        break;
+    case ST_EXIT:
+        insl("jmp", cur_exit);
+        break;
+    case ST_INCLUDE:
+    case ST_EXCLUDE:
+        arg_open();
+        expression();
+        if (!e_lv || tys[e_t].k != TY_SET) err("a set variable is expected");
+        expect(',', "a , is expected");
+        int_arg();
+        ins0("swap");
+        inscall(id == ST_INCLUDE ? "__pseta" : "__psetx", 2);
+        ins0("drop");
+        arg_close();
+        break;
     case ST_DELETE:
         arg_open();
         expression();
@@ -1930,10 +2035,12 @@ static void for_statement(void)
     ins1("laddr", tm); ins0("swap"); ins0("store.w"); ins0("drop");
     expect(K_DO, "do is expected");
     ltop = newlab(); lbody = newlab();
-    (void)ltop;
     var_addr(s); emit_load(t, w); ins1("laddr", tm); ins0("load.w"); ins0(down ? "lt" : "gt"); insl("jnz", lend);
     deflabel(lbody);
+    loop_open(lend, ltop);
     statement();
+    nloop--;
+    deflabel(ltop);
     var_addr(s); emit_load(t, w); ins1("laddr", tm); ins0("load.w"); ins0("eq"); insl("jnz", lend);
     var_addr(s); ins0("dup"); emit_load(t, w); ins1("const", 1); ins0(down ? "sub" : "add"); emit_store(t, w); ins0("drop");
     insl("jmp", lbody);
@@ -1945,10 +2052,17 @@ static void statement(void)
 {
     u16 save = fpv[cur_level];
     if (tok == T_NUM) {            /* a label */
+        deflabel((u16)(20000 + tokv));
         next();
         expect(':', "a : is expected");
     }
     switch (tok) {
+    case K_GOTO:
+        next();
+        if (tok != T_NUM) err("a label is expected");
+        insl("jmp", (u16)(20000 + tokv));
+        next();
+        break;
     case K_BEGIN:
         next();
         if (tok != K_END) stat_list(K_END, K_END);
@@ -1976,18 +2090,24 @@ static void statement(void)
         deflabel(ltop);
         cond_jump("jz", lend);
         expect(K_DO, "do is expected");
+        loop_open(lend, ltop);
         statement();
+        nloop--;
         insl("jmp", ltop);
         deflabel(lend);
         break;
     }
     case K_REPEAT: {
-        u16 ltop = newlab();
+        u16 ltop = newlab(), lcont = newlab(), lend = newlab();
         next();
         deflabel(ltop);
+        loop_open(lend, lcont);
         stat_list(K_UNTIL, K_UNTIL);
+        nloop--;
         expect(K_UNTIL, "until is expected");
+        deflabel(lcont);
         cond_jump("jz", ltop);
+        deflabel(lend);
         break;
     }
     case K_FOR: for_statement(); break;
@@ -2057,6 +2177,37 @@ static void var_section(void)
     }
 }
 
+static u16 nstatic;
+
+/* the value of a typed constant (an initialized variable), as data lines */
+static void init_data(u8 t)
+{
+    u8 ct;
+    int v, n, i;
+    if (is_ord(t)) {
+        v = const_value(&ct);
+        w_puts(&sf, tys[t].size == 1 ? ".b " : ".w ");
+        w_num(&sf, v);
+        w_putc(&sf, '\n');
+    } else if (tys[t].k == TY_STR) {
+        if (tok != T_STR || toklen > (u16)tys[t].hi) err("a string of the right length is expected");
+        w_puts(&sf, ".b ");
+        w_num(&sf, (int)toklen);
+        w_putc(&sf, '\n');
+        if (toklen) put_s(toks, toklen);
+        if (tys[t].hi > (int)toklen) { w_puts(&sf, ".z "); w_num(&sf, tys[t].hi - (int)toklen); w_putc(&sf, '\n'); }
+        next();
+    } else if (tys[t].k == TY_ARRAY) {
+        n = tys[t].hi - tys[t].lo + 1;
+        expect('(', "a ( is expected");
+        for (i = 0; i < n; i++) {
+            init_data(tys[t].base);
+            if (i < n - 1) expect(',', "a , is expected");
+        }
+        expect(')', "a ) is expected");
+    } else err("this type cannot have a value here");
+}
+
 static void const_section(void)
 {
     next();
@@ -2068,6 +2219,24 @@ static void const_section(void)
         check_new(toks);
         strcpy(nm, toks);
         next();
+        if (tok == ':') {                      /* a typed constant */
+            char tn[8];
+            next();
+            t = parse_type();
+            expect('=', "a = is expected");
+            s = new_sym(nm, SK_VAR);
+            s->ty = t;
+            s->flags = F_STATIC;
+            s->val = (int)++nstatic;
+            pname(tn, 'T', nstatic);
+            w_puts(&sf, ".data ");
+            w_puts(&sf, tn);
+            w_puts(&sf, " local\n");
+            init_data(t);
+            w_puts(&sf, ".end\n");
+            expect(';', "a ; is expected");
+            continue;
+        }
         expect('=', "a = is expected");
         if (tok == T_STR && toklen > 1) {
             if (strlen_pool + toklen + 1 > sizeof(strpool)) err("too many string constants");
@@ -2305,8 +2474,11 @@ static void block(int fs)
             ins0("drop");
         }
     }
+    cur_exit = newlab();
+    nloop = 0;
     if (tok != K_END) stat_list(K_END, K_END);
     expect(K_END, "end is expected");
+    deflabel(cur_exit);
     if (isfunc && !is_scalar(syms[fs].ty)) {
         insaddr(tys[syms[fs].ty].size == 4 ? "__lret" : "__sret");
         ins1("laddr", res);
@@ -2349,28 +2521,13 @@ int main(int argc, char **argv)
 {
     int i, tail = tail_start(argc, argv);
     const char *src = NULL, *dst = NULL;
-    char outname[120];
     for (i = 1; i < tail; i++) {
         if (!strcmp(argv[i], "-o") && i + 1 < tail) dst = argv[++i];
         else if (argv[i][0] == '-') { puts("pas1: unknown option"); return 2; }
         else src = argv[i];
     }
-    if (!src) { puts("usage: pas1 [-o out.ir] file.pas"); return 2; }
-    if (!dst) {
-        u16 n = (u16)strlen(src);
-        if (n > 112) n = 112;
-        memcpy(outname, src, n);
-        outname[n] = 0;
-        {
-            u16 k = n;
-            while (k > 0 && outname[k - 1] != '.' && outname[k - 1] != '/') k--;
-            if (k > 0 && outname[k - 1] == '.') n = (u16)(k - 1);
-        }
-        outname[n] = 0;
-        strcat(outname, ".ir");
-        dst = outname;
-    }
-    strcpy(fname, src);
+    if (!src) { puts("usage: pas1 -o out.ir file.pas"); return 2; }
+    if (!dst) { puts("pas1: -o is needed"); return 2; }
     if (r_open(&in, src)) { puts("pas1: cannot open the input"); return 2; }
     if (w_open(&ir, dst)) { puts("pas1: cannot create the output"); return 2; }
     if (w_open(&sf, "pas1s.tmp")) { puts("pas1: cannot create pas1s.tmp"); return 2; }
@@ -2382,11 +2539,10 @@ int main(int argc, char **argv)
     tys[T_BYTE].k = TY_SUB; tys[T_BYTE].size = 1; tys[T_BYTE].base = T_INT; tys[T_BYTE].lo = 0; tys[T_BYTE].hi = 255;
     tys[TYP_REAL].k = TY_REAL; tys[TYP_REAL].size = 4;
     tys[TYP_LONG].k = TY_LONG; tys[TYP_LONG].size = 4;
-    nty = 8;
+    tys[TYP_TEXT].k = TY_FILE; tys[TYP_TEXT].size = 2;
+    nty = 9;
     scope_mark = nsym;
     line = 1;
-    nextch();
-    if (ch == '\n') line = 1;
     next();
     if (tok == K_PROGRAM) {
         next();

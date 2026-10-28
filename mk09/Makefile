@@ -115,14 +115,15 @@ $(eval $(call SYSMOD,mm,MM,30))
 SYSMODS := kernel tty disk fs pm mm
 
 # ---- programs (MX executables): apps/NAME.c -> build/NAME.mx ----
-APPS      := sh as cpp cc1 cg cc pas1 pc ls cat echo stty cp mv rm mkdir date df ps hd wc spin stk fstest faults ipcbench dhry more grep life basic kill mem sfptest jwp
+APPS      := sh as cpp cc1 cg cc pas0 pas1 pc ls cat echo stty cp mv rm mkdir date df ps hd wc spin stk fstest faults ipcbench dhry more grep life basic kill mem sfptest jwp
 STACK_sh  := 640
 STACK_jwp := 1200
 STACK_basic := 1500
 STACK_as := 700
 STACK_cpp := 4000
 STACK_cc1 := 2100
-STACK_pas1 := 1400
+STACK_pas1 := 1000
+STACK_pas0 := 700
 STACK_cg := 1500
 $(B)/as.o: apps/as_text.h
 OBJS_basic := $(B)/sfpa.o

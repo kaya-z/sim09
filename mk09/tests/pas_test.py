@@ -25,7 +25,7 @@ def check(cond, what, detail=''):
         print('     ' + detail.replace('\n', '\n     ')[-2500:])
 
 
-for t in ('pas1', 'cg'):
+for t in ('pas0', 'pas1', 'cg'):
     subprocess.run(['gcc', '-DCC_HOST', '-O1', '-w', '-I' + os.path.join(MK, 'apps'), '-o', os.path.join(work, t), os.path.join(MK, 'apps', t + '.c')], check=True)
 libdir = os.path.join(work, 'lib')
 os.makedirs(libdir)
@@ -40,7 +40,11 @@ for t in tests:
     base = t[:-4]
     src = os.path.join(work, base + '.pas')
     shutil.copy(os.path.join(HERE, 'pas', t), src)
-    p = subprocess.run([os.path.join(work, 'pas1'), src], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=work)
+    p = subprocess.run([os.path.join(work, 'pas0'), '-o', os.path.join(work, base + '.tok'), src], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=work)
+    if p.returncode:
+        check(False, base + ': pas0', p.stdout.decode())
+        continue
+    p = subprocess.run([os.path.join(work, 'pas1'), '-o', os.path.join(work, base + '.ir'), os.path.join(work, base + '.tok')], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=work)
     if p.returncode:
         check(False, base + ': pas1', p.stdout.decode())
         continue

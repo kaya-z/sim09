@@ -1,14 +1,16 @@
 # MK09 の Pascal コンパイラ
 
-**版: 1.14** (2026-10-28)
+**版: 1.15** (2026-10-28)
 
 MK09 の上で動く Pascal コンパイラ。C コンパイラ ([IR.md](IR.md)) と同じ**中間表現 (IR)** に出し、`cg` と `as` とライブラリ (`/LIB/CLIB.S`) を共用する。
 
 ```
- foo.pas ──► pas1 ──► foo.ir ──► cg ──► foo.s ──► as ──► foo.mx
+ foo.pas ──► pas0 ──► foo.tok ──► pas1 ──► foo.ir ──► cg ──► foo.s ──► as ──► foo.mx
 ```
 
 * `pc [-S] [-k] [-v] [-o out] file.pas` がドライバ (`cc` と同じ作り: 段は PM_EXEC でつながる)。
+* `pas0` は字句解析だけ (コメントと空白を除き、名前を小文字にし、予約語を見つけ、数と文字列を 2 進にする。`{$M n}` も読む)。`pas1` が TPA に入りきらないので別の段にした。
+  トークンの形は `apps/pastok.h`。
 * `pas1` は 1 パスで、木を作らずに式を読みながら IR を出す (IR がスタックマシンなので、Pascal の式がそのまま後置になる)。名前は大文字小文字を区別しない (15 文字まで)。
 
 ## 1. 言語 (1.12)
@@ -46,6 +48,18 @@ Turbo Pascal の文字列: 長さ 1 バイトのあとに文字 (`string` = `str
 `str(x:w:d, s)` と `val(s, x, code)` は整数、`longint`、`real` に使える。`readln(s)` は 1 行を読む。文字列を返す関数もある (`__sret` を通る)。
 プログラムの**スタック**は既定で 2000 バイト: `{$M 4096}` で変える (`.stack` → `as` の `STACK`)。
 
-## 5. 限界
+## 5. set、file、その他 (1.15)
 
-`set`、`file`、`goto`、手続き型、可変レコード、`string` はまだない。範囲検査もない。
+* **set**: `set of T` は T が何であっても**32 バイト** (ビット e がバイト e/8 の e%8 ビット目。要素は 0..255)。`[a, b..c]` は一時変数に作る。`in`、`+ - *`、`= <> <= >=`、
+  `include(s, e)` `exclude(s, e)`。
+* **ファイル**: 変数は 2 バイト (実行時が malloc した記録へのポインタ)。`assign(f, 名前)` `reset` `rewrite` `append` `close` `seek` `eof` `eoln` `filepos` `filesize`。
+  `write(f, ...)` `writeln(f, ...)` `read(f, ...)` `readln(f)`: 文の間だけ f が「今のファイル」になり、書式 (`:幅`) はコンソールと同じ。`file of T` の `read` `write` は
+  T の中身をそのまま (ビッグエンディアンの 2 進で) 読み書きする。位置は 16 ビット。`ioresult` はいつも 0。
+* **goto / label**: 同じ手続きの中だけ。`label 10;` は読み飛ばす (使う番号を宣言しなくても通る)。
+* **break / continue / exit**: ループの外で `break` は誤り。`exit` は手続き (主プログラムなら全体) から出る。
+* **型つき定数** (Turbo Pascal): `const n: integer = 5;`、`const names: array[1..3] of string[5] = ('a', 'b', 'c');`。初期値のある**変数**。整数・文字・真偽・列挙・文字列とその配列。
+
+## 6. 限界
+
+手続き型 (関数のポインタ)、可変レコード、`real` の型つき定数、`packed` の意味 (読み飛ばす)、`unit` `uses` (`uses` は読み込まない) はない。範囲検査もない。
+`pas1` は TPA にほぼ一杯 (本体 34KB + 表 6KB + スタック 1KB): 次の機能は、何かを削るか、段を分けないと入らない。名前は 12 文字まで。

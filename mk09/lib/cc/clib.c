@@ -901,9 +901,16 @@ void mk_start(char *blk)
 
 /* ---------------------------------------------------------------- Pascal (docs/PASCAL.md): the routines that pas1 calls.  The arguments are in the order
  * that they are pushed (the last argument of the Pascal text first), because pas1 writes them as it reads them. */
+typedef struct { FILE *f; int esize; char name[80]; } __PF;      /* the record of a Pascal file (the variable holds a pointer to it) */
+FILE *__pout, *__pinf;                         /* the file of write(f, ...) and read(f, ...) while the statement runs (0: the console) */
+
+static int __pputc(int c) { return fputc(c, __pout ? __pout : stdout); }
+static int __pgetc(void) { return fgetc(__pinf ? __pinf : stdin); }
+static int __pungetc(int c) { return ungetc(c, __pinf ? __pinf : stdin); }
+
 static void __ppad(int w, int len)
 {
-    while (w > len) { putchar(' '); w--; }
+    while (w > len) { __pputc(' '); w--; }
 }
 
 int __pwi(int w, int v)
@@ -914,14 +921,14 @@ int __pwi(int w, int v)
     sprintf(b, "%d", v);
     n = strlen(b);
     __ppad(w, n);
-    while (*p) putchar(*p++);
+    while (*p) __pputc(*p++);
     return 0;
 }
 
 int __pwc(int w, int c)
 {
     __ppad(w, 1);
-    putchar(c);
+    __pputc(c);
     return 0;
 }
 
@@ -929,7 +936,7 @@ int __pwb(int w, int v)
 {
     char *s = v ? "TRUE" : "FALSE";
     __ppad(w, v ? 4 : 5);
-    while (*s) putchar(*s++);
+    while (*s) __pputc(*s++);
     return 0;
 }
 
@@ -937,29 +944,29 @@ int __pws(int w, int len, char *p)
 {
     int i;
     __ppad(w, len);
-    for (i = 0; i < len; i++) putchar(p[i]);
+    for (i = 0; i < len; i++) __pputc(p[i]);
     return 0;
 }
 
 int __pwl(void)
 {
-    putchar('\n');
+    __pputc('\n');
     return 0;
 }
 
 int __pri(void)
 {
     int c, neg = 0, v = 0;
-    do c = getchar(); while (c == ' ' || c == '\n' || c == '\t' || c == '\r');
-    if (c == '-') { neg = 1; c = getchar(); } else if (c == '+') c = getchar();
-    while (c >= '0' && c <= '9') { v = v * 10 + c - '0'; c = getchar(); }
-    if (c >= 0) ungetc(c, stdin);
+    do c = __pgetc(); while (c == ' ' || c == '\n' || c == '\t' || c == '\r');
+    if (c == '-') { neg = 1; c = __pgetc(); } else if (c == '+') c = __pgetc();
+    while (c >= '0' && c <= '9') { v = v * 10 + c - '0'; c = __pgetc(); }
+    if (c >= 0) __pungetc(c);
     return neg ? -v : v;
 }
 
 int __prc(void)
 {
-    int c = getchar();
+    int c = __pgetc();
     if (c == '\n') return ' ';
     if (c < 0) return ' ';
     return c;
@@ -968,23 +975,23 @@ int __prc(void)
 int __prl(void)
 {
     int c;
-    do c = getchar(); while (c >= 0 && c != '\n');
+    do c = __pgetc(); while (c >= 0 && c != '\n');
     return 0;
 }
 
 int __peof(void)
 {
-    int c = getchar();
+    int c = __pgetc();
     if (c < 0) return 1;
-    ungetc(c, stdin);
+    __pungetc(c);
     return 0;
 }
 
 int __peoln(void)
 {
-    int c = getchar();
+    int c = __pgetc();
     if (c < 0) return 1;
-    ungetc(c, stdin);
+    __pungetc(c);
     return c == '\n';
 }
 
@@ -1007,7 +1014,7 @@ int __pwr(int d, int w, __L *p)
         if (b[1] != '-') { b[0] = ' '; n++; } else s = b + 1;
     } else n = __fmtf(b, p, 'f', d);
     __ppad(w, n);
-    while (*s) putchar(*s++);
+    while (*s) __pputc(*s++);
     return 0;
 }
 
@@ -1019,7 +1026,7 @@ int __pwg(int w, long *p)
     sprintf(b, "%ld", *p);
     n = strlen(b);
     __ppad(w, n);
-    while (*s) putchar(*s++);
+    while (*s) __pputc(*s++);
     return 0;
 }
 
@@ -1027,10 +1034,10 @@ int __prg(long *p)
 {
     int c, neg = 0;
     long v = 0;
-    do c = getchar(); while (c == ' ' || c == '\n' || c == '\t' || c == '\r');
-    if (c == '-') { neg = 1; c = getchar(); } else if (c == '+') c = getchar();
-    while (c >= '0' && c <= '9') { v = v * 10 + (c - '0'); c = getchar(); }
-    if (c >= 0) ungetc(c, stdin);
+    do c = __pgetc(); while (c == ' ' || c == '\n' || c == '\t' || c == '\r');
+    if (c == '-') { neg = 1; c = __pgetc(); } else if (c == '+') c = __pgetc();
+    while (c >= '0' && c <= '9') { v = v * 10 + (c - '0'); c = __pgetc(); }
+    if (c >= 0) __pungetc(c);
     *p = neg ? -v : v;
     return 0;
 }
@@ -1039,9 +1046,9 @@ int __prr(__L *p)
 {
     char b[40];
     int c, n = 0;
-    do c = getchar(); while (c == ' ' || c == '\n' || c == '\t' || c == '\r');
-    while (n < 38 && ((c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E')) { b[n++] = c; c = getchar(); }
-    if (c >= 0) ungetc(c, stdin);
+    do c = __pgetc(); while (c == ' ' || c == '\n' || c == '\t' || c == '\r');
+    while (n < 38 && ((c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E')) { b[n++] = c; c = __pgetc(); }
+    if (c >= 0) __pungetc(c);
     b[n] = 0;
     __strtof(b, p, 0);
     return 0;
@@ -1211,7 +1218,7 @@ int __pwstr(int w, char *s)
 {
     int i, n = s[0] & 255;
     __ppad(w, n);
-    for (i = 1; i <= n; i++) putchar(s[i]);
+    for (i = 1; i <= n; i++) __pputc(s[i]);
     return 0;
 }
 
@@ -1219,9 +1226,9 @@ int __prstr(int max, char *dst)                /* up to the end of the line (the
 {
     int c, n = 0;
     for (;;) {
-        c = getchar();
+        c = __pgetc();
         if (c < 0) break;
-        if (c == '\n') { ungetc(c, stdin); break; }
+        if (c == '\n') { __pungetc(c); break; }
         if (c != '\r' && n < max) dst[++n] = c;
     }
     dst[0] = n;
@@ -1302,3 +1309,132 @@ int __pvalr(int *code, __L *x, char *s)
 }
 
 char __sret[256];                              /* the string that a Pascal function returns */
+
+/* ---- Pascal: sets (32 bytes, the bit e of byte e/8) */
+int __pset0(unsigned char *s)
+{
+    int i;
+    for (i = 0; i < 32; i++) s[i] = 0;
+    return 0;
+}
+
+int __pseta(unsigned char *s, int e)
+{
+    e &= 255;
+    s[e >> 3] |= 1 << (e & 7);
+    return 0;
+}
+
+int __psetx(unsigned char *s, int e)
+{
+    e &= 255;
+    s[e >> 3] &= ~(1 << (e & 7));
+    return 0;
+}
+
+int __psetr(unsigned char *s, int hi, int lo)
+{
+    for (; lo <= hi; lo++) __pseta(s, lo);
+    return 0;
+}
+
+int __pin(unsigned char *s, int x)
+{
+    x &= 255;
+    return (s[x >> 3] >> (x & 7)) & 1;
+}
+
+int __psetu(unsigned char *d, unsigned char *b, unsigned char *a)
+{
+    int i;
+    for (i = 0; i < 32; i++) d[i] = a[i] | b[i];
+    return 0;
+}
+
+int __psetd(unsigned char *d, unsigned char *b, unsigned char *a)
+{
+    int i;
+    for (i = 0; i < 32; i++) d[i] = a[i] & ~b[i];
+    return 0;
+}
+
+int __pseti(unsigned char *d, unsigned char *b, unsigned char *a)
+{
+    int i;
+    for (i = 0; i < 32; i++) d[i] = a[i] & b[i];
+    return 0;
+}
+
+int __pseteq(unsigned char *b, unsigned char *a)
+{
+    int i;
+    for (i = 0; i < 32; i++) if (a[i] != b[i]) return 0;
+    return 1;
+}
+
+int __psetsub(unsigned char *b, unsigned char *a)        /* a is a subset of b */
+{
+    int i;
+    for (i = 0; i < 32; i++) if (a[i] & ~b[i]) return 0;
+    return 1;
+}
+
+
+/* ---- Pascal: files.  assign gives the name, reset / rewrite / append open it; a text is read and written by the same routines as the console (the current file) */
+int __psetout(__PF *p) { __pout = p ? p->f : 0; return 0; }
+int __psetin(__PF *p) { __pinf = p ? p->f : 0; return 0; }
+
+int __passign(char *name, __PF **pp)
+{
+    __PF *p = malloc(sizeof(__PF));
+    int i, n = name[0] & 255;
+    if (n > 78) n = 78;
+    for (i = 0; i < n; i++) p->name[i] = name[i + 1];
+    p->name[n] = 0;
+    p->f = 0;
+    p->esize = 0;
+    *pp = p;
+    return 0;
+}
+
+int __preset(int esize, __PF *p) { p->esize = esize; p->f = fopen(p->name, "r"); return 0; }
+int __prewrite(int esize, __PF *p) { p->esize = esize; p->f = fopen(p->name, "w"); return 0; }
+int __pappend(int esize, __PF *p) { p->esize = esize; p->f = fopen(p->name, "a"); return 0; }
+int __pfclose(__PF *p) { if (p->f) fclose(p->f); p->f = 0; return 0; }
+
+int __pfwr(int esize, char *src) { fwrite(src, 1, esize, __pout ? __pout : stdout); return 0; }
+int __pfrd(int esize, char *dst) { fread(dst, 1, esize, __pinf ? __pinf : stdin); return 0; }
+
+int __pfeof(__PF *p)
+{
+    int c;
+    if (!p->f) return 1;
+    c = fgetc(p->f);
+    if (c < 0) return 1;
+    ungetc(c, p->f);
+    return 0;
+}
+
+int __pfeoln(__PF *p)
+{
+    int c;
+    if (!p->f) return 1;
+    c = fgetc(p->f);
+    if (c < 0) return 1;
+    ungetc(c, p->f);
+    return c == '\n';
+}
+
+int __pfseek(int n, __PF *p) { if (p->f) fseek(p->f, n * p->esize, 0); return 0; }
+int __pfpos(__PF *p) { return p->f && p->esize ? ftell(p->f) / p->esize : 0; }
+
+int __pfsize(__PF *p)
+{
+    int here, end;
+    if (!p->f || !p->esize) return 0;
+    here = ftell(p->f);
+    fseek(p->f, 0, 2);
+    end = ftell(p->f);
+    fseek(p->f, here, 0);
+    return end / p->esize;
+}

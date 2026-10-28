@@ -5,7 +5,7 @@
  *
  *   pc [-S] [-k] [-v] [-o out] file.pas
  *
- * file.pas --pas1--> _.ir --cg--> _.A (the start code, the program and the library routines it uses) --as--> out
+ * file.pas --pas0--> _.tok --pas1--> _.ir --cg--> _.A (the start code, the program and the library routines it uses) --as--> out
  * The stages do not run under this program: the memory of a stage is the whole transient area, so each stage runs the next one in its own place
  * (exec, PM_EXEC).  This program only makes the command line  cpp ... ; cc1 ... ; cg ... ; as ... ; rm ...  and starts the first stage.
  *   -S   stop after cg (out is the assembler text; default: the name of the source with .s)     -k   keep the temporary files
@@ -47,10 +47,15 @@ int main(int argc, char **argv)
     }
     av[n++] = "pc";
     av[n++] = ";";
-    av[n++] = "pas1";
+    av[n++] = "pas0";
+    av[n++] = "-o";
+    av[n++] = "_.tok";
     av[n++] = (char *)src;
+    av[n++] = ";";
+    av[n++] = "pas1";
     av[n++] = "-o";
     av[n++] = "_.ir";
+    av[n++] = "_.tok";
     av[n++] = ";";
     av[n++] = "cg";
     av[n++] = "-pp";
@@ -68,6 +73,7 @@ int main(int argc, char **argv)
     if (!keep) {
         av[n++] = ";";
         av[n++] = "rm";
+        av[n++] = "_.tok";
         av[n++] = "_.ir";
         if (!stop_s) av[n++] = "_.A";
     }
