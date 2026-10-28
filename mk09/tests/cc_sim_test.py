@@ -48,16 +48,10 @@ def compile_c(path, base, tag):
 for t in ('cpp', 'cc1', 'cg'):
     build(t + '.c', os.path.join(work, t))
 cc = os.path.join(MK, 'lib', 'cc')
-lib_s, _ = compile_c(os.path.join(cc, 'clib.c'), 'clib', 'l')
-if lib_s is None:
-    sys.exit(1)
-libdir = os.path.join(work, 'lib')                 # the library as cg -L wants it (CC_LIB): only the routines that a program needs are put in
+libdir = os.path.join(work, 'lib')                 # for cg -L (CC_LIB): the index of the library of the build (the code is /LIB/CLIB.OBJ of the disk)
 os.makedirs(libdir)
-open(os.path.join(work, 'clib0.s'), 'w').write(lib_s)
-for a, b in (('clib0.s', 'CLIB'), (os.path.join(cc, 'rt.s'), 'RT')):      # (sorted, with an index, as the build makes them)
-    subprocess.run([sys.executable, os.path.join(MK, 'tools', 'libsort.py'), a if os.path.isabs(a) else os.path.join(work, a),
-                    os.path.join(libdir, b + '.S'), os.path.join(libdir, b + '.IDX')], check=True)
-shutil.copy(os.path.join(cc, 'start.s'), os.path.join(libdir, 'START.S'))
+for f in ('clib.idx', 'rt.idx', 'start.s'):
+    shutil.copy(os.path.join(BUILD, 'tree', 'lib', f), os.path.join(libdir, f.upper()))
 tests = sorted(f for f in os.listdir(os.path.join(HERE, 'cc')) if f[:2] in ('t_', 'l_') and f.endswith('.c'))
 tests = [t for t in tests if not names or t[:-2] in names]
 tree = os.path.join(work, 'tree')

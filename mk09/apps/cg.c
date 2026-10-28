@@ -1198,7 +1198,6 @@ static void prescan(void)
 #define NNAME   260
 #define POOL    3800
 #define NLIB    2
-static char *libs[NLIB] = { "/LIB/CLIB.S", "/LIB/RT.S" };
 static char *idxs[NLIB] = { "/LIB/CLIB.IDX", "/LIB/RT.IDX" };
 static char pool[POOL];
 static u16 plen;
@@ -1282,9 +1281,10 @@ static void copy_text(wfile *w, const char *path)
     r_close(&r);
 }
 
-/* The blocks are found by the index of the file (/LIB/CLIB.IDX, made by tools/libsort.py), one line for each block:  offset-high offset-low length defs;uses
- * (the names are separated by commas).  A block that defines a needed name is copied from the file, and what it uses becomes needed.  The text of the library
- * is not read except for these blocks. */
+/* The blocks are found by the index of the file (/LIB/CLIB.IDX, made by tools/mkobj.py), one line for each block:
+ *   offset-high offset-low length code-size bss-size defs;uses;exports        (the names are separated by commas; an export is name:kind:offset)
+ * A block that defines a needed name is not copied: the program gets  OBJ file,offset-high,offset-low,code-size,bss-size  and a line  OBJX name,kind,offset  for each name
+ * that the block defines, and as links the block (the code of the library is made once, by mkobj, not assembled again for every program).  What the block uses becomes needed. */
 static int idx_num(rfile *x, u16 *v, int c)
 {
     *v = 0;
@@ -1292,21 +1292,30 @@ static int idx_num(rfile *x, u16 *v, int c)
     return c;
 }
 
-static u8 pull_indexed(wfile *w, const char *lib, const char *idx)
+static void put_u(wfile *w, u16 v)
 {
-    rfile x, r;
+    char t[6];
+    u8 n = 0;
+    do { t[n++] = (char)('0' + v % 10); v /= 10; } while (v);
+    while (n) w_putc(w, t[--n]);
+}
+
+static u8 pull_indexed(wfile *w, u8 fidx, const char *idx)
+{
+    rfile x;
     u8 copied = 0;
-    u16 hi, lo, len, p;
+    u16 hi, lo, len, cs, bs, p;
     int c;
-    char dbuf[120], nm[40];
+    char dbuf[120], nm[40], ebuf[200];
     if (r_open(&x, idx)) return 0;
-    if (r_open(&r, lib)) { r_close(&x); return 0; }
     for (c = r_getc(&x); c >= 0;) {
         u8 want = 0;
-        u16 dl = 0, n;
+        u16 dl = 0, n, el = 0;
         c = idx_num(&x, &hi, c); c = r_getc(&x);
         c = idx_num(&x, &lo, c); c = r_getc(&x);
         c = idx_num(&x, &len, c); c = r_getc(&x);
+        c = idx_num(&x, &cs, c); c = r_getc(&x);
+        c = idx_num(&x, &bs, c); c = r_getc(&x);
         while (c >= 0 && c != ';') { if (dl < sizeof(dbuf) - 1) dbuf[dl++] = (char)c; c = r_getc(&x); }
         dbuf[dl] = 0;
         for (p = 0; p < dl;) {                       /* the names that the block defines: is one of them needed? */
@@ -1325,29 +1334,35 @@ static u8 pull_indexed(wfile *w, const char *lib, const char *idx)
                 add_name(dbuf + p, n, 1);
                 p = (u16)(p + n + 1);
             }
-            r_seek(&r, hi, lo);
-            {
-                u8 bol = 1, skip = 0;               /* (the marker lines are comments for the assembler: not copied) */
-                for (p = 0; p < len; p++) {
-                    c = r_getc(&r);
-                    if (bol) skip = c == ';';
-                    bol = c == '\n';
-                    if (!skip) w_putc(w, c);
-                }
-            }
-            copied = 1;
         }
         c = r_getc(&x);                              /* the uses */
         for (;;) {
             n = 0;
-            while (c >= 0 && c != ',' && c != '\n') { if (n < sizeof(nm) - 1) nm[n++] = (char)c; c = r_getc(&x); }
+            while (c >= 0 && c != ',' && c != ';') { if (n < sizeof(nm) - 1) nm[n++] = (char)c; c = r_getc(&x); }
             if (want && n) add_name(nm, n, 0);
             if (c != ',') break;
             c = r_getc(&x);
         }
+        c = r_getc(&x);                              /* the exports */
+        while (c >= 0 && c != '\n') { if (want && el < sizeof(ebuf) - 1) ebuf[el++] = (char)c; c = r_getc(&x); }
+        if (want) {
+            ebuf[el] = 0;
+            w_puts(w, "\tOBJ\t");
+            w_putc(w, '0' + fidx);
+            w_putc(w, ','); put_u(w, hi); w_putc(w, ','); put_u(w, lo); w_putc(w, ','); put_u(w, cs); w_putc(w, ','); put_u(w, bs); w_putc(w, '\n');
+            for (p = 0; p < el;) {                   /* name:kind:offset,name:kind:offset */
+                w_puts(w, "\tOBJX\t");
+                for (; p < el && ebuf[p] != ':'; p++) w_putc(w, ebuf[p]);
+                w_putc(w, ','); p++;
+                for (; p < el && ebuf[p] != ':'; p++) w_putc(w, ebuf[p]);
+                w_putc(w, ','); p++;
+                for (; p < el && ebuf[p] != ','; p++) w_putc(w, ebuf[p]);
+                w_putc(w, '\n'); p++;
+            }
+            copied = 1;
+        }
         if (c == '\n') c = r_getc(&x);
     }
-    r_close(&r);
     r_close(&x);
     return copied;
 }
@@ -1361,10 +1376,8 @@ static void link_library(const char *tmp, const char *dst)
     add_name("_mk_start", 9, 0);
 #ifdef CC_HOST
     if (getenv("CC_LIB")) {                 /* (on the PC the library is in a directory of the PC) */
-        static char p0[200], p1[200], p2[200], p3[200], p4[200];
-        strcpy(p0, getenv("CC_LIB")); strcat(p0, "/CLIB.S"); libs[0] = p0;
-        strcpy(p1, getenv("CC_LIB")); strcat(p1, "/RT.S"); libs[1] = p1;
-        strcpy(p3, getenv("CC_LIB")); strcat(p3, "/CLIB.IDX"); idxs[0] = p3;
+        static char p2[200], p3[200], p4[200];
+                strcpy(p3, getenv("CC_LIB")); strcat(p3, "/CLIB.IDX"); idxs[0] = p3;
         strcpy(p4, getenv("CC_LIB")); strcat(p4, "/RT.IDX"); idxs[1] = p4;
         strcpy(p2, getenv("CC_LIB")); strcat(p2, "/START.S");
         copy_text(&w, p2);
@@ -1374,7 +1387,7 @@ static void link_library(const char *tmp, const char *dst)
     copy_text(&w, tmp);
     for (pass = 0; pass < 8; pass++) {
         changed = 0;
-        for (i = 0; i < NLIB; i++) if (pull_indexed(&w, libs[i], idxs[i])) changed = 1;
+        for (i = 0; i < NLIB; i++) if (pull_indexed(&w, i, idxs[i])) changed = 1;
         if (!changed) break;
         for (i = 0; i < nnames && state[i]; i++) ;
         if (i == nnames) break;                 /* nothing is needed any more: no round to look again */

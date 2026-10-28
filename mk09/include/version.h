@@ -59,11 +59,13 @@
  *                    (a compile of hello.pas: 590M cycles before, 150M now).
  *   1.20 2026-10-28  faster compiles, second step: as looks the instructions up by first letter and starts a far JBxx long (3 passes instead of 5),
  *                    cg stops the library rounds when nothing is needed and does not copy the marker lines (hello.pas: 56M cycles, a tenth of 1.18).
+ *   1.21 2026-10-29  the library is assembled once, at build time (tools/mkobj.py, as -c): /LIB/CLIB.OBJ and RT.OBJ hold the code of the blocks; cg writes OBJ lines and as
+ *                    links them (hello.pas: 30M cycles).  as: another round of pass 1 when a JBxx has an unknown target.
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.20"
+#define MK09_VERSION    "1.21"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

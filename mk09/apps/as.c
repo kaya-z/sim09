@@ -52,8 +52,8 @@ static int rd(void *b, int n) { return read(fin, b, n); }
 static int wr(const void *b, int n) { return write(fout, b, n); }
 #endif
 
-#define NSYM    1000
-#define NPOOL   3000            /* the characters of the names */
+#define NSYM    600
+#define NPOOL   2400            /* the characters of the names */
 #define NHASH   64
 #define NREL    1000 
 #define LINEMAX 128
@@ -167,6 +167,12 @@ static u8 xrel;     /* 1: the value is an address of the program (a label or lab
 static u8 xfwd;     /* a name that is not defined yet at this line was used (its value may not be the final one) */
 static u8 xbss;     /* the address is in the bss */
 static u8 xundef;   /* a name has no value at all (pass 1: not yet seen) */
+#ifdef AS_OBJ                  /* (the PC build that makes the blocks of the library: -c, tools/mkobj.py) */
+static u8 objmode;
+static u8 xextf, xextrel;      /* the expression has a name that is not defined (an external one); relative: the field is a distance */
+static char xextn[NAMEMAX + 1];
+static int fixoff = -1;        /* the index in ib of the word of the instruction that has the external name */
+#endif
 
 static int isnamec(char c, u8 first)
 {
@@ -247,12 +253,26 @@ static int primary(const char **p)
         if (k < 0) { err("too many names"); }
         else {
             sym_t *y = &syms[k];
-            if (!(y->flags & F_DEF)) { xundef = 1; xfwd = 1; if (pass == 2) err("undefined name"); }
+            if (!(y->flags & F_DEF)) {
+                xundef = 1; xfwd = 1;
+#ifdef AS_OBJ
+                if (objmode && pass == 2) { if (xextf) err("two external names in an expression"); xextf = 1; strcpy(xextn, nm); }
+                else
+#endif
+                if (pass == 2) err("undefined name");
+            }
             else {
                 if (y->defline >= srcline) xfwd = 1;     /* defined later (or on this line) */
                 v = y->val;
                 if (y->flags & F_REL) xrel = 1;
-                if (y->flags & F_BSS) { xbss = 1; if (pass == 2) v += imgend; }
+                if (y->flags & F_BSS) {
+                    xbss = 1;
+#ifdef AS_OBJ
+                    if (pass == 2 && !objmode) v += imgend;
+#else
+                    if (pass == 2) v += imgend;
+#endif
+                }
             }
         }
     } else {
@@ -328,6 +348,9 @@ static int expr(const char **p)
 {
     int v;
     xundef = 0; xfwd = 0;
+#ifdef AS_OBJ
+    xextf = 0;
+#endif
     v = binop(p, 0);
     return v;
 }
@@ -341,6 +364,7 @@ static u16 rlen, lastrel;
 static u8 jb_long[NJB / 8];         /* bit n: the n-th JBxx of the program is long */
 static u16 jbn;                     /* the number of the JBxx that is read now */
 static u8 jb_changed;               /* a JBxx became long in this pass */
+static u8 jb_unk;                   /* a JBxx has a target that is not known yet: another round of pass 1 is needed */
 static u8 redef_ok;                 /* the names were defined by an earlier pass 1: a new definition is not a duplicate */
 static u16 nrel;
 static int opos;            /* offset of the next byte in the image */
@@ -419,7 +443,13 @@ static s8 irel;             /* index in ib of the high byte of an address, or -1
 
 static void ibyte(u8 b) { ib[ilen++] = b; }
 static void iop(u16 code) { if (code > 255) ibyte((u8)(code >> 8)); ibyte((u8)code); }
-static void iword(int v) { ibyte((u8)((u16)v >> 8)); ibyte((u8)v); }
+static void iword(int v)
+{
+#ifdef AS_OBJ
+    if (objmode && xextf) fixoff = ilen;
+#endif
+    ibyte((u8)((u16)v >> 8)); ibyte((u8)v);
+}
 
 static void nonrel(const char *what)
 {
@@ -676,6 +706,7 @@ static void instruction(const op_t *o, const char *s)
             jb_long[jbn >> 3] |= (u8)(1 << (jbn & 7));
             lng = 1;
         }
+        if (!lng && xundef && pass == 1) jb_unk = 1;
         if (!lng && !xundef) {
             off = v - (pc + 2);
             if (off < -128 || off > 127) {
@@ -694,6 +725,9 @@ static void instruction(const op_t *o, const char *s)
             else if (code == 0x8D) iop(0x17);
             else iop((u16)(0x1000 | code));
             off = v - (pc + (code == 0x20 || code == 0x8D ? 3 : 4));
+#ifdef AS_OBJ
+            xextrel = 1;
+#endif
             iword(off);
         }
         return;
@@ -706,11 +740,17 @@ static void instruction(const op_t *o, const char *s)
             off = v - (pc + 2);
             if (pass == 2 && !xundef && !xrel) err("a branch needs a label");
             if (pass == 2 && !xundef && (off < -128 || off > 127)) err("branch too far");
+#ifdef AS_OBJ
+            if (objmode && xextf) err("a short branch to an external name");
+#endif
             ibyte((u8)off);
         } else {
             iop(o->code);
             off = v - (pc + (o->code > 255 ? 4 : 3));
             if (pass == 2 && !xundef && !xrel) err("a branch needs a label");
+#ifdef AS_OBJ
+            xextrel = 1;
+#endif
             iword(off);
         }
         return;
@@ -762,8 +802,15 @@ static void instruction(const op_t *o, const char *s)
 }
 
 /* ---------------------------------------------------------------- directives */
+#ifdef AS_OBJ
+static void orel_print(u16 p) { printf("#R %u %u\n", p, xbss); }
+#endif
+
 static int addrel(u16 p)
 {
+#ifdef AS_OBJ
+    if (objmode) { orel_print(p); return 1; }
+#endif
     u16 g = p - lastrel;
     u8 k = 0;
     while (g > 254) { g -= 254; k++; }
@@ -778,7 +825,11 @@ static int addrel(u16 p)
 static void putrel(void)
 {
     /* the instruction in ib has an address with its high byte at ib[irel] */
-    if (pass == 2 && irel >= 0 && !raw) {
+    if (pass == 2 && irel >= 0 && (!raw
+#ifdef AS_OBJ
+                                   || objmode
+#endif
+                                   )) {
         if (!addrel((u16)(opos + irel))) err("too many addresses to relocate");
     }
 }
@@ -788,6 +839,15 @@ static void emitins(void)
     u8 i;
     if (inbss) { err("an instruction in the bss"); return; }
     putrel();
+#ifdef AS_OBJ
+    if (objmode && pass == 2) {
+        if (fixoff >= 0) { printf("#F %d %u %s\n", opos + fixoff, xextrel, xextn); }
+        else if (xextf) err("an external name in a byte or a direct address");
+    }
+    fixoff = -1;
+    xextrel = 0;
+    xextf = 0;
+#endif
     for (i = 0; i < ilen; i++) emit(ib[i]);
     pc += ilen;
 }
@@ -837,6 +897,11 @@ static void listdir(u8 which, const char *s)
             pc += 1;
         } else {                    /* fdb */
             v = expr(&s);
+#ifdef AS_OBJ
+            if (objmode && pass == 2 && xextf) printf("#F %d 0 %s\n", opos, xextn);
+            if (objmode && pass == 2 && xrel) orel_print((u16)opos);
+            else
+#endif
             if (xrel && pass == 2 && !raw && opos >= 16) {
                 if (!addrel((u16)opos)) err("too many addresses to relocate");
             }
@@ -908,6 +973,10 @@ static int getline_(char *dst)
     return 1;
 }
 
+#ifndef AS_HOST
+static void do_obj(const char *s);
+static void do_objx(const char *s);
+#endif
 static u8 ophead[128], opnext[190];          /* the instructions with the same first letter: index + 1 of the first, of the next one */
 
 static void opindex(void)
@@ -996,6 +1065,10 @@ static void assemble_line(char *l)
         for (k = ophead[(u8)mnem[0] & 127]; k; k = opnext[k - 1])
             if (!strcmp(optab[k - 1].name, mnem)) { instruction(&optab[k - 1], oper); emitins(); return; }
     }
+#ifndef AS_HOST
+    if (!strcmp(mnem, "OBJ")) { do_obj(oper); return; }
+    if (!strcmp(mnem, "OBJX")) { do_objx(oper); return; }
+#endif
     if (!strcmp(mnem, "FCB") || !strcmp(mnem, "BYTE") || !strcmp(mnem, ".BYTE")) { if (inbss) err("data in the bss"); else listdir(0, oper); return; }
     if (!strcmp(mnem, "FDB") || !strcmp(mnem, "WORD") || !strcmp(mnem, ".WORD")) { if (inbss) err("data in the bss"); else listdir(1, oper); return; }
     if (!strcmp(mnem, "FCC")) { if (inbss) err("data in the bss"); else putstring(oper, 0); return; }
@@ -1018,8 +1091,113 @@ static void assemble_line(char *l)
     err("unknown instruction");
 }
 
+/* ---------------------------------------------------------------- the library: blocks that were assembled before (tools/mkobj.py)
+ *   OBJ  file,offset-high,offset-low,code-size,bss-size     the block is put here: its code (read from /LIB/CLIB.OBJ or RT.OBJ) and its bss
+ *   OBJX name,kind,offset                                    a name that the block defines (kind 0 code, 1 bss)
+ * cg writes these for the blocks that the program needs.  The code of the file is a stream of items: 1 n bytes (code), 2 kind hi lo (a word with an address of the block:
+ * the start of its code or of its bss is added), 3 kind n name hi lo (a word with a name of the program or another block: its value is added, or the value minus the start
+ * of the block for the distance of a branch). */
+#ifndef AS_HOST
+static const char *objname[2] = { "/LIB/CLIB.OBJ", "/LIB/RT.OBJ" };
+static int objfd[2] = { -1, -1 };
+static u8 obf[96];
+static int obp, obn;
+static u8 objf;
+static u16 objpc, objbpc;
+
+static int ogetc(void)
+{
+    if (obp >= obn) {
+        obn = read(objfd[objf], obf, sizeof(obf));
+        obp = 0;
+        if (obn <= 0) { obn = 0; return -1; }
+    }
+    return obf[obp++];
+}
+
+static u16 onum(const char **p)
+{
+    u16 v = 0;
+    while (**p >= '0' && **p <= '9') v = (u16)(v * 10 + *(*p)++ - '0');
+    if (**p == ',') (*p)++;
+    return v;
+}
+
+static void do_obj(const char *s)
+{
+    u16 hi, lo, cs, bs;
+    objf = (u8)onum(&s);
+    hi = onum(&s); lo = onum(&s); cs = onum(&s); bs = onum(&s);
+    objpc = (u16)pc;
+    objbpc = (u16)bpc;
+    if (pass == 2 && !noout && !errors) {
+        u16 done = 0, rh, rl;
+        if (objf > 1) { err("bad library file"); return; }
+        if (objfd[objf] < 0) objfd[objf] = open(objname[objf], FO_READ);
+        if (objfd[objf] < 0) { err("cannot open the library"); return; }
+        seek(objfd[objf], hi, lo, 0, &rh, &rl);
+        obp = obn = 0;
+        while (done < cs) {
+            int op = ogetc();
+            u16 n, w;
+            if (op == 1) {
+                n = (u16)ogetc();
+                while (n--) { emit((u8)ogetc()); done++; }
+            } else if (op == 2 || op == 3) {
+                u8 kind = (u8)ogetc();
+                int v = 0;
+                u8 rel = 0;
+                if (op == 3) {
+                    char nm[NAMEMAX + 1];
+                    int k;
+                    n = (u16)ogetc();
+                    if (n > NAMEMAX) n = NAMEMAX;
+                    for (w = 0; w < n; w++) nm[w] = (char)ogetc();
+                    nm[n] = 0;
+                    k = lookup(nm, 0);
+                    if (k < 0 || !(syms[k].flags & F_DEF)) { LOG("%s: undefined name\n", nm); errors++; }
+                    else {
+                        v = syms[k].val;
+                        if (syms[k].flags & F_BSS) v += imgend;
+                        rel = (syms[k].flags & F_REL) != 0;
+                    }
+                }
+                w = (u16)(ogetc() << 8);
+                w = (u16)(w | ogetc());
+                if (op == 2) { w = (u16)(w + (kind ? imgend + objbpc : objpc)); rel = 1; }
+                else if (kind) { w = (u16)(w + v - objpc); rel = 0; }
+                else w = (u16)(w + v);
+                if (rel && !raw && !addrel((u16)opos)) err("too many addresses to relocate");
+                emit((u8)(w >> 8)); emit((u8)w);
+                done += 2;
+            } else { err("the library file is damaged"); return; }
+        }
+    }
+    pc += cs;
+    bpc += bs;
+    if (bpc > bssmax) bssmax = bpc;
+}
+
+static void do_objx(const char *s)
+{
+    char nm[NAMEMAX + 1];
+    u8 n = 0, kind;
+    u16 off;
+    while (*s && *s != ',' && n < NAMEMAX) nm[n++] = *s++;
+    nm[n] = 0;
+    if (*s == ',') s++;
+    kind = (u8)onum(&s);
+    off = onum(&s);
+    if (kind) defsym(nm, objbpc + off, 1, 1, 0);
+    else defsym(nm, objpc + off, 1, 0, 0);
+}
+#endif
+
 static void run_pass(void)
 {
+#ifdef AS_OBJ
+    if (objmode && pass == 2) printf("#START\n");
+#endif
     char l[LINEMAX + 2];
     pc = 0; bpc = 0; inbss = 0; opos = 0; lineno = 0; scope = 0; nrel = 0; rlen = 0; lastrel = 0; uline = 0; jbn = 0;
     srcmode = raw ? 1 : 0;
@@ -1095,6 +1273,9 @@ int main(int argc, char **argv)
     for (i = 1; i < argc; i++) if (argv[i][0] == ';' && argv[i][1] == 0) { tail = i; break; }
     for (i = 1; i < tail; i++) {
         if (!strcmp(argv[i], "-r")) raw = 1;
+#ifdef AS_OBJ
+        else if (!strcmp(argv[i], "-c")) { raw = 1; objmode = 1; }
+#endif
         else if (!strcmp(argv[i], "-s")) showsyms = 1;
         else if (!strcmp(argv[i], "-o") && i + 1 < tail) out = argv[++i];
         else if (argv[i][0] == '-') { LOG("as: unknown option %s\n", argv[i]); return 2; }
@@ -1126,10 +1307,11 @@ int main(int argc, char **argv)
         pass = 1;
         for (iter = 0; ; iter++) {
             jb_changed = 0;
+            jb_unk = 0;
             e1 = 0;
             run_pass();
             redef_ok = 1;
-            if (e1 || !jb_changed || iter >= 8) break;
+            if (e1 || !(jb_changed || jb_unk) || iter >= 8) break;
         }
         imgend = pc;
         if (!raw) {
@@ -1191,6 +1373,16 @@ int main(int argc, char **argv)
         }
         return 1;
     }
+#ifdef AS_OBJ
+    if (objmode) {
+        u16 k;
+        printf("#C %u\n#B %u\n", (u16)imgend, (u16)bssmax);
+        for (k = 0; k < nsym; k++) {
+            if ((syms[k].name & 0x8000) || !(syms[k].flags & F_DEF) || (syms[k].flags & 8) || npool[syms[k].name] == '@') continue;
+            printf("#X %s %u %d\n", npool + syms[k].name, (syms[k].flags & F_BSS) != 0, syms[k].val);
+        }
+    }
+#endif
     LOG("%s: %u bytes, %u relocations, bss %u\n", out, (u16)imgend, nrel, (u16)bssmax);
     return run_tail(argc, argv, tail);
 }

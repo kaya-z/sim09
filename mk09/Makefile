@@ -186,15 +186,23 @@ $(B)/pas1_t.c $(B)/pas1.msg: apps/pas1.c tools/msgsplit.py | $(B)
 $(B)/pas1.o: $(B)/pas1_t.c apps/ccio.h $(HDRS)
 	$(CMOC) -c $(CFLAGS) -DMSGS -Iapps -o $@ $<
 
+# the library as blocks that are assembled once, by the PC build of as with -DAS_OBJ (tools/mkobj.py): OBJ and an index for cg to link
+$(B)/as_obj: apps/as.c apps/as_text.h | $(B)
+	gcc -DAS_HOST -DAS_OBJ -O1 -w -Iapps -o $@ $<
+$(B)/clib.obj $(B)/clib.idx: $(B)/clib.s $(B)/as_obj tools/mkobj.py
+	$(PYTHON) tools/mkobj.py $(B)/as_obj $(B)/clib.s $(B)/clib.obj $(B)/clib.idx
+$(B)/rt.obj $(B)/rt.idx: lib/cc/rt.s $(B)/as_obj tools/mkobj.py
+	$(PYTHON) tools/mkobj.py $(B)/as_obj lib/cc/rt.s $(B)/rt.obj $(B)/rt.idx
+
 $(B)/host_%: apps/%.c apps/ccio.h | $(B)
 	gcc -DCC_HOST -O1 -w -Iapps -o $@ $<
 $(B)/clib.s: lib/cc/clib.c $(B)/host_cpp $(B)/host_cc1 $(B)/host_cg
 	cd $(B) && ./host_cpp ../lib/cc/clib.c -o clib.i && ./host_cc1 clib.i -o clib.ir && ./host_cg -pl clib.ir -o clib.s
 
 TREE := $(B)/tree
-$(B)/tree.stamp: $(foreach a,$(APPS),$(B)/$(a).mx) $(wildcard disk/etc/* disk/doc/* disk/bas/* disk/asm/* disk/inc/* disk/pas/*) $(if $(HAVE_SKK),$(B)/skk_$(CHARSET).dic) $(B)/clib.s $(B)/cc1.msg $(B)/pas1.msg lib/cc/start.s lib/cc/rt.s tools/libsort.py Makefile
+$(B)/tree.stamp: $(foreach a,$(APPS),$(B)/$(a).mx) $(wildcard disk/etc/* disk/doc/* disk/bas/* disk/asm/* disk/inc/* disk/pas/*) $(if $(HAVE_SKK),$(B)/skk_$(CHARSET).dic) $(B)/clib.obj $(B)/rt.obj $(B)/cc1.msg $(B)/pas1.msg lib/cc/start.s Makefile
 	rm -rf $(TREE); mkdir -p $(TREE)/bin $(TREE)/etc $(TREE)/doc $(TREE)/bas $(TREE)/asm $(TREE)/inc $(TREE)/pas $(TREE)/lib $(TREE)/skk
-	cp lib/cc/start.s $(TREE)/lib/start.s; cp $(B)/cc1.msg $(TREE)/lib/cc1.msg; cp $(B)/pas1.msg $(TREE)/lib/pas1.msg; $(PYTHON) tools/libsort.py $(B)/clib.s $(TREE)/lib/clib.s $(TREE)/lib/clib.idx; $(PYTHON) tools/libsort.py lib/cc/rt.s $(TREE)/lib/rt.s $(TREE)/lib/rt.idx
+	cp lib/cc/start.s $(TREE)/lib/start.s; cp $(B)/cc1.msg $(TREE)/lib/cc1.msg; cp $(B)/pas1.msg $(TREE)/lib/pas1.msg; cp $(B)/clib.obj $(B)/clib.idx $(B)/rt.obj $(B)/rt.idx $(TREE)/lib/
 	for a in $(APPS); do cp $(B)/$$a.mx $(TREE)/bin/$$a.mx; done
 	for d in etc doc bas asm inc pas; do if [ -d disk/$$d ] && [ -n "$$(ls disk/$$d)" ]; then cp disk/$$d/* $(TREE)/$$d/; fi; done
 	printf '# /ETC/RC.SH - run by the shell when the system starts\nstty $(CHARSET)\n' > $(TREE)/etc/rc.sh
