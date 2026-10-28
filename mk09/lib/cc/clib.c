@@ -17,6 +17,7 @@ int (*__fmtfp)(char *out, __L *f, int conv, int prec);          /* the program t
 /* ---------------------------------------------------------------- files */
 static unsigned char __inh = 255, __outh = 255;      /* the standard files when the shell redirected them (255: the console) */
 static char *__argv[34];
+int __pargc;                                   /* (for the Pascal paramcount) */
 static char __obuf[80];
 static unsigned char __olen;
 
@@ -592,17 +593,27 @@ int rand(void)
 /* a heap of 3000 bytes in the bss: blocks with a 2 byte header (the size of the block, the lowest bit = in use) */
 #define HEAPSIZE 3000
 static char __heap[HEAPSIZE];
+static char *__hbase = __heap;               /* (a Pascal program with {$M stack,heap} gives another area: __psetheap) */
+static unsigned __hsize = HEAPSIZE;
 static int __heapinit;
+
+int __psetheap(unsigned size, char *base)
+{
+    __hbase = base;
+    __hsize = size;
+    __heapinit = 0;
+    return 0;
+}
 
 char *malloc(unsigned n)
 {
     unsigned *h;
     unsigned s;
-    if (!__heapinit) { *(unsigned *)__heap = HEAPSIZE - 2; __heapinit = 1; }
+    if (!__heapinit) { *(unsigned *)__hbase = __hsize - 2; __heapinit = 1; }
     n = (n + 1) & 0xFFFE;
     if (n < 2) n = 2;
-    h = (unsigned *)__heap;
-    while ((char *)h < __heap + HEAPSIZE) {
+    h = (unsigned *)__hbase;
+    while ((char *)h < __hbase + __hsize) {
         s = *h & 0xFFFE;
         if (!(*h & 1) && s >= n) {
             if (s >= n + 4) {
@@ -623,11 +634,11 @@ void free(char *p)
     h = (unsigned *)(p - 2);
     *h &= 0xFFFE;
     /* join the free blocks that follow each other */
-    h = (unsigned *)__heap;
-    while ((char *)h < __heap + HEAPSIZE) {
+    h = (unsigned *)__hbase;
+    while ((char *)h < __hbase + __hsize) {
         unsigned s = *h & 0xFFFE;
         nx = (unsigned *)((char *)h + 2 + s);
-        if (!(*h & 1) && (char *)nx < __heap + HEAPSIZE && !(*nx & 1)) *h = s + 2 + (*nx & 0xFFFE);
+        if (!(*h & 1) && (char *)nx < __hbase + __hsize && !(*nx & 1)) *h = s + 2 + (*nx & 0xFFFE);
         else h = nx;
     }
 }
@@ -896,6 +907,7 @@ void mk_start(char *blk)
         p++;
     }
     __argv[argc] = 0;
+    __pargc = argc;
     exit(main(argc, __argv));
 }
 
@@ -1438,3 +1450,29 @@ int __pfsize(__PF *p)
     fseek(p->f, here, 0);
     return end / p->esize;
 }
+
+
+/* ---- Pascal: random, paramstr, and a few of the crt unit of Turbo Pascal (the console understands the ANSI sequences) */
+int __prandom(int n) { return n > 0 ? rand() % n : 0; }
+int __prandomize(void) { srand(4711); return 0; }
+int __pparamcount(void) { return __pargc - 1; }
+
+char *__pparamstr(int i)
+{
+    char *a;
+    int n = 0;
+    if (i < 0 || i >= __pargc) { __sret[0] = 0; return __sret; }
+    a = __argv[i];
+    while (a[n] && n < 255) { __sret[n + 1] = a[n]; n++; }
+    __sret[0] = n;
+    return __sret;
+}
+
+int __pclrscr(void) { printf("\033[2J\033[H"); return 0; }
+int __pclreol(void) { printf("\033[K"); return 0; }
+int __pgotoxy(int y, int x) { printf("\033[%d;%dH", y, x); return 0; }
+int __pdelay(int ms) { return 0; }
+int __preadkey(void) { int c = getchar(); return c < 0 ? 0 : c; }
+int __pkeypressed(void) { return 1; }
+int __ptextcolor(int c) { printf("\033[%dm", 30 + ((c & 1) << 2) + (c & 2) + ((c & 4) >> 2)); return 0; }
+int __ptextbackground(int c) { printf("\033[%dm", 40 + ((c & 1) << 2) + (c & 2) + ((c & 4) >> 2)); return 0; }

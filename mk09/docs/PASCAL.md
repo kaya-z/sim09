@@ -1,6 +1,6 @@
 # MK09 の Pascal コンパイラ
 
-**版: 1.15** (2026-10-28)
+**版: 1.16** (2026-10-28)
 
 MK09 の上で動く Pascal コンパイラ。C コンパイラ ([IR.md](IR.md)) と同じ**中間表現 (IR)** に出し、`cg` と `as` とライブラリ (`/LIB/CLIB.S`) を共用する。
 
@@ -59,7 +59,15 @@ Turbo Pascal の文字列: 長さ 1 バイトのあとに文字 (`string` = `str
 * **break / continue / exit**: ループの外で `break` は誤り。`exit` は手続き (主プログラムなら全体) から出る。
 * **型つき定数** (Turbo Pascal): `const n: integer = 5;`、`const names: array[1..3] of string[5] = ('a', 'b', 'c');`。初期値のある**変数**。整数・文字・真偽・列挙・文字列とその配列。
 
-## 6. 限界
+## 6. そのほか (1.16)
+
+* `uses crt;` などは**読み飛ばす** (ユニットは読み込まない)。`crt` の `clrscr` `clreol` `gotoxy(x, y)` `textcolor` `textbackground` (ANSI の ESC シーケンス)、`readkey` (1 文字読む)、
+  `keypressed` (いつも TRUE)、`delay` (何もしない) がある。`random(n)` `randomize` `paramcount` `paramstr(i)` もある。
+* `word` (0..65535。比較は符号つきなので 32767 を超えると狂う)、`shortint` (-128..127)、`smallint` (= `integer`)。
+* `{$M スタック,ヒープ}`: プログラムのスタックとヒープ (`new` が使う領域) の大きさ。既定は 2000 と 3000。
+* `write(output, ...)` と `read(input, ...)` の最初の `output` `input` は読み飛ばす。
+
+## 7. 限界
 
 手続き型 (関数のポインタ)、可変レコード、`real` の型つき定数、`packed` の意味 (読み飛ばす)、`unit` `uses` (`uses` は読み込まない) はない。範囲検査もない。
 `pas1` は TPA にほぼ一杯 (本体 34KB + 表 6KB + スタック 1KB): 次の機能は、何かを削るか、段を分けないと入らない。名前は 12 文字まで。

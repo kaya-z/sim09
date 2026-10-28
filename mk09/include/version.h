@@ -49,11 +49,13 @@
  *   1.15 2026-10-28  Pascal: set (32 bytes, in and + - * = <> <= >=, include exclude), text files and file of T (assign reset rewrite append close seek eof eoln
  *                    filepos filesize, write(f, ...) read(f, ...)), goto and label, break continue exit, typed constants; the first stage pas0 (the lexer) is
  *                    separate from pas1 so that pas1 fits in the transient area.
+ *   1.16 2026-10-28  Pascal: uses (skipped) and a few routines of the crt unit (clrscr gotoxy textcolor ...), random randomize paramcount paramstr, word shortint
+ *                    smallint, {$M stack,heap}, output/input as the first argument; fixes (ord of an enum).
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.15"
+#define MK09_VERSION    "1.16"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

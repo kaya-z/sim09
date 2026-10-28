@@ -134,7 +134,7 @@ check(re.search(r'^\s*5 receive\s+1\s+[0-9a-f]{4}-[0-9a-f]{4}', out, re.M) is no
 out, rc = run(disk, BOOT + sh('stk', prompt=P) + OFF)
 rows = re.findall(r'^\s*([1-5]) [0-9a-f]{4}-[0-9a-f]{4}\s+(\d+) \(the run ends', out, re.M)
 check(len(rows) == 5 and all(int(r[1]) >= 10 for r in rows), 'stk: the five servers (TTY DISK FS PM MM) have some unused stack left', out[-600:])
-check('MK09 1.15: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
+check('MK09 1.16: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
 
 # ---- several programs at the same time (relocatable programs, the memory manager, & kill mem)
 out, rc = run(disk, BOOT + sh('mem', 'spin &', 'spin &', 'spin &', 'echo hello', 'mem', 'ps', 'kill 7', 'kill 99', 'ps',
@@ -323,6 +323,7 @@ for b in cprogs:
 pprogs = sorted(f[:-4] for f in os.listdir(os.path.join(HERE, 'pas')) if f.startswith('p_') and f.endswith('.pas'))
 for b in pprogs:
     shutil.copy(os.path.join(HERE, 'pas', b + '.pas'), os.path.join(ctree, b[2:].upper() + '.PAS'))
+open(os.path.join(ctree, 'BADP.PAS'), 'w').write('program bad;\nvar i: integer;\nbegin\n  i := j + 1\nend.\n')
 open(os.path.join(ctree, 'BADC.C'), 'w').write('int main(void)\n{\n    return x;\n}\n')
 cdisk = os.path.join(work, 'cdisk.img')
 subprocess.run([sys.executable, '-X', 'utf8', os.path.join(MK, 'tools', 'mkdisk.py'), '-o', cdisk, '--boot', os.path.join(BUILD, 'boot.img'),
@@ -335,6 +336,7 @@ for b in pprogs:
     n = b[2:].upper()
     csteps += ['pc /%s.PAS -o /P%s.MX' % (n, n), '/P%s.MX' % n, 'echo ==P%s==' % n]
 csteps += ['cc /BADC.C -o /bad.mx']
+csteps += ['pc /BADP.PAS -o /badp.mx']
 out, rc = run(cdisk, ['timeout 9000000'] + BOOT + sh(*csteps, prompt='/> ') + OFF, timeout=3000)
 check('hello from C, 3 argument(s)\n  0: /hc.mx\n  1: a\n  2: b\n' in out, 'cc compiles a C program on MK09 (cpp, cc1, cg, as in a chain) and it runs', out[-1500:])
 for b in pprogs:
@@ -342,6 +344,7 @@ for b in pprogs:
     want = open(os.path.join(HERE, 'pas', b + '.out'), encoding='latin-1').read()
     m = re.search(r'/> /P%s.MX\n(.*?)/> echo ==P%s==' % (n, n), out, re.S)
     check(m is not None and m.group(1) == want, 'pc: %s compiled on MK09 gives the output of the program' % b, (m.group(1) if m else out[-600:]) + '\nwant:\n' + want)
+check('/BADP.PAS:4: undeclared name' in out, 'pc prints the messages of pas1 with the line (they are read from /LIB/PAS1.MSG)', out[-500:])
 check('/BADC.C:3: undeclared name' in out, 'cc prints the messages of cc1 (they are read from /LIB/CC1.MSG)', out[-500:])
 check('_.I' not in out.split('ls /')[-1].split('==')[0] and 'HC.MX' in out, 'cc removes its temporary files', out[-800:])
 for b in cprogs:

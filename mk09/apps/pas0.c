@@ -60,7 +60,7 @@ static int hexval(int c)
     return -1;
 }
 
-static u16 stack_new;               /* the stack of the program: {$M n}, to be written */
+static u16 stack_new, heap_new;     /* the stack and the heap of the program: {$M stack,heap}, to be written */
 
 static void skip_comment(int close2)       /* after { or (* */
 {
@@ -72,6 +72,12 @@ static void skip_comment(int close2)       /* after { or (* */
             while (ch == ' ') nextch();
             while (ch >= '0' && ch <= '9') { v = (u16)(v * 10 + ch - '0'); nextch(); }
             if (v) stack_new = v;
+            if (ch == ',') {
+                nextch();
+                v = 0;
+                while (ch >= '0' && ch <= '9') { v = (u16)(v * 10 + ch - '0'); nextch(); }
+                heap_new = v;
+            }
         }
     }
     for (;;) {
@@ -229,6 +235,7 @@ int main(int argc, char **argv)
     for (;;) {
         next();
         if (stack_new) { w_putc(&out, TK_STACK); put16(stack_new); stack_new = 0; }
+        if (heap_new) { w_putc(&out, TK_HEAP); put16(heap_new); heap_new = 0; }
         if (tokline != last) { w_putc(&out, TK_LINE); put16(tokline); last = tokline; }
         w_putc(&out, tok);
         if (tok == T_NUM) { put16((u16)tokv); put16(tokh); }
