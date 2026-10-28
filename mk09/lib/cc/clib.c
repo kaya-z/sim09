@@ -898,3 +898,100 @@ void mk_start(char *blk)
     __argv[argc] = 0;
     exit(main(argc, __argv));
 }
+
+/* ---------------------------------------------------------------- Pascal (docs/PASCAL.md): the routines that pas1 calls.  The arguments are in the order
+ * that they are pushed (the last argument of the Pascal text first), because pas1 writes them as it reads them. */
+static void __ppad(int w, int len)
+{
+    while (w > len) { putchar(' '); w--; }
+}
+
+int __pwi(int w, int v)
+{
+    char b[8];
+    int n;
+    char *p = b;
+    sprintf(b, "%d", v);
+    n = strlen(b);
+    __ppad(w, n);
+    while (*p) putchar(*p++);
+    return 0;
+}
+
+int __pwc(int w, int c)
+{
+    __ppad(w, 1);
+    putchar(c);
+    return 0;
+}
+
+int __pwb(int w, int v)
+{
+    char *s = v ? "TRUE" : "FALSE";
+    __ppad(w, v ? 4 : 5);
+    while (*s) putchar(*s++);
+    return 0;
+}
+
+int __pws(int w, int len, char *p)
+{
+    int i;
+    __ppad(w, len);
+    for (i = 0; i < len; i++) putchar(p[i]);
+    return 0;
+}
+
+int __pwl(void)
+{
+    putchar('\n');
+    return 0;
+}
+
+int __pri(void)
+{
+    int c, neg = 0, v = 0;
+    do c = getchar(); while (c == ' ' || c == '\n' || c == '\t' || c == '\r');
+    if (c == '-') { neg = 1; c = getchar(); } else if (c == '+') c = getchar();
+    while (c >= '0' && c <= '9') { v = v * 10 + c - '0'; c = getchar(); }
+    if (c >= 0) ungetc(c, stdin);
+    return neg ? -v : v;
+}
+
+int __prc(void)
+{
+    int c = getchar();
+    if (c == '\n') return ' ';
+    if (c < 0) return ' ';
+    return c;
+}
+
+int __prl(void)
+{
+    int c;
+    do c = getchar(); while (c >= 0 && c != '\n');
+    return 0;
+}
+
+int __peof(void)
+{
+    int c = getchar();
+    if (c < 0) return 1;
+    ungetc(c, stdin);
+    return 0;
+}
+
+int __peoln(void)
+{
+    int c = getchar();
+    if (c < 0) return 1;
+    ungetc(c, stdin);
+    return c == '\n';
+}
+
+/* a string constant into a packed array of char: cut, or padded with blanks */
+char *__pstr(int slen, int dlen, char *src, char *dst)
+{
+    int i;
+    for (i = 0; i < dlen; i++) dst[i] = i < slen ? src[i] : ' ';
+    return dst;
+}
