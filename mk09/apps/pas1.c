@@ -60,18 +60,14 @@ static void err(msgt msg)
 #ifdef CC_HOST
     fprintf(stderr, "%s:%u: %s\n", fname, line, msg);
 #elif defined(MSGS)
-    {
-        rfile r;
-        int c;
-        u8 n = 1;
-        char nb[7];
-        putstr(fname); putchar(':'); utoa_(line, nb, 10); putstr(nb); putstr(": ");
-        if (!r_open(&r, "/LIB/PAS1.MSG")) {
-            while (n < msgno && (c = r_getc(&r)) >= 0) if (c == '\n') n++;
-            while ((c = r_getc(&r)) >= 0 && c != '\n') putchar(c);
-            r_close(&r);
-        } else { putstr("error "); utoa_(msgno, nb, 10); putstr(nb); }
-        putchar('\n');
+    {                                       /* pmsg prints the message (it reads /LIB/PAS1.MSG), in the place of this program */
+        char ln[7], mn[4];
+        char *av[7];
+        cleanup();
+        utoa_(line, ln, 10);
+        utoa_(msgno, mn, 10);
+        av[0] = "pas1"; av[1] = ";"; av[2] = "pmsg"; av[3] = "/LIB/PAS1.MSG"; av[4] = fname; av[5] = ln; av[6] = mn;
+        run_tail(7, av, 1);
     }
 #else
     printf("%s:%u: %s\n", fname, line, msg);
@@ -2693,7 +2689,6 @@ int main(int argc, char **argv)
         if (tok == '(') { while (tok != ')' && tok != T_EOF) next(); next(); }
         expect(';', "a ; is expected");
     }
-    if (tok == T_ID && !strcmp(toks, "uses")) { while (tok != ';' && tok != T_EOF) next(); next(); }
     cur_level = 0;
     fpv[0] = 0;
     maxfpv[0] = 0;

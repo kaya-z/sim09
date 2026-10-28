@@ -32,6 +32,9 @@ os.makedirs(libdir)
 for f in ('clib', 'rt', 'start'):
     shutil.copy(os.path.join(BUILD, 'tree', 'lib', f + '.s'), os.path.join(libdir, f.upper() + '.S'))
 tests = sorted(f for f in os.listdir(os.path.join(HERE, 'pas')) if f.startswith('p_') and f.endswith('.pas'))
+for f in os.listdir(os.path.join(HERE, 'pas')):          # (units and include files that the programs read)
+    if (f.endswith('.pas') or f.endswith('.inc')) and not f.startswith('p_'):
+        shutil.copy(os.path.join(HERE, 'pas', f), os.path.join(work, f))
 tests = [t for t in tests if not names or t[:-4] in names]
 tree = os.path.join(work, 'tree')
 shutil.copytree(os.path.join(BUILD, 'tree'), tree, ignore=shutil.ignore_patterns('skk'))

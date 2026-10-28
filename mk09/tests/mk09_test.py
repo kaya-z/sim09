@@ -134,7 +134,7 @@ check(re.search(r'^\s*5 receive\s+1\s+[0-9a-f]{4}-[0-9a-f]{4}', out, re.M) is no
 out, rc = run(disk, BOOT + sh('stk', prompt=P) + OFF)
 rows = re.findall(r'^\s*([1-5]) [0-9a-f]{4}-[0-9a-f]{4}\s+(\d+) \(the run ends', out, re.M)
 check(len(rows) == 5 and all(int(r[1]) >= 10 for r in rows), 'stk: the five servers (TTY DISK FS PM MM) have some unused stack left', out[-600:])
-check('MK09 1.17: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
+check('MK09 1.18: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
 
 # ---- several programs at the same time (relocatable programs, the memory manager, & kill mem)
 out, rc = run(disk, BOOT + sh('mem', 'spin &', 'spin &', 'spin &', 'echo hello', 'mem', 'ps', 'kill 7', 'kill 99', 'ps',
@@ -323,6 +323,9 @@ for b in cprogs:
 pprogs = sorted(f[:-4] for f in os.listdir(os.path.join(HERE, 'pas')) if f.startswith('p_') and f.endswith('.pas'))
 for b in pprogs:
     shutil.copy(os.path.join(HERE, 'pas', b + '.pas'), os.path.join(ctree, b[2:].upper() + '.PAS'))
+for f in os.listdir(os.path.join(HERE, 'pas')):                      # (units and include files)
+    if (f.endswith('.pas') or f.endswith('.inc')) and not f.startswith('p_'):
+        shutil.copy(os.path.join(HERE, 'pas', f), os.path.join(ctree, f.upper()))
 open(os.path.join(ctree, 'BADP.PAS'), 'w').write('program bad;\nvar i: integer;\nbegin\n  i := j + 1\nend.\n')
 open(os.path.join(ctree, 'BADC.C'), 'w').write('int main(void)\n{\n    return x;\n}\n')
 cdisk = os.path.join(work, 'cdisk.img')
