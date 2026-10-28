@@ -23,11 +23,12 @@
 #define NLABD   2400
 #define LINEMAX 100
 
-enum { K_CONST, K_ADDR, K_UADDR, K_D, K_STK, K_UW, K_GW };
+enum { K_CONST, K_ADDR, K_UADDR, K_D, K_STK, K_UW, K_GW, K_POST };
 typedef struct ent {
     u8 k;
     int v;                  /* constant; offset of an address or of a memory word */
-    char nm[NAMEM];         /* K_ADDR, K_GW: the name (with the _), "" for an absolute address */
+    int aux;                /* K_POST: the step */
+    char nm[NAMEM];         /* K_ADDR, K_GW, K_POST: the name (with the _), "" for an absolute address (K_POST: "" = a local, v is its offset from u) */
 } ent_t;
 static ent_t vs[VS];
 static u8 nvs;
@@ -177,6 +178,7 @@ static void push_ent(u8 k, int v, const char *nm)
 {
     if (nvs >= VS) { err("the expression is too deep"); return; }
     vs[nvs].k = k;
+    vs[nvs].aux = 0;
     vs[nvs].v = v;
     strcpy(vs[nvs].nm, nm);
     nvs++;
@@ -196,6 +198,22 @@ static u8 operand(const ent_t *e, char *b)
     return 0;
 }
 
+/* K_POST: "the word of the variable, which gets e->aux added when it is used" (p++ of a pointer or an int): its operand and the code that makes X the old value */
+static void post_var(const ent_t *e, char *b)
+{
+    if (e->nm[0]) fmt_sym(b, e->nm, e->v); else fmt_idx(b, e->v, "u");
+}
+
+static void post_x(const ent_t *e)
+{
+    char b[24];
+    post_var(e, b);
+    ins("ldx", b);
+    ins_idx("leax", e->aux, "x");
+    ins("stx", b);
+    ins_idx("leax", -e->aux, "x");
+}
+
 /* a pointer in X */
 static void load_x(u8 i)
 {
@@ -205,6 +223,7 @@ static void load_x(u8 i)
     case K_D: ins("tfr", "d,x"); break;
     case K_STK: ins("puls", "x"); break;
     case K_UADDR: ins_idx("leax", e->v, "u"); break;
+    case K_POST: post_x(e); break;
     default: operand(e, b); ins("ldx", b); break;
     }
 }
@@ -217,6 +236,7 @@ static void load_d(u8 i)
     switch (e->k) {
     case K_D: break;
     case K_STK: ins("puls", "d"); break;
+    case K_POST: post_x(e); ins("tfr", "x,d"); break;
     case K_UADDR: ins_idx("leax", e->v, "u"); ins("tfr", "x,d"); break;
     case K_CONST:
         if (e->v == 0) { ins("clra", 0); ins("clrb", 0); }
@@ -236,6 +256,7 @@ static void push_upto(u8 i)
         ent_t *e = &vs[k];
         switch (e->k) {
         case K_D: ins("pshs", "d"); break;
+        case K_POST: post_x(e); ins("pshs", "x"); break;
         case K_UADDR: ins_idx("leax", e->v, "u"); ins("pshs", "x"); break;
         case K_CONST: ins_imm("ldx", e->v); ins("pshs", "x"); break;
         default: operand(e, b); ins("ldx", b); ins("pshs", "x"); break;
@@ -255,7 +276,7 @@ static void free_d(void)
 static void flush_mem(u8 limit)
 {
     u8 k, hi = 255;
-    for (k = 0; k < limit; k++) if (vs[k].k == K_UW || vs[k].k == K_GW) hi = k;
+    for (k = 0; k < limit; k++) if (vs[k].k == K_UW || vs[k].k == K_GW || vs[k].k == K_POST) hi = k;
     if (hi != 255) push_upto(hi);
 }
 
@@ -567,6 +588,21 @@ static void do_load(u8 bytes, u8 uns)
 {
     ent_t a = vs[nvs - 1];
     char b[24];
+    if (a.k == K_POST) {                 /* *p++ : the pointer is used and changed in one go */
+        char pv[24];
+        free_d();
+        post_var(&a, pv);
+        ins("ldx", pv);
+        if (bytes) {
+            if (a.aux == 1) ins("ldb", ",x+"); else { ins("ldb", ",x"); ins_idx("leax", a.aux, "x"); }
+        } else {
+            if (a.aux == 2) ins("ldd", ",x++"); else { ins("ldd", ",x"); ins_idx("leax", a.aux, "x"); }
+        }
+        ins("stx", pv);
+        if (bytes) { if (uns) ins("clra", 0); else ins("sex", 0); }
+        vs[nvs - 1].k = K_D;
+        return;
+    }
     if (!bytes) {
         if (a.k == K_UADDR) { vs[nvs - 1].k = K_UW; return; }
         if (a.k == K_ADDR) { vs[nvs - 1].k = K_GW; return; }
@@ -595,6 +631,21 @@ static void do_store(u8 bytes)
     ent_t a, v;
     const char *st = bytes ? "stb" : "std";
     char b[24];
+    if (vs[nvs - 2].k == K_POST) {       /* *p++ = v */
+        char pv[24];
+        flush_mem((u8)(nvs - 2));
+        a = vs[nvs - 2];
+        if (vs[nvs - 1].k != K_D) { free_d(); load_d((u8)(nvs - 1)); }
+        post_var(&a, pv);
+        ins("ldx", pv);
+        if (bytes && a.aux == 1) ins("stb", ",x+");
+        else if (!bytes && a.aux == 2) ins("std", ",x++");
+        else { ins(st, ",x"); ins_idx("leax", a.aux, "x"); }
+        ins("stx", pv);
+        pop_n(2);
+        push_ent(K_D, 0, "");
+        return;
+    }
     flush_mem((u8)(nvs - 2));
     a = vs[nvs - 2];
     v = vs[nvs - 1];
@@ -846,13 +897,32 @@ static void function(char *hdr)
         else if (!strcmp(opb, "load.ub")) do_load(1, 1);
         else if (!strcmp(opb, "store.w")) do_store(0);
         else if (!strcmp(opb, "store.b")) do_store(1);
+        else if (!strcmp(opb, "postinc")) {
+            ent_t t = vs[nvs - 1];
+            int k = to_int(a1);
+            if (t.k == K_UADDR || t.k == K_ADDR) {
+                vs[nvs - 1].k = K_POST;
+                vs[nvs - 1].aux = k;
+            } else {                      /* any address: X = a;  D = old; the word += k */
+                free_d();
+                load_x((u8)(nvs - 1));
+                ins("ldd", ",x");
+                ins("pshs", "d");
+                ins_imm("addd", k);
+                ins("std", ",x");
+                ins("puls", "d");
+                vs[nvs - 1].k = K_D;
+            }
+        }
         else if (!strcmp(opb, "dup")) {
             ent_t t = vs[nvs - 1];
+            if (t.k == K_POST) { free_d(); load_d((u8)(nvs - 1)); vs[nvs - 1].k = K_D; t = vs[nvs - 1]; }
             if (t.k == K_D) { ins("pshs", "d"); vs[nvs - 1].k = K_STK; push_ent(K_D, 0, ""); }
             else if (t.k == K_STK) { ins("ldx", ",s"); ins("pshs", "x"); push_ent(K_STK, 0, ""); }
             else push_ent(t.k, t.v, t.nm);
         }
         else if (!strcmp(opb, "drop")) {
+            if (nvs && vs[nvs - 1].k == K_POST) post_x(&vs[nvs - 1]);       /* (the variable is still changed) */
             if (nvs && vs[nvs - 1].k == K_STK) ins("leas", "2,s");
             pop_n(1);
         }

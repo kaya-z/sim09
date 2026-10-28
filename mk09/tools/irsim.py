@@ -211,6 +211,11 @@ class Machine:
                     a = st.pop()
                     mem[a] = v & 0xFF
                     st.append(v)
+                elif op == 'postinc':
+                    a = st.pop()
+                    old = self.r16(a)
+                    self.w16(a, (old + int(f[1])) & 0xFFFF)
+                    st.append(old)
                 elif op == 'dup':
                     st.append(st[-1])
                 elif op == 'drop':

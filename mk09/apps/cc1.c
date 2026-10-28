@@ -1025,7 +1025,10 @@ static void incdec(u16 op, u8 post, u8 unused)
     u8 byte = tys[t].k == TK_CHAR;
     if (!e_lv || tys[t].k == TK_ARR || is_agg(t)) { err("++ or -- needs a variable"); return; }
     if (is_ptr(t)) sz = pointee(t);
-    if (post && !unused) {
+    if (post && !unused && !byte) {
+        ins1("postinc", op == T_INC ? (int)sz : -(int)sz);     /* ( a -- old ): the word at a is changed, its old value stays */
+        e_t = t;
+    } else if (post && !unused) {
         ins0("dup"); ins0(byte ? (tys[t].un ? "load.ub" : "load.b") : "load.w");
         ins0("swap"); ins0("dup"); ins0(byte ? (tys[t].un ? "load.ub" : "load.b") : "load.w");
         ins1("const", sz); ins0(opn);
