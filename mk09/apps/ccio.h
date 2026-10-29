@@ -153,17 +153,18 @@ static int run_tail(int argc, char **argv, int at)
 #endif
 }
 
-/* -v: the name, the version and the copyright (every program of the compilers) */
-#include "../include/version.h"
+/* -v: the name, the version of the program (TOOL_VERSION in its source: it changes when that program changes) and the copyright */
 #ifdef CC_HOST
 #define cc_say(s) fputs(s, stdout)
 #else
 #define cc_say(s) putstr(s)
 #endif
-static int cc_version(const char *name)
+static int cc_version(const char *name, const char *ver)
 {
     cc_say(name);
-    cc_say(" (MK09 " MK09_VERSION ")\n(c) 2026 YUKARI Semiconductor Devices\n");
+    cc_say(" ");
+    cc_say(ver);
+    cc_say("\n(c) 2026 YUKARI Semiconductor Devices\n");
     return 0;
 }
 

@@ -18,6 +18,8 @@
  */
 #include "ccio.h"
 
+#define TOOL_VERSION "1.11"          /* the version of this program: changed when it changes (-v) */
+
 #define VS      40
 #define NAMEM   18
 #define NLABD   2400
@@ -1422,7 +1424,7 @@ int main(int argc, char **argv)
         if (!strcmp(argv[i], "-o") && i + 1 < tail) dst = argv[++i];
         else if (!strcmp(argv[i], "-L")) libmode = 1;
         else if (argv[i][0] == '-' && argv[i][1] == 'p' && strlen(argv[i]) < 8) strcpy(ptag, argv[i] + 2);
-        else if (argv[i][0] == '-') { if (argv[i][1] == 'v') return cc_version("cg"); err("unknown option"); return 2; }
+        else if (argv[i][0] == '-') { if (argv[i][1] == 'v') return cc_version("cg", TOOL_VERSION); err("unknown option"); return 2; }
         else src = argv[i];
     }
     if (!src) {

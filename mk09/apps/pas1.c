@@ -11,6 +11,8 @@
  */
 #include "ccio.h"
 
+#define TOOL_VERSION "1.8"          /* the version of this program: changed when it changes (-v) */
+
 #ifdef CC_HOST
 #define NSYM    400
 #define NTY     300
@@ -2659,7 +2661,7 @@ int main(int argc, char **argv)
     const char *src = NULL, *dst = NULL;
     for (i = 1; i < tail; i++) {
         if (!strcmp(argv[i], "-o") && i + 1 < tail) dst = argv[++i];
-        else if (!strcmp(argv[i], "-v")) return cc_version("pas1");
+        else if (!strcmp(argv[i], "-v")) return cc_version("pas1", TOOL_VERSION);
         else if (argv[i][0] == '-') { puts("pas1: unknown option"); return 2; }
         else src = argv[i];
     }

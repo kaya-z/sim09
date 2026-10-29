@@ -11,6 +11,8 @@
  */
 #include "ccio.h"
 
+#define TOOL_VERSION "1.6"          /* the version of this program: changed when it changes (-v) */
+
 #define NTAG    24
 /* the sizes of the tables: small on MK09 (the whole program must fit in the transient area), big on the PC (the library is compiled there) */
 #ifdef CC_HOST
@@ -2414,7 +2416,7 @@ int main(int argc, char **argv)
     char outname[120];
     for (i = 1; i < tail; i++) {
         if (!strcmp(argv[i], "-o") && i + 1 < tail) dst = argv[++i];
-        else if (!strcmp(argv[i], "-v")) return cc_version("cc1");
+        else if (!strcmp(argv[i], "-v")) return cc_version("cc1", TOOL_VERSION);
         else if (argv[i][0] == '-') { err("unknown option"); return 2; }
         else src = argv[i];
     }

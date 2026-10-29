@@ -40,7 +40,7 @@ typedef int8_t s8;
 #include "mkstr.h"
 #endif
 
-#include "../include/version.h"
+#define TOOL_VERSION "1.10"          /* the version of this program: changed when it changes (-v) */
 #ifdef AS_HOST
 #define LOG printf
 static FILE *fin, *fout;
@@ -1273,7 +1273,7 @@ int main(int argc, char **argv)
     const char *src = NULL, *out = NULL;
     for (i = 1; i < argc; i++) if (argv[i][0] == ';' && argv[i][1] == 0) { tail = i; break; }
     for (i = 1; i < tail; i++) {
-        if (!strcmp(argv[i], "-v")) { LOG("as (MK09 " MK09_VERSION ")\n(c) 2026 YUKARI Semiconductor Devices\n"); return 0; }
+        if (!strcmp(argv[i], "-v")) { LOG("as " TOOL_VERSION "\n(c) 2026 YUKARI Semiconductor Devices\n"); return 0; }
         else if (!strcmp(argv[i], "-r")) raw = 1;
 #ifdef AS_OBJ
         else if (!strcmp(argv[i], "-c")) { raw = 1; objmode = 1; }

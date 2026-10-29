@@ -14,6 +14,8 @@
  */
 #include "ccio.h"
 
+#define TOOL_VERSION "1.1"          /* the version of this program: changed when it changes (-v) */
+
 #ifdef CC_HOST
 #define putstr(s) fputs(s, stdout)
 #endif
@@ -35,7 +37,7 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "-o") && i + 1 < argc) out = argv[++i];
         else if (a[0] == '-' && a[1] == 'D') dflag = a;
         else if (a[0] == '-' && a[1] == 'I') iflag = a;
-        else if (!strcmp(a, "-v")) return cc_version("cc");
+        else if (!strcmp(a, "-v")) return cc_version("cc", TOOL_VERSION);
         else if (a[0] == '-') { puts("cc: unknown option"); return 2; }
         else src = a;
     }
