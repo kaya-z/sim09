@@ -3,13 +3,13 @@
 /*
  * pc - the driver of the Pascal compiler of MK09 (docs/PASCAL.md)
  *
- *   pc [-S] [-k] [-v] [-o out] file.pas
+ *   pc [-S] [-k] [-V] [-o out] file.pas
  *
  * file.pas --pas0--> _.tok --pas1--> _.ir --cg--> _.A (the start code, the program and the library routines it uses) --as--> out
  * The stages do not run under this program: the memory of a stage is the whole transient area, so each stage runs the next one in its own place
  * (exec, PM_EXEC).  This program only makes the command line  cpp ... ; cc1 ... ; cg ... ; as ... ; rm ...  and starts the first stage.
  *   -S   stop after cg (out is the assembler text; default: the name of the source with .s)     -k   keep the temporary files
- *   -v   print the command line     -o out   the output (default: the name of the source with .mx)
+ *   -V   print the command line     -v   the version     -o out   the output (default: the name of the source with .mx)
  * A command line is at most about 120 characters.
  */
 #include "ccio.h"
@@ -31,12 +31,13 @@ int main(int argc, char **argv)
         char *a = argv[i];
         if (!strcmp(a, "-S")) stop_s = 1;
         else if (!strcmp(a, "-k")) keep = 1;
-        else if (!strcmp(a, "-v")) verbose = 1;
+        else if (!strcmp(a, "-V")) verbose = 1;
         else if (!strcmp(a, "-o") && i + 1 < argc) out = argv[++i];
+        else if (!strcmp(a, "-v")) return cc_version("pc");
         else if (a[0] == '-') { puts("pc: unknown option"); return 2; }
         else src = a;
     }
-    if (!src) { puts("usage: pc [-S] [-k] [-v] [-o out] file.pas"); return 2; }
+    if (!src) { puts("usage: pc [-S] [-k] [-V] [-o out] file.pas"); return 2; }
     len = (u16)strlen(src);
     if (len > 50) { puts("pc: the name of the file is too long"); return 2; }
     if (!out) {

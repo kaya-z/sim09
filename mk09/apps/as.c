@@ -40,6 +40,7 @@ typedef int8_t s8;
 #include "mkstr.h"
 #endif
 
+#include "../include/version.h"
 #ifdef AS_HOST
 #define LOG printf
 static FILE *fin, *fout;
@@ -1272,7 +1273,8 @@ int main(int argc, char **argv)
     const char *src = NULL, *out = NULL;
     for (i = 1; i < argc; i++) if (argv[i][0] == ';' && argv[i][1] == 0) { tail = i; break; }
     for (i = 1; i < tail; i++) {
-        if (!strcmp(argv[i], "-r")) raw = 1;
+        if (!strcmp(argv[i], "-v")) { LOG("as (MK09 " MK09_VERSION ")\n(c) 2026 YUKARI Semiconductor Devices\n"); return 0; }
+        else if (!strcmp(argv[i], "-r")) raw = 1;
 #ifdef AS_OBJ
         else if (!strcmp(argv[i], "-c")) { raw = 1; objmode = 1; }
 #endif
@@ -1281,7 +1283,7 @@ int main(int argc, char **argv)
         else if (argv[i][0] == '-') { LOG("as: unknown option %s\n", argv[i]); return 2; }
         else src = argv[i];
     }
-    if (!src) { LOG("usage: as [-r] [-s] [-o out] file.s\n"); return 2; }
+    if (!src) { LOG("usage: as [-v] [-r] [-s] [-o out] file.s\n"); return 2; }
     if (!out) {
         u16 n = strlen(src);
         if (n > 59) n = 59;

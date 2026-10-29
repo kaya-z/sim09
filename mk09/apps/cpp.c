@@ -736,6 +736,7 @@ int main(int argc, char **argv)
         } else if (a[0] == '-' && a[1] == 'I') {
             if (nidirs < NIDIR) idirs[nidirs++] = a + 2;
         } else if (!strcmp(a, "-o") && i + 1 < tail) dst = argv[++i];
+        else if (!strcmp(a, "-v")) return cc_version("cpp");
         else if (a[0] == '-') { fputs_err("cpp: unknown option\n"); return 2; }
         else src = a;
     }

@@ -153,6 +153,20 @@ static int run_tail(int argc, char **argv, int at)
 #endif
 }
 
+/* -v: the name, the version and the copyright (every program of the compilers) */
+#include "../include/version.h"
+#ifdef CC_HOST
+#define cc_say(s) fputs(s, stdout)
+#else
+#define cc_say(s) putstr(s)
+#endif
+static int cc_version(const char *name)
+{
+    cc_say(name);
+    cc_say(" (MK09 " MK09_VERSION ")\n(c) 2026 YUKARI Semiconductor Devices\n");
+    return 0;
+}
+
 static void w_puts(wfile *w, const char *s) { while (*s) w_putc(w, *s++); }
 /* a signed decimal number */
 static void w_num(wfile *w, int v)

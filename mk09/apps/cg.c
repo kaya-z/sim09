@@ -1422,7 +1422,7 @@ int main(int argc, char **argv)
         if (!strcmp(argv[i], "-o") && i + 1 < tail) dst = argv[++i];
         else if (!strcmp(argv[i], "-L")) libmode = 1;
         else if (argv[i][0] == '-' && argv[i][1] == 'p' && strlen(argv[i]) < 8) strcpy(ptag, argv[i] + 2);
-        else if (argv[i][0] == '-') { err("unknown option"); return 2; }
+        else if (argv[i][0] == '-') { if (argv[i][1] == 'v') return cc_version("cg"); err("unknown option"); return 2; }
         else src = argv[i];
     }
     if (!src) {

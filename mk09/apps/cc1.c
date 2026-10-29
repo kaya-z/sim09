@@ -2414,6 +2414,7 @@ int main(int argc, char **argv)
     char outname[120];
     for (i = 1; i < tail; i++) {
         if (!strcmp(argv[i], "-o") && i + 1 < tail) dst = argv[++i];
+        else if (!strcmp(argv[i], "-v")) return cc_version("cc1");
         else if (argv[i][0] == '-') { err("unknown option"); return 2; }
         else src = argv[i];
     }

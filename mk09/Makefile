@@ -125,7 +125,7 @@ STACK_cc1 := 2100
 STACK_pas1 := 750
 STACK_pas0 := 700
 STACK_pmsg := 500
-STACK_cg := 1500
+STACK_cg := 2200
 $(B)/as.o: apps/as_text.h
 $(B)/cg.o $(B)/pas0.o: CFLAGS += -DCC_BUF=512
 OBJS_basic := $(B)/sfpa.o
