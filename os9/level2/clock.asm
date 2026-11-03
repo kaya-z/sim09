@@ -77,7 +77,6 @@ ClockIRQ1
          blo   VIRQend    No, skip time update and alarm check
          clr   <D.Sec     Reset second count to zero
 VIRQend
-         lbsr  DoPoll      a device may have interrupted together with the timer
          ldx   #TimerPort
          lda   #$8f
          sta   >TimerPort

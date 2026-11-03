@@ -26,8 +26,8 @@
 0006:                   edition  set   $06
 FFB0:                   TimerPort set  $ffb0
 0000:                   
-0000: 87CD00A4000DC181           mod   eom,name,tylg,atrv,ClkEnt,size
-0009: 005E0000
+0000: 87CD00A1000DC181           mod   eom,name,tylg,atrv,ClkEnt,size
+0009: 005B0000
 0000:                   
 0000:                   size     equ   .
 0000:                   
@@ -35,9 +35,9 @@ FFB0:                   TimerPort set  $ffb0
 0012: 06                         fcb   edition
 0013:                   
 0013: 15                SysTbl   fcb   F$Time
-0014: 006F                       fdb   FTime-*-2
+0014: 006C                       fdb   FTime-*-2
 0016: 16                         fcb   F$STime
-0017: 0086                       fdb   FSTime-*-2
+0017: 0083                       fdb   FSTime-*-2
 0019: 80                         fcb   $80
 001A:                   
 001A:                   
@@ -78,57 +78,56 @@ FFB0:                   TimerPort set  $ffb0
 004B: 2502                       blo   VIRQend    No, skip time update and alarm check
 004D: 0F2D                       clr   <D.Sec     Reset second count to zero
 004F:                   VIRQend
-004F: 17FFEB                     lbsr  DoPoll      a device may have interrupted together with the timer
-0052: 8EFFB0                     ldx   #TimerPort
-0055: 868F                       lda   #$8f
-0057: B7FFB0                     sta   >TimerPort
-005A: 6E9F00E0                   jmp   [>D.Clock]
-005E:                   
+004F: 8EFFB0                     ldx   #TimerPort
+0052: 868F                       lda   #$8f
+0054: B7FFB0                     sta   >TimerPort
+0057: 6E9F00E0                   jmp   [>D.Clock]
+005B:                   
 0002:                   TkPerTS  equ   2
-005E:                   
-005E:                   ClkEnt   equ   *
-005E: 3401                       pshs  cc
-0060: 1A50                       orcc  #FIRQMask+IRQMask       mask ints
-0062: 308DFFB4                   leax  >ClockIRQ,pcr
-0066: 9FF8                       stx   <D.IRQ
-0068:                          ifeq usefirq-1
-0068:                            leax  >ClockFIRQ,pcr
-0068:                            stx   $FFF6     must be a RAM
-0068:                          endc
-0068:                   * install system calls
-0068: 318DFFA7                   leay  >SysTbl,pcr
-006C: 103F32                     os9   F$SSvc
-006F: CC3B02                     ldd   #59*256+TkPerTS last second and time slice in minute
-0072: DD2D                       std   <D.Sec     Will prompt RTC read at next time slice
-0074: D730                       stb   <D.TSlice  set ticks per time slice
-0076: D72F                       stb   <D.Slice   set first time slice
-0078: 863C                       lda   #TkPerSec  Reset to start of second
-007A: 972E                       sta   <D.Tick
-007C:                   
-007C: 8EFFB0                     ldx   #TimerPort
-007F: C68F                       ldb   #$8f     start timer
-0081: E784                       stb   ,x
-0083: 3581                       puls  pc,cc
-0085:                   
-0085:                   * F$Time system call code
-0085: 8EFFB0            FTime    ldx   #TimerPort
-0088: C604                       ldb   #$04
-008A: E784                       stb   ,x
-008C: 3001                       leax  1,x        Address of system time packet
-008E: 109E50            RetTime  ldy   <D.Proc    Get pointer to current proc descriptor
-0091: E626                       ldb   P$Task,y   Process Task number
-0093: 96D0                       lda   <D.SysTsk  From System Task
-0095: EE44                       ldu   R$X,u
-0097: 108E0006          STime.Mv ldy   #6         Move 6 bytes
-009B: 103F38            FMove    os9   F$Move
-009E: 39                         rts
-009F:                   
-009F: 5F                FSTime   clrb
-00A0: 39                         rts
-00A1:                   
-00A1: BE5B24                     emod
-00A4:                   eom      equ   *
-00A4:                            end
+005B:                   
+005B:                   ClkEnt   equ   *
+005B: 3401                       pshs  cc
+005D: 1A50                       orcc  #FIRQMask+IRQMask       mask ints
+005F: 308DFFB7                   leax  >ClockIRQ,pcr
+0063: 9FF8                       stx   <D.IRQ
+0065:                          ifeq usefirq-1
+0065:                            leax  >ClockFIRQ,pcr
+0065:                            stx   $FFF6     must be a RAM
+0065:                          endc
+0065:                   * install system calls
+0065: 318DFFAA                   leay  >SysTbl,pcr
+0069: 103F32                     os9   F$SSvc
+006C: CC3B02                     ldd   #59*256+TkPerTS last second and time slice in minute
+006F: DD2D                       std   <D.Sec     Will prompt RTC read at next time slice
+0071: D730                       stb   <D.TSlice  set ticks per time slice
+0073: D72F                       stb   <D.Slice   set first time slice
+0075: 863C                       lda   #TkPerSec  Reset to start of second
+0077: 972E                       sta   <D.Tick
+0079:                   
+0079: 8EFFB0                     ldx   #TimerPort
+007C: C68F                       ldb   #$8f     start timer
+007E: E784                       stb   ,x
+0080: 3581                       puls  pc,cc
+0082:                   
+0082:                   * F$Time system call code
+0082: 8EFFB0            FTime    ldx   #TimerPort
+0085: C604                       ldb   #$04
+0087: E784                       stb   ,x
+0089: 3001                       leax  1,x        Address of system time packet
+008B: 109E50            RetTime  ldy   <D.Proc    Get pointer to current proc descriptor
+008E: E626                       ldb   P$Task,y   Process Task number
+0090: 96D0                       lda   <D.SysTsk  From System Task
+0092: EE44                       ldu   R$X,u
+0094: 108E0006          STime.Mv ldy   #6         Move 6 bytes
+0098: 103F38            FMove    os9   F$Move
+009B: 39                         rts
+009C:                   
+009C: 5F                FSTime   clrb
+009D: 39                         rts
+009E:                   
+009E: 027179                     emod
+00A1:                   eom      equ   *
+00A1:                            end
 0 Pass 2 errors.
 
 SYMBOL TABLE
@@ -151,7 +150,7 @@ SYMBOL TABLE
     C$RARR 01 0009     C$RGT 01 001c    C$RPET 01 0001    C$RPRT 01 0004
   C$SHRARR 01 0019      C$SI 01 000f      C$SO 01 000e    C$SPAC 01 0020
       C$UP 01 001e    C$XOFF 01 0013     C$XON 01 0011     CARRY 00 0001
-   CBLCODE 00 0005     CCODE 00 0004    CLKENT 02 005e  CLOCKIRQ 02 001a
+   CBLCODE 00 0005     CCODE 00 0004    CLKENT 02 005b  CLOCKIRQ 02 001a
  CLOCKIRQ1 02 0045  CNTRLBIT 00 0002    COCO.D 01 0001     COLOR 01 0001
     COLOR3 01 0002    CONDEM 00 0002  CPUSPEED 01 0002   CPUTYPE 01 0002
    CRCCON1 00 0080  CRCCON23 00 0fe3    CRCOFF 00 0000     CRCON 00 0001
@@ -234,7 +233,7 @@ SYMBOL TABLE
   E$UNKSYM 02 000a  E$UNMCNT 02 0045      E$UP 02 00c5   E$USIGP 02 00e9
   E$VALRNG 02 0034   E$WADEF 02 00b8      E$WP 02 00f2   E$WRITE 02 00f5
    E$WRSUB 02 0041  E$WUNDEF 02 00c4   EDITION 01 0006    ENTIRE 00 0080
-   EOFLOCK 00 0004       EOM 02 00a4     EXEC. 00 0004   F$ALARM 02 001e
+   EOFLOCK 00 0004       EOM 02 00a1     EXEC. 00 0004   F$ALARM 02 001e
   F$ALHRAM 02 0053   F$ALL64 02 0030  F$ALLBIT 02 0013  F$ALLIMG 02 003a
   F$ALLPRC 02 004b  F$ALLRAM 02 0039  F$ALLTSK 02 003f   F$APROC 02 002c
     F$BOOT 02 0035   F$BTMEM 02 0036   F$CHAIN 02 0005  F$CLRBLK 02 0050
@@ -263,10 +262,10 @@ SYMBOL TABLE
   FEATURE1 02 001b  FEATURE2 02 001c  FILELOCK 00 0002  FIRQMASK 00 0040
      FLMGR 00 00d0    FMCDIR 02 0009    FMCLOS 02 0024    FMCREA 02 0000
     FMDLET 02 000c    FMGSTA 02 001e    FMMDIR 02 0006    FMOPEN 02 0003
-     FMOVE 02 009b    FMRDLN 02 0018    FMREAD 02 0012    FMSEEK 02 000f
+     FMOVE 02 0098    FMRDLN 02 0018    FMREAD 02 0012    FMSEEK 02 000f
     FMSSTA 02 0021   FMT.DNS 00 0002  FMT.SIDE 00 0001  FMT.T0DN 00 0020
   FMT.TDNS 00 0004    FMWRIT 02 0015    FMWRLN 02 001b  FRTNCODE 00 0006
-    FSTIME 02 009f     FTIME 02 0085  GIMEREGS 00 ff00     H6309 06 0000
+    FSTIME 02 009c     FTIME 02 0082  GIMEREGS 00 ff00     H6309 06 0000
   HALFCRRY 00 0020   HW.PAGE 01 0007      HZ50 00 0001      HZ60 00 0002
   I$ATTACH 02 0080  I$CHGDIR 02 0086   I$CLOSE 02 008f  I$CREATE 02 0083
   I$DELETE 02 0087  I$DELETX 02 0090  I$DETACH 02 0081     I$DUP 02 0082
@@ -349,7 +348,7 @@ SYMBOL TABLE
       R$DP 00 0003      R$PC 00 000a    R$SIZE 00 000c       R$U 00 0008
        R$X 00 0004       R$Y 00 0006  RAMCHECK 00 0001  RAMCOUNT 00 0001
   RAMINUSE 00 0001     RBF.D 01 0001   RCDLOCK 00 0001     READ. 00 0001
-     REENT 00 0080   RETTIME 02 008e       REV 01 0001  REVSMASK 00 000f
+     REENT 00 0080   RETTIME 02 008b       REV 01 0001  REVSMASK 00 000f
   RIGHTBIT 00 0040  ROMBLOCK 00 003f  ROMCHECK 00 0001  ROMCOUNT 00 0001
    S$ABORT 02 0002   S$ALARM 02 0005     S$HUP 02 0004  S$INTRPT 02 0003
     S$KILL 02 0000    S$WAKE 02 0001  S$WINDOW 02 0004     SBRTN 00 0020
@@ -379,7 +378,7 @@ SYMBOL TABLE
   SS.TICKS 02 0010   SS.TONE 02 0098  SS.ULINK 02 0008  SS.UMBAR 02 0095
   SS.UNFRZ 02 0081SS.VARSECT 02 0012   SS.VCTR 00 0080   SS.VSIG 00 0081
     SS.WFM 02 0017  SS.WNSET 02 0086   SS.WTRK 02 0004    STDSTR 02 0012
-  STIME.MV 02 0097     STOP1 00 0000     STOP2 00 0010  STP.12MS 00 0002
+  STIME.MV 02 0094     STOP1 00 0000     STOP2 00 0010  STP.12MS 00 0002
   STP.20MS 00 0001  STP.30MS 00 0000   STP.6MS 00 0003   SUSPEND 00 0008
   SYSSTATE 00 0080    SYSSTR 02 0010   SYSTASK 00 0000    SYSTBL 02 0013
      SYSTM 00 00c0 TIMERPORT 01 ffb0    TIMOUT 00 0020  TIMSLEEP 00 0040
