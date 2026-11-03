@@ -54,10 +54,22 @@ ClockIRQ
          ldx   #TimerPort
          lda   ,x
          bita  #$10
-         beq   L00AE
-L00AE    leax  ClockIRQ1,pcr
+         bne   L00AE
+* not the timer (the doorbell of the cross link of the Matenro machine, or another device): only poll the devices
+         leax  DoPoll,pcr
+         stx   <D.SvcIRQ
+         lda   #$FF
+         sta   <D.QIRQ    not a clock IRQ: the kernel returns at once after the service routine
+         jmp   [D.XIRQ]   Chain through Kernel to continue IRQ handling
+L00AE    clr   <D.QIRQ
+         leax  ClockIRQ1,pcr
          stx   <D.SvcIRQ
          jmp   [D.XIRQ]   Chain through Kernel to continue IRQ handling
+* call the polling routine of IOMan (the devices that entered themselves with F$IRQ) until nobody is left
+DoPoll   jsr   [>D.Poll]
+         bcc   DoPoll
+         clrb
+         rts
 ClockIRQ1
          inc   <D.Sec     go up one second
          lda   <D.Sec     grab current second
@@ -65,6 +77,7 @@ ClockIRQ1
          blo   VIRQend    No, skip time update and alarm check
          clr   <D.Sec     Reset second count to zero
 VIRQend
+         lbsr  DoPoll      a device may have interrupted together with the timer
          ldx   #TimerPort
          lda   #$8f
          sta   >TimerPort
