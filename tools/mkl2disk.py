@@ -8,7 +8,7 @@ os9/level2/l2boot.asm (one record, LSN 2, and the entry record, LSN 3).  The loa
 mode, reads the ROM image of the Level 2 machine (os9/os9v2_tn9k.rom: 106 sectors, LSN 1100-1205, marked used in the
 allocation map) into the physical memory and starts it.  The disk is /d0 of the Level 2 system.
 
-Starts from os9/OS9.dsk (the Level 1 disk), makes it larger (default 1440 sectors: DD.TOT and the allocation map) and
+Starts from os9/OS9.dsk (the Level 1 disk), makes it larger (default 2048 sectors: DD.TOT and the allocation map) and
 replaces the commands that have a Level 2 version (os9/level2/cmds: the ones that look at the memory and the system:
 dir, mdir, mfree, procs, ident, jwp ...) by it.  The work is done by sim09 -2 itself (copy from /v0 to /d0, attr),
 so sim09 has to be built.  The other commands (build, rename, display, tmode ...) are the same on both levels."""
@@ -20,7 +20,7 @@ SEC = 256
 
 def main():
     args = sys.argv[1:]
-    size, out = 1440, os.path.join(ROOT, 'os9', 'OS9L2.dsk')
+    size, out = 2048, os.path.join(ROOT, 'os9', 'OS9L2.dsk')
     while args and args[0].startswith('-'):
         if args[0] == '-s': size = int(args[1])
         elif args[0] == '-o': out = args[1]
@@ -57,17 +57,33 @@ def main():
             names.append(f)
     names.append('shutdown')
     # only the commands that the disk has (the others are not on it): from the disk's own cmds directory
-    have = "attr basic09 cmp copy date dhry del deldir dir dump echo free ident jwp link list load login makdir mdir mfree procs pwd pxd runb shutdown sleep tee tsmon unlink ysdbasic".split()
+    have = "as attr basic09 cg cmp copy date dhry del deldir dir dump echo free ident jwp link list load login makdir mdir mfree pas0 pas1 pc procs pwd pxd runb shutdown sleep tee tsmon unlink ysdbasic".split()
     names = [n for n in have if n in names or n == 'shutdown']
     lines = ['timeout 3000000', 'expect "OS9:"', 'send "chx /v0/cmds\\r"', 'expect "OS9:"']
     for n in names:
         lines += ['send "del /d0/cmds/%s\\r"' % n, 'expect "OS9:"', 'send "copy /v0/cmds/%s /d0/cmds/%s\\r"' % (n, n), 'expect "OS9:"',
                   'send "attr /d0/cmds/%s e pe r pr\\r"' % n, 'expect "OS9:"']
+    # the Pascal compiler (os9/pascal): its library in /d0/LIB and the samples in /d0/PAS; they are copied from the host through /v0
+    pas = os.path.join(ROOT, 'os9', 'pascal')
+    libs = sorted(os.listdir(os.path.join(pas, 'lib'))) if os.path.isdir(os.path.join(pas, 'lib')) else []
+    samples = sorted(f for f in os.listdir(os.path.join(pas, 'samples'))) if os.path.isdir(os.path.join(pas, 'samples')) else []
+    stage = tempfile.mkdtemp(prefix='l2stage_')
+    os.symlink(cdir, os.path.join(stage, 'cmds'))
+    if libs:
+        os.symlink(os.path.join(pas, 'lib'), os.path.join(stage, 'lib'))
+        lines += ['send "makdir /d0/LIB\\r"', 'expect "OS9:"']
+        for f in libs:
+            lines += ['send "copy /v0/lib/%s /d0/LIB/%s\\r"' % (f, f), 'expect "OS9:"']
+    if samples:
+        os.symlink(os.path.join(pas, 'samples'), os.path.join(stage, 'pas'))
+        lines += ['send "makdir /d0/PAS\\r"', 'expect "OS9:"']
+        for f in samples:
+            lines += ['send "copy /v0/pas/%s /d0/PAS/%s\\r"' % (f, f), 'expect "OS9:"']
     lines += ['send "free /d0\\r"', 'expect "OS9:"', 'quit']
     with tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False) as t:
         t.write('\n'.join(lines) + '\n')
     r = subprocess.run([os.path.join(ROOT, 'sim09'), '-2', '-max', '-rom', os.path.join(ROOT, 'os9', 'os9v2.rom'), '-0', out,
-                        '-v', os.path.join(ROOT, 'os9', 'level2'), '-script', t.name], capture_output=True, env=dict(os.environ, LC_ALL='C'))
+                        '-v', stage, '-script', t.name], capture_output=True, env=dict(os.environ, LC_ALL='C'))
     os.unlink(t.name)
     txt = r.stdout.decode('latin1')
     bad = [l for l in txt.replace('\r', '').split('\n') if 'ERROR' in l.upper() and 'del' not in l.lower()]

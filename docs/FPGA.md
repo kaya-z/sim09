@@ -94,7 +94,7 @@ FUZIX、MK09、OS-9 Level 1 と同じく、**カードを替えるだけ**で起
 6. カードが読めないとき (カードなしなど) は、ローダは電源を切る (`$FF8F`)。
 
 * 実装は `rtl/sbc09_soc.v` (`l2` というモード)。MMU は、16 個の 8 ビットのレジスタと、CPU のアドレスを物理アドレスに変える回路です。
-* **カード**は `os9/OS9L2.dsk` (368,640 バイト、`make -C os9 OS9L2.dsk`。`tools/mkl2disk.py` が、`OS9.dsk` を 1440 セクタに広げ、ローダと ROM イメージを書き、`dir`、`mdir`、`mfree`、`procs`、`jwp`、`dhry` など Level 2 の版があるコマンドを入れ替えます)。
+* **カード**は `os9/OS9L2.dsk` (524,288 バイト、`make -C os9 OS9L2.dsk`。`tools/mkl2disk.py` が、`OS9.dsk` を 2048 セクタに広げ、ローダと ROM イメージを書き、`dir`、`mdir`、`mfree`、`procs`、`jwp`、`dhry` など Level 2 の版があるコマンドを入れ替えます)。
   `dd if=os9/OS9L2.dsk of=/dev/sdX bs=512 conv=fsync`。ドライブ 1 は Level 1 と同じ 128MB の位置です。
 * Level 2 の `Init` と `SysGo` (`init_tn9k`、`sysgo_tn9k`) は、ディスクを `/d0` にして、**起動のとき自動で実行ディレクトリを `/d0/cmds` にします** (`chx` は要りません。`/v0` はないので)。機械の名前は `Tang Nano 9K`。
 * 実機の結果 (別のビットストリームで確かめました): `mfree` が 1,984KB (シミュレータと同じ)、`dir`、`mdir`、`jwp -v`、`dhry` (204 Dhrystones/s。シミュレータの Level 2 は 208) が動く。

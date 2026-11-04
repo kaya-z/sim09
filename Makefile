@@ -42,7 +42,7 @@ skk:
 	$(MAKE) -C os9/skk
 
 # ------------------------------------------------------------------ tests
-test: all test-cpu test-os9 test-jwp test-dhry test-net test-fuzix test-hdmi test-fpga
+test: all test-cpu test-os9 test-jwp test-dhry test-net test-fuzix test-hdmi test-fpga test-pascal
 
 test-cpu: tests/cpu_test
 	tests/cpu_test
@@ -81,6 +81,10 @@ test-hdmi:
 test-fpga:
 	LC_ALL=C python3 tests/fpga_test.py
 
+# the Pascal compiler on OS-9 Level 2 (programs made by the PC builds and by pc on OS-9, run on OS-9); needs gcc and python3
+test-pascal: all
+	LC_ALL=C python3 mk09/tests/pas9_test.py
+
 test-cross: all
 	tests/crosscheck/crosscheck.sh $(REF_SBC09)
 
@@ -97,4 +101,4 @@ distclean: clean
 
 
 
-.PHONY: all tools os9 skk test test-cpu test-diff test-os9 test-jwp test-dhry test-net test-fuzix test-hdmi test-fpga test-cross clean distclean
+.PHONY: all tools os9 skk test test-cpu test-diff test-os9 test-jwp test-dhry test-net test-fuzix test-hdmi test-fpga test-pascal test-cross clean distclean

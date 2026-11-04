@@ -32,6 +32,7 @@
 #include <stdint.h>
 typedef uint8_t u8;
 typedef uint16_t u16;
+typedef uint32_t u32;
 typedef int8_t s8;
 #define NULL ((void *)0)
 #else
@@ -40,7 +41,12 @@ typedef int8_t s8;
 #include "mkstr.h"
 #endif
 
-#define TOOL_VERSION "1.10"          /* the version of this program: changed when it changes (-v) */
+/* as -9 makes an OS-9 module (os9/pascal): in the build for OS-9 (-DOS9) and in the PC build (-DAS_HOST); not in the build for MK09, which has no room for it */
+#if defined(OS9) || defined(AS_HOST)
+#define AS_OS9 1
+#endif
+
+#define TOOL_VERSION "1.11"          /* the version of this program: changed when it changes (-v) */
 #ifdef AS_HOST
 #define LOG printf
 static FILE *fin, *fout;
@@ -53,10 +59,17 @@ static int rd(void *b, int n) { return read(fin, b, n); }
 static int wr(const void *b, int n) { return write(fout, b, n); }
 #endif
 
+#ifdef OS9                      /* (OS-9 Level 2: a program has the whole address space, so a bigger program can be assembled) */
+#define NSYM    1100
+#define NPOOL   4400            /* the characters of the names */
+#define NHASH   128
+#define NREL    4000
+#else
 #define NSYM    600
 #define NPOOL   2400            /* the characters of the names */
 #define NHASH   64
-#define NREL    1000 
+#define NREL    1000
+#endif
 #define LINEMAX 128
 #define NAMEMAX 17
 
@@ -144,6 +157,11 @@ static int lookup(const char *n, u8 create)
 /* ---------------------------------------------------------------- state */
 static u8 pass;
 static u8 errors, e1, noout, raw, showsyms, userrt, inbss;
+#ifdef AS_OS9
+static u8 os9mode;
+#else
+#define os9mode 0
+#endif
 static int pc, bpc, bssmax, imgend, stksz = 512;
 static u16 lineno;
 static u16 scope;
@@ -974,10 +992,8 @@ static int getline_(char *dst)
     return 1;
 }
 
-#ifndef AS_HOST
 static void do_obj(const char *s);
 static void do_objx(const char *s);
-#endif
 static u8 ophead[128], opnext[190];          /* the instructions with the same first letter: index + 1 of the first, of the next one */
 
 static void opindex(void)
@@ -1066,10 +1082,8 @@ static void assemble_line(char *l)
         for (k = ophead[(u8)mnem[0] & 127]; k; k = opnext[k - 1])
             if (!strcmp(optab[k - 1].name, mnem)) { instruction(&optab[k - 1], oper); emitins(); return; }
     }
-#ifndef AS_HOST
     if (!strcmp(mnem, "OBJ")) { do_obj(oper); return; }
     if (!strcmp(mnem, "OBJX")) { do_objx(oper); return; }
-#endif
     if (!strcmp(mnem, "FCB") || !strcmp(mnem, "BYTE") || !strcmp(mnem, ".BYTE")) { if (inbss) err("data in the bss"); else listdir(0, oper); return; }
     if (!strcmp(mnem, "FDB") || !strcmp(mnem, "WORD") || !strcmp(mnem, ".WORD")) { if (inbss) err("data in the bss"); else listdir(1, oper); return; }
     if (!strcmp(mnem, "FCC")) { if (inbss) err("data in the bss"); else putstring(oper, 0); return; }
@@ -1098,9 +1112,31 @@ static void assemble_line(char *l)
  * cg writes these for the blocks that the program needs.  The code of the file is a stream of items: 1 n bytes (code), 2 kind hi lo (a word with an address of the block:
  * the start of its code or of its bss is added), 3 kind n name hi lo (a word with a name of the program or another block: its value is added, or the value minus the start
  * of the block for the distance of a branch). */
-#ifndef AS_HOST
+#ifdef AS_HOST
+/* (the PC build reads the library from the directory in $AS_LIB; the tests of the OS-9 build use it) */
+static FILE *objfp[2];
+static int obj_open(u8 f)
+{
+    char path[200];
+    const char *d = getenv("AS_LIB");
+    if (objfp[f]) return 0;
+    snprintf(path, sizeof(path), "%s/%s", d ? d : "/LIB", f ? "RT.OBJ" : "CLIB.OBJ");
+    objfp[f] = fopen(path, "rb");
+    return objfp[f] ? 0 : -1;
+}
+static void obj_seek(u8 f, u16 hi, u16 lo) { fseek(objfp[f], ((long)hi << 16) | lo, SEEK_SET); }
+static int obj_read(u8 f, u8 *b, int n) { return (int)fread(b, 1, n, objfp[f]); }
+#else
 static const char *objname[2] = { "/LIB/CLIB.OBJ", "/LIB/RT.OBJ" };
 static int objfd[2] = { -1, -1 };
+static int obj_open(u8 f)
+{
+    if (objfd[f] < 0) objfd[f] = open(objname[f], FO_READ);
+    return objfd[f] < 0 ? -1 : 0;
+}
+static void obj_seek(u8 f, u16 hi, u16 lo) { u16 rh, rl; seek(objfd[f], hi, lo, 0, &rh, &rl); }
+static int obj_read(u8 f, u8 *b, int n) { return read(objfd[f], b, n); }
+#endif
 static u8 obf[96];
 static int obp, obn;
 static u8 objf;
@@ -1109,7 +1145,7 @@ static u16 objpc, objbpc;
 static int ogetc(void)
 {
     if (obp >= obn) {
-        obn = read(objfd[objf], obf, sizeof(obf));
+        obn = obj_read(objf, obf, sizeof(obf));
         obp = 0;
         if (obn <= 0) { obn = 0; return -1; }
     }
@@ -1132,11 +1168,10 @@ static void do_obj(const char *s)
     objpc = (u16)pc;
     objbpc = (u16)bpc;
     if (pass == 2 && !noout && !errors) {
-        u16 done = 0, rh, rl;
+        u16 done = 0;
         if (objf > 1) { err("bad library file"); return; }
-        if (objfd[objf] < 0) objfd[objf] = open(objname[objf], FO_READ);
-        if (objfd[objf] < 0) { err("cannot open the library"); return; }
-        seek(objfd[objf], hi, lo, 0, &rh, &rl);
+        if (obj_open(objf)) { err("cannot open the library"); return; }
+        obj_seek(objf, hi, lo);
         obp = obn = 0;
         while (done < cs) {
             int op = ogetc();
@@ -1192,7 +1227,6 @@ static void do_objx(const char *s)
     if (kind) defsym(nm, objbpc + off, 1, 1, 0);
     else defsym(nm, objpc + off, 1, 0, 0);
 }
-#endif
 
 static void run_pass(void)
 {
@@ -1203,7 +1237,11 @@ static void run_pass(void)
     pc = 0; bpc = 0; inbss = 0; opos = 0; lineno = 0; scope = 0; nrel = 0; rlen = 0; lastrel = 0; uline = 0; jbn = 0;
     srcmode = raw ? 1 : 0;
     sline = 0;
+#ifdef AS_OS9
+    srctext = os9mode ? as_start9 : as_start;
+#else
     srctext = as_start;
+#endif
     fpos = fcnt = 0;
 #ifdef AS_HOST
     fseek(fin, 0, SEEK_SET);
@@ -1214,7 +1252,7 @@ static void run_pass(void)
         if (srcmode == 3) break;
         if (!getline_(l)) {
             if (srcmode == 0) { srcmode = 1; curfile = curfile; continue; }
-            if (srcmode == 1 && userrt && !raw) { srcmode = 2; sline = 0; srctext = as_runtime; continue; }
+            if (srcmode == 1 && userrt && !raw && !os9mode) { srcmode = 2; sline = 0; srctext = as_runtime; continue; }
             srcmode = 3;
             break;
         }
@@ -1236,6 +1274,109 @@ static void print_symbols(void)
         LOG("%04x %c %s\n", (u16)(syms[i].val + ((syms[i].flags & F_BSS) ? imgend : 0)), (syms[i].flags & F_REL) ? 'A' : ' ', nm);
     }
 }
+
+#ifdef AS_OS9
+/* ---------------------------------------------------------------- the OS-9 module (as -9)
+ * The file is the image of an MX program (as_start9: the module header, the stub, the program, the relocation table).  When it is complete, the fields
+ * that were not known when the header was written are filled in (the size, the offset of the name, the parity, the size of the data area), the name
+ * (the last character with bit 7 set) and the CRC are added at the end:  F$VModul checks the parity and the CRC when the module is loaded. */
+static u32 ctab[16];
+
+static void crcinit(void)
+{
+    u8 i, j;
+    for (i = 0; i < 16; i++) {
+        u32 c = (u32)i << 20;
+        for (j = 0; j < 4; j++) { c <<= 1; if (c & 0x1000000UL) c ^= 0x1800063UL; }
+        ctab[i] = c & 0xFFFFFFUL;
+    }
+}
+
+static u32 crc24(u32 crc, const u8 *b, u16 n)
+{
+    while (n--) {
+        u8 v = *b++;
+        crc = ((crc << 4) ^ ctab[((crc >> 20) ^ (v >> 4)) & 15]) & 0xFFFFFFUL;
+        crc = ((crc << 4) ^ ctab[((crc >> 20) ^ (v & 15)) & 15]) & 0xFFFFFFUL;
+    }
+    return crc;
+}
+
+static int os9_finish(const char *path, u16 imglen, u16 memsz)
+{
+    u8 hd[13], tail[36];
+    u8 buf[128];
+    char nm[32];
+    u16 k, b, nl, total, left;
+    u8 par = 0;
+    u32 crc = 0xFFFFFFUL;
+#ifdef AS_HOST
+    FILE *f = fopen(path, "r+b");
+    if (!f) return -1;
+#else
+    int f = open(path, FO_READ | FO_WRITE);
+    u16 rh, rl;
+    if (f < 0) return -1;
+#endif
+    /* the name: the file name without the directory and the extension */
+    k = (u16)strlen(path);
+    b = k;
+    while (b && path[b - 1] != '/') b--;
+    nl = 0;
+    while (b < k && path[b] != '.' && nl < 29) nm[nl++] = path[b++];
+    if (!nl) { nm[0] = 'a'; nl = 1; }
+    total = (u16)(imglen + nl + 4);
+    hd[0] = 0x87; hd[1] = 0xCD;
+    hd[2] = (u8)(total >> 8); hd[3] = (u8)total;
+    hd[4] = (u8)(imglen >> 8); hd[5] = (u8)imglen;
+    hd[6] = 0x11; hd[7] = 0x81;
+    for (k = 0; k < 8; k++) par ^= hd[k];
+    hd[8] = (u8)(par ^ 0xFF);
+    hd[9] = 0; hd[10] = 13;
+    hd[11] = (u8)(memsz >> 8); hd[12] = (u8)memsz;
+    crcinit();
+    for (k = 0; k < nl; k++) tail[k] = (u8)nm[k];
+    tail[nl - 1] |= 0x80;
+    tail[nl] = 1;                                      /* the edition */
+#ifdef AS_HOST
+    fseek(f, 0, SEEK_SET);
+    fwrite(hd, 1, 13, f);
+    fseek(f, 0, SEEK_SET);
+    left = imglen;
+    while (left) {
+        u16 n = left > sizeof(buf) ? (u16)sizeof(buf) : left;
+        if (fread(buf, 1, n, f) != n) { fclose(f); return -1; }
+        crc = crc24(crc, buf, n);
+        left = (u16)(left - n);
+    }
+    crc = crc24(crc, tail, nl + 1);
+    crc ^= 0xFFFFFFUL;
+    tail[nl + 1] = (u8)(crc >> 16); tail[nl + 2] = (u8)(crc >> 8); tail[nl + 3] = (u8)crc;
+    fseek(f, imglen, SEEK_SET);
+    fwrite(tail, 1, nl + 4, f);
+    fclose(f);
+#else
+    seek(f, 0, 0, 0, &rh, &rl);
+    write(f, hd, 13);
+    seek(f, 0, 0, 0, &rh, &rl);
+    left = imglen;
+    while (left) {
+        u16 n = left > sizeof(buf) ? (u16)sizeof(buf) : left;
+        if (read(f, buf, n) != (int)n) { close(f); return -1; }
+        crc = crc24(crc, buf, n);
+        left = (u16)(left - n);
+    }
+    crc = crc24(crc, tail, nl + 1);
+    crc ^= 0xFFFFFFUL;
+    tail[nl + 1] = (u8)(crc >> 16); tail[nl + 2] = (u8)(crc >> 8); tail[nl + 3] = (u8)crc;
+    seek(f, 0, imglen, 0, &rh, &rl);
+    write(f, tail, nl + 4);
+    close(f);
+#endif
+    return 0;
+}
+
+#endif
 
 static char outname[64];
 
@@ -1275,6 +1416,9 @@ int main(int argc, char **argv)
     for (i = 1; i < tail; i++) {
         if (!strcmp(argv[i], "-v")) { LOG("as " TOOL_VERSION "\n(c) 2026 YUKARI Semiconductor Devices\n"); return 0; }
         else if (!strcmp(argv[i], "-r")) raw = 1;
+#ifdef AS_OS9
+        else if (!strcmp(argv[i], "-9")) os9mode = 1;
+#endif
 #ifdef AS_OBJ
         else if (!strcmp(argv[i], "-c")) { raw = 1; objmode = 1; }
 #endif
@@ -1284,12 +1428,19 @@ int main(int argc, char **argv)
         else src = argv[i];
     }
     if (!src) { LOG("usage: as [-v] [-r] [-s] [-o out] file.s\n"); return 2; }
+#ifdef AS_OS9
+    if (os9mode && raw) { LOG("as: -9 and -r do not go together\n"); return 2; }
+#endif
     if (!out) {
         u16 n = strlen(src);
         if (n > 59) n = 59;
         memcpy(outname, src, n);
         outname[n] = 0;
         if (n > 2 && outname[n - 2] == '.' && ucase(outname[n - 1]) == 'S') { outname[n - 2] = 0; }
+#ifdef AS_OS9
+        if (os9mode) { u16 k = strlen(outname), b = k; while (b && outname[b - 1] != '/') b--; memmove(outname, outname + b, k - b + 1); }
+        else
+#endif
         strcat(outname, raw ? ".bin" : ".mx");
         out = outname;
     }
@@ -1330,7 +1481,11 @@ int main(int argc, char **argv)
             fout = fopen(out, "wb");
             if (!fout) { LOG("as: cannot create %s\n", out); return 2; }
 #else
+#ifdef OS9
+            fout = open(out, FO_WRITE | FO_CREATE | FO_TRUNC | (os9mode ? FO_EXEC : 0));
+#else
             fout = open(out, FO_WRITE | FO_CREATE | FO_TRUNC);
+#endif
             if (fout < 0) { LOG("as: cannot create %s\n", out); return 2; }
 #endif
         }
@@ -1375,6 +1530,15 @@ int main(int argc, char **argv)
         }
         return 1;
     }
+#ifdef AS_OS9
+    if (os9mode) {
+        /* the data area: the copy of the program with its table, or the program with its bss, the stack, the start-up block (320) and some room */
+        u16 mem = (u16)(imgend + rlen + 1);
+        if ((u16)(imgend + bssmax) > mem) mem = (u16)(imgend + bssmax);
+        mem = (u16)(mem + stksz + 400);
+        if (os9_finish(out, (u16)(imgend + rlen + 1), mem)) { LOG("as: cannot finish the module %s\n", out); return 2; }
+    }
+#endif
 #ifdef AS_OBJ
     if (objmode) {
         u16 k;

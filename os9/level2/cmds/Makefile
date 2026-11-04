@@ -9,7 +9,9 @@ CMDS1 = asm attr calldbg cmp config copy cputype date debug del deldir devs dir_
         echo edit disasm free ident irqs link list load makdir procs prompt \
         shellplus sleep tee touch tsmon unlink
 
-all : dhry jwp ysdbasic help error $(CMDS2) $(CMDS1) sbc09 pxd pwd dir kmode nc login shutdown
+PASCAL = pc pas0 pas1 cg as
+
+all : dhry jwp ysdbasic $(PASCAL) help error $(CMDS2) $(CMDS1) sbc09 pxd pwd dir kmode nc login shutdown
 
 $(CMDS2) :
 	$(A09) -l $@.lst -o $@ $(SRC2)/$@.asm
@@ -41,6 +43,11 @@ ysdbasic :
 	$(MAKE) -C ../../ysdbasic ysdbasic-l2
 	cp ../../ysdbasic/ysdbasic-l2 ysdbasic
 .PHONY : ysdbasic
+# the Pascal compiler (the programs of MK09, Level 2 only) is built (CMOC, if installed) in os9/pascal; prebuilt modules are part of the distribution
+$(PASCAL) :
+	$(MAKE) -C ../../pascal $@
+	cp ../../pascal/$@ $@
+.PHONY : $(PASCAL)
 # the word processor is built (CMOC, if installed) in os9/jwp; a prebuilt module is part of the distribution
 jwp :
 	$(MAKE) -C ../../jwp jwp-l2

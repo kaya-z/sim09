@@ -13,6 +13,7 @@ MK09 は、MC6809 (`sim09` と Tang Nano 9K の FPGA) で動く小さなマイ�
 * カーネル: 6809 のアセンブラ (標準、2KB) と、移植用の C (同じテストを通る)
 * サーバ (C): TTY (日本語の行編集)、DISK、FS (FAT16, PC で読み書きできる)、PM (プログラムの読み込み)、MM (メモリ管理。アセンブラ、`servers/mm.s`)
 * **MK09 の上で C コンパイラ (`cc`) と 6809 のアセンブラ (`as`) が動く** (`cc /asm/hello.c -o /hello.mx`。C の部分集合。中間表現 (IR) を経由する: [docs/IR.md](docs/IR.md))
+* **MK09 の上で Pascal コンパイラ (`pc`) が動く** (`pc /pas/hello.pas -o /hello.mx`。`string` `real` `longint` `set` ファイルなど。[docs/PASCAL.md](docs/PASCAL.md))。**同じコンパイラが NitrOS-9 Level 2 でも動く** (`../os9/pascal`)
 * **MK09 の上で 6809 のアセンブラ (`as`) が動く**: アセンブラのプログラムをその場で作って走らせられる (`as /asm/hello.s -o /hello.mx`)
 * **プログラムは位置に依存せず (自分で再配置する MX 形式)、シェルのほかに最大 4 本 (タスクの数とメモリの範囲で) 同時に動かせる** (`コマンド &`、`ps` `kill` `mem`)
 * ブート ROM は FUZIX と同じ 256 バイト。**FUZIX 用の FPGA ビットストリームがそのまま使えます** (SD カードを替えるだけ)
@@ -23,6 +24,7 @@ MK09 は、MC6809 (`sim09` と Tang Nano 9K の FPGA) で動く小さなマイ�
 | [docs/SPEC.md](docs/SPEC.md) | 仕様書: システムコール、メッセージ、サーバの要求、ファイルの形式、ブートイメージ、ハードウェア |
 | [docs/DESIGN.md](docs/DESIGN.md) | 設計書: 構成、メモリの配分、カーネルとサーバの設計、移植性、性能 |
 | [docs/IR.md](docs/IR.md) | C コンパイラ (cpp, cc1, cg, cc) と中間表現 (IR) の仕様 |
+| [docs/PASCAL.md](docs/PASCAL.md) | Pascal コンパイラ (`pc`): 言語、作り、OS-9 Level 2 版 |
 | [docs/YSD9000.md](docs/YSD9000.md) | 分家 (YSD9000 版 MK09) の機能の記録: 本家との違い、取り込んだもの・取り込まなかったものとその理由 |
 
 ## すぐ動かす

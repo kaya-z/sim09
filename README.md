@@ -23,6 +23,7 @@ C 言語で書かれた MC6809 シミュレータです。Debian 12 (gcc 12) で
 * **FUZIX** (UNIX 風 OS): **64KB のフラットメモリ (MMU なし)** で起動してシェルまで動く。プロセスはスワップで切り替える (29KiB / プロセス)。
   `./sim09 -rom fuzix/images/bootrom.bin -0 fuzix.dsk` → [docs/FUZIX.md](docs/FUZIX.md)
 * **MK09**: MC6809 用のマイクロカーネルと、その上で動く小さな OS。シェル、`jwp`、BASIC、**C コンパイラとアセンブラ**まで MK09 の上で動く (下の「MK09」の節) → [mk09/README.md](mk09/README.md)
+* **Pascal** (`pc`): MK09 の Pascal コンパイラを **OS-9 Level 2** に移したもの。OS-9 の上で `pc hello.pas` と打つと OS-9 のモジュールができる (`pas0` `pas1` `cg` `as` が順に動く。`string` `real` `longint` `set` ファイルなど)。`OS9L2.dsk` に入っている。Level 1 はメモリが足りず対象外 → [docs/OS9_MANUAL.md](docs/OS9_MANUAL.md) の 9.5 節、[mk09/docs/PASCAL.md](mk09/docs/PASCAL.md)
 * **BASIC**: OS-9 では 2 種類使えます。**YSD BASIC (`ysdbasic`)** は MK09 の BASIC の OS-9 版で、ディスクイメージに入っています (Level 1 / 2 とも。実機の FPGA でも動作を確認)。
   **BASIC09** は Microware のソースの取得とビルドの手順 (`os9/basic09/`) だけを置いてあり、ソースもビルド済みモジュールも**リポジトリには入れていません**
   → [docs/OS9_MANUAL.md](docs/OS9_MANUAL.md) の 9 章、[LICENSES.md](LICENSES.md) の 4.3
@@ -230,6 +231,7 @@ Level 1 は 64KB のフラットメモリで ROM は書き込み保護、Level 2
 | `make test-hdmi` | FPGA の HDMI 文字画面: 端末の動作 (折り返し、スクロール、スクロール領域、行の挿入と削除、消去、色) を別に書いたモデルと 1 セルずつ比較 (88 項目)、TMDS の符号と直流平衡、**漢字**: 3 つの文字コードの復号、2 桁の文字の端末の動作を全画素で比較 (124 項目) |
 | `make test-fpga` | FPGA の RTL を Verilator で動かす: FUZIX の起動・ログイン・コマンド・`shutdown`・再起動、SDSC カード、カードなし、NitrOS-9 Level 1 / Level 2 の起動と `dir /d0` (約 5 分。Verilator がなければ skip) |
 | `make -C mk09 test` | MK09: カーネル、サーバ、コマンド、BASIC、C コンパイラ。EUC-JP / Shift_JIS 版も作るので数分かかります (CMOC が要ります)。`make test` には含まれません |
+| `make test-pascal` | Pascal コンパイラの OS-9 Level 2 版: `mk09/tests/pas` の 14 本のプログラムを、PC 版のコンパイラと、**OS-9 の上の `pc`** でコンパイルして動かし、できたモジュールが同じ (バイト単位) こと、出力が正しいことを確かめる (約 2 分。gcc と python3) |
 | `make test-net` | OS-9 Net: telnet ログイン、日本語往復、`nc` によるダイヤルアウト、切断検出 (Level 1/2) |
 | `make test-cross` | 参考実装 (タイマを命令数駆動に改造したもの) と**全命令のレジスタトレースを比較** (Level 1/2 とも 150 万命令一致) |
 
@@ -277,6 +279,7 @@ os9/        OS-9 の ROM / モジュール / コマンドのビルド (make で 
   misc/     shutdown と defsfile
   basic09/  BASIC09 と RunB を作る手順 (Microware のソースもビルド済みモジュールもリポジトリに入れず、fetch.sh で取得してビルド。第三者の著作物: LICENSES.md の 4.3)
   ysdbasic/ YSD BASIC (MK09 の BASIC の OS-9 版。C 言語 / CMOC、ビルド済みモジュール)
+  pascal/   Pascal コンパイラ (MK09 の pc pas0 pas1 cg as の OS-9 Level 2 版。ソースは mk09/apps、OS-9 とのつなぎ os9shim.c、ビルド済みモジュールとライブラリ lib/、サンプル samples/)
   jwp/      日本語ワードプロセッサ (jwp.c, skk.c: C 言語 / CMOC、genmsgs.py、ビルド済みモジュール)
   skk/      SKK 辞書ディスクを作る Makefile (SKK-JISYO.L → RBF イメージ)
   net/      OS-9 Net: npty ドライバ, n1..n3 デスクリプタ, nc, login

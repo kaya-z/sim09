@@ -21,6 +21,112 @@ int __pargc;                                   /* (for the Pascal paramcount) */
 static char __obuf[80];
 static unsigned char __olen;
 
+#ifdef OS9
+/* ---- the OS-9 build (-DOS9, lib/cc/rt9.s): the files are OS-9 paths.  A text file has CR at the end of a line, the program sees LF; a file opened with "b" (fo & 32)
+ * is not changed.  The path numbers 0, 1, 2 are the standard files of the process (the shell redirects them).  The system calls return -error. */
+int os9open(char *path, int mode);
+int os9create(char *path, int mode, int attr);
+int os9close(int fd);
+int os9read(int fd, char *buf, unsigned n);
+int os9write(int fd, char *buf, unsigned n);
+int os9readln(int fd, char *buf, unsigned n);
+int os9writln(int fd, char *buf, unsigned n);
+int os9seek(int fd, unsigned hi, unsigned lo);
+int os9stat(int fd, int code, unsigned *hi);
+int os9delete(char *path);
+int os9mkdir(char *path, int attr);
+int os9chdir(char *path, int mode);
+void os9exit(int code);
+
+static char __pb[132];
+static unsigned char __bin[16];                /* the path numbers of the files that are not text */
+
+static char *__ospath(char *p)                 /* an OS-9 path name ends with CR */
+{
+    int i = 0;
+    while (p[i] && i < 128) { __pb[i] = p[i]; i++; }
+    __pb[i] = 13;
+    return __pb;
+}
+
+int write(int fd, char *buf, unsigned n)
+{
+    char t[64];
+    unsigned done = 0, k;
+    int r, i;
+    if (fd >= 0 && fd < 16 && __bin[fd]) return os9write(fd, buf, n);
+    while (done < n) {
+        k = n - done;
+        if (k > 64) k = 64;
+        for (i = 0; i < k; i++) t[i] = buf[done + i] == 10 ? 13 : buf[done + i];
+        i = 0;
+        while (i < k) {
+            r = os9writln(fd, t + i, k - i);
+            if (r <= 0) return r < 0 ? r : -1;
+            i += r;
+        }
+        done += k;
+    }
+    return n;
+}
+
+int read(int fd, char *buf, unsigned n)
+{
+    int r;
+    if (fd >= 0 && fd < 16 && __bin[fd]) r = os9read(fd, buf, n);
+    else {
+        r = os9readln(fd, buf, n);
+        if (r > 0 && buf[r - 1] == 13) buf[r - 1] = 10;
+    }
+    if (r == -211) return 0;                   /* E$EOF */
+    return r;
+}
+
+/* fl: 1 read, 2 write, 4 create, 8 truncate, 16 append, 32 binary */
+int open(char *path, int fl)
+{
+    int fd, mode = fl & 3, r;
+    char *p = __ospath(path);
+    if (fl & 4) {
+        fd = os9create(p, mode ? mode : 2, 11);
+        if (fd == -218) {                      /* E$CEF: the file exists */
+            if (fl & 8) {
+                os9delete(p);
+                fd = os9create(p, mode ? mode : 2, 11);
+            } else fd = os9open(p, mode ? mode : 2);
+        }
+        if (fd >= 0 && (fl & 16)) { unsigned hi; r = os9stat(fd, 2, &hi); os9seek(fd, hi, r); }
+    } else fd = os9open(p, mode);
+    if (fd >= 0 && fd < 16) __bin[fd] = (fl & 32) != 0;
+    return fd;
+}
+
+int close(int fd)
+{
+    int r = os9close(fd);
+    if (fd >= 0 && fd < 16) __bin[fd] = 0;
+    return r < 0 ? r : 0;
+}
+
+/* the position in a file: whence 0 = from the start, 1 = from here, 2 = from the end;  returns the new position (the low 16 bits) or -error */
+int seek(int fd, int off, int whence)
+{
+    unsigned hi, lo;
+    int r;
+    if (whence == 0) lo = off;
+    else {
+        r = os9stat(fd, whence == 1 ? 5 : 2, &hi);
+        lo = r + off;
+    }
+    r = os9seek(fd, 0, lo);
+    return r < 0 ? r : lo;
+}
+
+int unlink(char *path) { int r = os9delete(__ospath(path)); return r < 0 ? r : 0; }
+int mkdir(char *path) { int r = os9mkdir(__ospath(path), 31); return r < 0 ? r : 0; }
+int chdir(char *path) { int r = os9chdir(__ospath(path), 1); return r < 0 ? r : 0; }
+int getcwd(char *buf, unsigned n) { return -1; }
+#else
 static int __rpc(int dst, msg_t *m, int gfl)
 {
     int st;
@@ -109,6 +215,7 @@ int getcwd(char *buf, unsigned n)
     r = __rpc(3, &m, 2);
     return r < 0 ? r : 0;
 }
+#endif
 
 /* ---------------------------------------------------------------- stdio: the console buffer, FILE */
 /* stdout is the buffer __obuf (written at a newline); stderr is not buffered; the other files and stdin have a buffer of 64 bytes each */
@@ -262,6 +369,9 @@ FILE *fopen(char *path, char *mode)
     else if (mode[0] == 'w') fl = 2 | 4 | 8 | (mode[1] == '+' ? 1 : 0);
     else if (mode[0] == 'a') fl = 2 | 4 | 16;
     else return 0;
+#ifdef OS9
+    if (mode[1] && (mode[1] == 'b' || mode[2] == 'b')) fl |= 32;      /* "rb" "wb" "ab" "r+b": the file is not text */
+#endif
     for (i = 3; i < NFILE; i++) if (!__files[i].mode) break;
     if (i == NFILE) return 0;
     fd = open(path, fl);
@@ -326,7 +436,11 @@ void exit(int code)
     int i;
     fflush_out();
     for (i = 3; i < NFILE; i++) if (__files[i].mode == 2) fflush(__files + i);      /* (only the files that are open) */
+#ifdef OS9
+    os9exit(code);
+#else
     mk_exit(code);
+#endif
 }
 
 /* printf: %d %u %x %c %s %%, a width, - and 0 */
@@ -1409,9 +1523,9 @@ int __passign(char *name, __PF **pp)
     return 0;
 }
 
-int __preset(int esize, __PF *p) { p->esize = esize; p->f = fopen(p->name, "r"); return 0; }
-int __prewrite(int esize, __PF *p) { p->esize = esize; p->f = fopen(p->name, "w"); return 0; }
-int __pappend(int esize, __PF *p) { p->esize = esize; p->f = fopen(p->name, "a"); return 0; }
+int __preset(int esize, __PF *p) { p->esize = esize; p->f = fopen(p->name, esize ? "rb" : "r"); return 0; }
+int __prewrite(int esize, __PF *p) { p->esize = esize; p->f = fopen(p->name, esize ? "wb" : "w"); return 0; }
+int __pappend(int esize, __PF *p) { p->esize = esize; p->f = fopen(p->name, esize ? "ab" : "a"); return 0; }
 int __pfclose(__PF *p) { if (p->f) fclose(p->f); p->f = 0; return 0; }
 
 int __pfwr(int esize, char *src) { fwrite(src, 1, esize, __pout ? __pout : stdout); return 0; }

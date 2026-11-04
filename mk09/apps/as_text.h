@@ -72,6 +72,113 @@ static char *as_start[] = {
     0
 };
 
+#if defined(OS9) || defined(AS_HOST)
+/* The start of an OS-9 module (as -9).  The module is  [header 13 bytes][start stub][the program as for MK09, with its relocation table][name][CRC].
+ * OS-9 gives the stub a data area (U = its start, a multiple of 256) and the parameters (X); the stub copies the whole module there (code and data
+ * are written by the program, so they must be in the data area), builds the start-up block of MK09 (see mklib.h) on the stack and jumps to _start
+ * of the copy, which relocates the copy (if U is not 0) and clears the bss.  Patched when the file is written: the size, the offset of the name,
+ * the header parity, the size of the data area, then the name and the CRC are added (os9_finish). */
+static char *as_start9[] = {
+    "__os9m\tfdb\t$87CD",
+    "\tfdb\t0",                       /* module size */
+    "\tfdb\t0",                       /* offset of the name */
+    "\tfcb\t$11",                     /* program, 6809 object code */
+    "\tfcb\t$81",                     /* reentrant, revision 1 */
+    "\tfcb\t0",                       /* header parity */
+    "\tfdb\t13",                      /* execution offset */
+    "\tfdb\t0",                       /* size of the data area */
+    "__os9go\tpshs\tu,y,x,d",
+    "\tleax\t__os9m,pcr",
+    "\tpshs\tx",                      /* 0,s = the module, 2 = D, 4 = X (parameters), 6 = Y, 8 = U (the data area) */
+    "\tldy\t#__size",
+    "@cp\tlda\t,x+",
+    "\tsta\t,u+",
+    "\tleay\t-1,y",
+    "\tbne\t@cp",
+    "@tb\tlda\t,x+",                  /* the relocation table, up to its 0 */
+    "\tsta\t,u+",
+    "\tbne\t@tb",
+    "\tldu\t8,s",
+    "\tleas\t-320,s",                 /* the start-up block: version, stdin, stdout, argc, the name of the program, the arguments */
+    "\tleay\t4,s",
+    "\tclr\t,s",
+    "\tlda\t#255",
+    "\tsta\t1,s",
+    "\tsta\t2,s",
+    "\tlda\t#1",
+    "\tsta\t3,s",
+    "\tldx\t320,s",
+    "\tldd\t4,x",
+    "\tleax\td,x",
+    "@nm\tlda\t,x+",
+    "\tbmi\t@nl",
+    "\tsta\t,y+",
+    "\tbra\t@nm",
+    "@nl\tanda\t#$7F",
+    "\tsta\t,y+",
+    "\tclr\t,y+",
+    "\tldx\t324,s",                  /* the parameters: words separated by blanks, up to the CR */
+    "@sk\tlda\t,x+",
+    "\tcmpa\t#32",
+    "\tbeq\t@sk",
+    "\tblo\t@dn",
+    "\tldb\t3,s",
+    "\tcmpb\t#32",
+    "\tbhs\t@dn",
+    "\tincb",
+    "\tstb\t3,s",
+    "@tk\tsta\t,y+",
+    "\tlda\t,x+",
+    "\tcmpa\t#32",
+    "\tbhi\t@tk",
+    "\tclr\t,y+",
+    "\tcmpa\t#32",
+    "\tbeq\t@sk",
+    "@dn\tclr\t,y",
+    "\tldd\t#_start",
+    "\tleax\t,s",
+    "\tjmp\td,u",
+    "__exit0\tswi2",                  /* F$Exit (B = the exit code) */
+    "\tfcb\t6",
+    "_start\tpshs\tx",
+    "\tleay\t__os9m,pcr",
+    "\tcmpy\t#0",
+    "\tbeq\t@norel",
+    "\ttfr\ty,d",
+    "\tpshs\ta",
+    "\tldd\t#__size",
+    "\tleau\td,y",
+    "\tleax\t,y",
+    "@nx\tldb\t,u+",
+    "\tbeq\t@dn",
+    "\tabx",
+    "\tcmpb\t#255",
+    "\tbne\t@pt",
+    "\tleax\t-1,x",
+    "\tbra\t@nx",
+    "@pt\tlda\t,x",
+    "\tadda\t,s",
+    "\tsta\t,x",
+    "\tbra\t@nx",
+    "@dn\tleas\t1,s",
+    "@norel\tldx\t#__end",
+    "\tldd\t#__bss",
+    "\tbeq\t@go",
+    "@clr\tclr\t,x+",
+    "\tsubd\t#1",
+    "\tbne\t@clr",
+    "@go\tpuls\tx",
+    "\tstx\t__sb",
+    "\tleay\t__exit0,pcr",
+    "\tpshs\ty",
+    "\tbss",
+    "__sb\trmb\t2",
+    "\tcode",
+    0
+};
+
+#endif
+
 static char *as_runtime[] = {
     "\tbss",
     "__msg\trmb\t10",
