@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /*
- * pas0 - the first stage of the Pascal compiler of MK09: Pascal text in, tokens out (apps/pastok.h, docs/PASCAL.md)
+ * pas0 - the first stage of YSD Pascal, the Pascal compiler of MK09: Pascal text in, tokens out (apps/pastok.h, docs/PASCAL.md)
  *
  *   pas0 -o out.tok file.pas
  *
@@ -10,7 +10,7 @@
  */
 #include "ccio.h"
 
-#define TOOL_VERSION "1.4"          /* the version of this program: changed when it changes (-v) */
+#define TOOL_VERSION "1.5"          /* the version of this program: changed when it changes (-v) */
 #include "pastok.h"
 
 #define NAMEMAX 12
@@ -79,7 +79,8 @@ static int hexval(int c)
     return -1;
 }
 
-static u16 stack_new, heap_new;     /* the stack and the heap of the program: {$M stack,heap}, to be written */
+static u16 stack_new, heap_new;
+static u8 range_new;                /* {$R+} 1, {$R-} 2, to be written */     /* the stack and the heap of the program: {$M stack,heap}, to be written */
 
 static void skip_comment(int close2)       /* after { or (* */
 {
@@ -97,6 +98,9 @@ static void skip_comment(int close2)       /* after { or (* */
                 while (ch >= '0' && ch <= '9') { v = (u16)(v * 10 + ch - '0'); nextch(); }
                 heap_new = v;
             }
+        } else if (ch == 'R' || ch == 'r') {          /* {$R+} {$R-}: range checks */
+            nextch();
+            if (ch == '+') range_new = 1; else if (ch == '-') range_new = 2;
         } else if (ch == 'I' || ch == 'i') {          /* {$I name}: the file is read here ({$I+} and {$I-} are not includes) */
             u8 n = 0;
             nextch();
@@ -304,6 +308,7 @@ static void put_tok(void)
 {
     if (stack_new) { w_putc(&out, TK_STACK); put16(stack_new); stack_new = 0; }
     if (heap_new) { w_putc(&out, TK_HEAP); put16(heap_new); heap_new = 0; }
+    if (range_new) { w_putc(&out, TK_RANGE); w_putc(&out, range_new == 1); range_new = 0; }
     if (tokline != lastline) { w_putc(&out, TK_LINE); put16(tokline); lastline = tokline; }
     w_putc(&out, tok);
     if (tok == T_NUM) { put16((u16)tokv); put16(tokh); }

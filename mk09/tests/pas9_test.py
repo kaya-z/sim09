@@ -94,7 +94,7 @@ if VERBOSE:
 for base in ok:
     want = open(os.path.join(pas, base + '.out'), encoding='latin-1').read()
     m = re.search(r'OS9:echo ==%s==\n==%s==\n\nOS9:%s\n(.*?)\nOS9:' % (base, base, base), out, re.S)
-    got = (m.group(1) + '\n') if m else ''
+    got = re.sub(r'\nError #\d+$', '', m.group(1)) + '\n' if m else ''       # (the shell reports the exit code of a program that stops with an error)
     # (the shell prints an empty line before the prompt)
     check(got == want or got.rstrip('\n') == want.rstrip('\n'), base + ': the Pascal program runs on OS-9 Level 2 and gives the output', 'got:\n%s\nwant:\n%s' % (got, want))
 
@@ -130,7 +130,7 @@ if ok:
         check(same, base + ': the module made by pc on OS-9 is the same as the one made by the PC builds', '')
         want = open(os.path.join(pas, base + '.out'), encoding='latin-1').read()
         m = re.findall(r'OS9:/d0/cmds/echo ==%s==\n==%s==\n\nOS9:%s\n(.*?)\nOS9:' % (base, base, base), out2, re.S)
-        got = (m[-1] + '\n') if m else ''
+        got = re.sub(r'\nError #\d+$', '', m[-1]) + '\n' if m else ''
         check(got == want or got.rstrip('\n') == want.rstrip('\n'), base + ': the program compiled on OS-9 runs and gives the output', 'got:\n%s\nwant:\n%s' % (got, want))
 
 print('%d checks, %d failed' % (total, fails))

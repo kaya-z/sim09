@@ -11,7 +11,7 @@
  */
 #include "ccio.h"
 
-#define TOOL_VERSION "1.8"          /* the version of this program: changed when it changes (-v) */
+#define TOOL_VERSION "1.9"          /* the version of this program: changed when it changes (-v) */
 
 #ifdef CC_HOST
 #define NSYM    400
@@ -85,6 +85,7 @@ static void err(msgt msg)
 #endif
 
 /* ---------------------------------------------------------------- the tokens (written by pas0) */
+static u8 rchk;                                /* {$R+}: the indexes and the values of subranges are checked at run time */
 static u16 stack_size = 2000, heap_size;       /* the stack and the heap of the program: {$M stack,heap} */
 
 static u16 rw(void) { u16 h = (u16)r_getc(&in); return (u16)((h << 8) | (u16)r_getc(&in)); }
@@ -97,6 +98,7 @@ static void next(void)
         if (t == TK_LINE) line = rw();
         else if (t == TK_STACK) stack_size = rw();
         else if (t == TK_HEAP) heap_size = rw();
+        else if (t == TK_RANGE) rchk = (u8)r_getc(&in);
         else if (t == TK_FILE) { n = r_getc(&in); for (i = 0; i < n; i++) fname[i] = (char)r_getc(&in); fname[n] = 0; }
         else break;
     }
@@ -344,6 +346,12 @@ static void ins1(const char *op, int n) { put("\t"); put(op); put(" "); putn(n);
 static void insl(const char *op, u16 l) { put("\t"); put(op); put(" L"); putn(l); put("\n"); }
 static void deflabel(u16 l) { put("L"); putn(l); put(":\n"); }
 static u16 newlab(void) { return ++nlab; }
+static void range_check(int lo, int hi)           /* the value on the stack must be lo..hi (it stays there) */
+{
+    ins1("const", lo);
+    ins1("const", hi);
+    put("\tcall __prchk 3\n");
+}
 static void inscall(const char *name, int n) { put("\tcall "); put(name); put(" "); putn(n); put("\n"); }
 static void insaddr(const char *name) { put("\taddr "); put(name); put("\n"); }
 
@@ -541,12 +549,10 @@ static u8 find_type(const char *n)
     return syms[i].ty;
 }
 
-static u8 parse_record(void)
+/* the fields of a record (or of one variant, between parentheses) from the offset off, and its variant part: returns the offset behind the longest variant */
+static u16 fields(u8 t, u16 off)
 {
-    u8 t = new_type(TY_REC, 0);
-    u16 off = 0;
-    tys[t].f = nfld;
-    while (tok != K_END) {
+    while (tok != K_END && tok != ')' && tok != K_CASE) {
         u16 first = nfld;
         u8 ft;
         u16 n, i;
@@ -567,8 +573,52 @@ static u8 parse_record(void)
         for (i = first; i < n; i++) { flds[i].ty = ft; flds[i].off = off; off = (u16)(off + ty_size[ft]); }
         if (tok == ';') next(); else break;
     }
+    if (tok == K_CASE) {                /* case [tag :] type of  c1, c2: (fields); ... : the variants share the memory */
+        u16 top = off;
+        char tg[NAMEMAX + 1];
+        u8 ft;
+        next();
+        if (tok != T_ID) err("a type name is expected");
+        strcpy(tg, toks);
+        next();
+        if (tok == ':') {               /* the tag is a field */
+            if (nfld >= NFLD) err("too many fields");
+            strcpy(flds[nfld].name, tg);
+            next();
+            ft = parse_type();
+            flds[nfld].ty = ft;
+            flds[nfld].off = off;
+            nfld++;
+            off = (u16)(off + ty_size[ft]);
+            top = off;
+        }
+        expect(K_OF, "of is expected");
+        while (tok != K_END && tok != ')') {
+            u16 e;
+            u8 ct;
+            for (;;) {
+                const_value(&ct);
+                if (tok == ',') { next(); continue; }
+                break;
+            }
+            expect(':', "a : is expected");
+            expect('(', "a ( is expected");
+            e = fields(t, off);
+            expect(')', "a ) is expected");
+            if (e > top) top = e;
+            if (tok == ';') next(); else break;
+        }
+        off = top;
+    }
+    return off;
+}
+
+static u8 parse_record(void)
+{
+    u8 t = new_type(TY_REC, 0);
+    tys[t].f = nfld;
+    ty_size[t] = fields(t, 0);
     expect(K_END, "end is expected");
-    ty_size[t] = off;
     tys[t].nf = (u8)(nfld - tys[t].f);
     return t;
 }
@@ -1025,10 +1075,12 @@ static void selectors(void)
                 if (host(e_t) != host(tys[at].ix)) err("the index has the wrong type");
                 if (e_c) {
                     int off = (e_v - lo) * (int)es;
+                    if (rchk && (e_v < lo || e_v > tys[at].hi)) err("the index is out of range");
                     if (off) { ins1("const", off); ins0("add"); }
                     e_c = 0;
                 } else {
                     rvalue();
+                    if (rchk) range_check(lo, tys[at].hi);
                     if (lo) { ins1("const", lo); ins0("sub"); }
                     if (es != 1) { ins1("const", es); ins0("mul"); }
                     ins0("add");
@@ -2001,6 +2053,7 @@ static void assignment(void)
     }
     coerce(t);
     if (is_scalar(t)) {
+        if (rchk && ty_k[t] == TY_SUB && t != TYP_WORD) { rvalue(); range_check(tys[t].lo, tys[t].hi); }
         emit_store(t, w);
         ins0("drop");
     } else {

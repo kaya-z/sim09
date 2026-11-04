@@ -66,6 +66,7 @@
  *   1.23 2026-10-29  reboot (a program); PM loads a program with ONE request: FS_READTL, FS reads the file into the memory of the new task itself (FS is privileged for
  *                    tload); the code slots of TTY and FS were adjusted (cwidth is shorter).  hello.pas: 19M cycles.
  *   1.24 2026-10-29  -v prints the version and the copyright (as cpp cc1 cg cc pas0 pas1 pc); cc and pc print the command lines with -V now.
+ *   1.27 2026-11-04  YSD Pascal (the name of the Pascal compiler): variant records (case in a record) and range checks ({$R+}: array indexes and subrange assignments, __prchk); pas0 1.5, pas1 1.9.
  *   1.26 2026-11-04  cc1 1.7: one walker for the initializers (global and local), loop_body; cc1 has 1062 bytes of the transient area left (was 322).
  *   1.25 2026-10-29  -v prints the version of the PROGRAM (TOOL_VERSION at the top of its source, one step per change of that program: as 1.10, cpp 1.4, cc1 1.6, cg 1.11, cc 1.1, pas0 1.4, pas1 1.8, pc 1.3): change it when you change that program, so that a
  *                    change of one tool can be followed without a new version of the system.
@@ -73,7 +74,7 @@
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.26"
+#define MK09_VERSION    "1.27"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

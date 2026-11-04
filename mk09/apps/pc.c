@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /*
- * pc - the driver of the Pascal compiler of MK09 (docs/PASCAL.md)
+ * pc - the driver of YSD Pascal, the Pascal compiler of MK09 (docs/PASCAL.md)
  *
  *   pc [-S] [-k] [-V] [-o out] file.pas
  *

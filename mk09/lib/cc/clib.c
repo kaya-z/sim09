@@ -1039,6 +1039,15 @@ static void __ppad(int w, int len)
     while (w > len) { __pputc(' '); w--; }
 }
 
+int __prchk(int hi, int lo, int v)             /* {$R+}: v must be lo..hi (the arguments are in the order they are pushed, reversed) */
+{
+    if (v < lo || v > hi) {
+        write(2, "Runtime error 201 (range check)\n", 32);
+        exit(201);
+    }
+    return v;
+}
+
 int __pwi(int w, int v)
 {
     char b[8];
