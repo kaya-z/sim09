@@ -23,7 +23,7 @@ C 言語で書かれた MC6809 シミュレータです。Debian 12 (gcc 12) で
 * **FUZIX** (UNIX 風 OS): **64KB のフラットメモリ (MMU なし)** で起動してシェルまで動く。プロセスはスワップで切り替える (29KiB / プロセス)。
   `./sim09 -rom fuzix/images/bootrom.bin -0 fuzix.dsk` → [docs/FUZIX.md](docs/FUZIX.md)
 * **MK09**: MC6809 用のマイクロカーネルと、その上で動く小さな OS。シェル、`jwp`、BASIC、**C コンパイラとアセンブラ**まで MK09 の上で動く (下の「MK09」の節) → [mk09/README.md](mk09/README.md)
-* **Pascal** (`pc`): MK09 の Pascal コンパイラを **OS-9 Level 2** に移したもの。OS-9 の上で `pc hello.pas` と打つと OS-9 のモジュールができる (`pas0` `pas1` `cg` `as` が順に動く。`string` `real` `longint` `set` ファイルなど)。`OS9L2.dsk` に入っている。Level 1 はメモリが足りず対象外 → [docs/OS9_MANUAL.md](docs/OS9_MANUAL.md) の 9.5 節、[mk09/docs/PASCAL.md](mk09/docs/PASCAL.md)
+* **Pascal** (`pc`): MK09 の Pascal コンパイラを **OS-9 Level 2** に移したもの。OS-9 の上で `pc hello.pas` と打つと OS-9 のモジュールができる (`pas0` `pas1` `cg` `as` が順に動く。`string` `real` `longint` `set` ファイルなど)。`OS9L2.dsk` に入っている (実機の Tang Nano 9K で `hello.pas` のコンパイルと実行を確認)。Level 1 はメモリが足りず対象外 → [docs/OS9_MANUAL.md](docs/OS9_MANUAL.md) の 9.5 節、[mk09/docs/PASCAL.md](mk09/docs/PASCAL.md)
 * **BASIC**: OS-9 では 2 種類使えます。**YSD BASIC (`ysdbasic`)** は MK09 の BASIC の OS-9 版で、ディスクイメージに入っています (Level 1 / 2 とも。実機の FPGA でも動作を確認)。
   **BASIC09** は Microware のソースの取得とビルドの手順 (`os9/basic09/`) だけを置いてあり、ソースもビルド済みモジュールも**リポジトリには入れていません**
   → [docs/OS9_MANUAL.md](docs/OS9_MANUAL.md) の 9 章、[LICENSES.md](LICENSES.md) の 4.3
