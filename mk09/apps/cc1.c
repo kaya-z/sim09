@@ -11,7 +11,7 @@
  */
 #include "ccio.h"
 
-#define TOOL_VERSION "1.6"          /* the version of this program: changed when it changes (-v) */
+#define TOOL_VERSION "1.7"          /* the version of this program: changed when it changes (-v) */
 
 #define NTAG    24
 /* the sizes of the tables: small on MK09 (the whole program must fit in the transient area), big on the PC (the library is compiled there) */
@@ -1755,9 +1755,6 @@ static void data_item_label(const char *name, u8 local)
     w_putc(&df, '\n');
 }
 
-/* the initializer of a global or static variable: .b .w .wa lines into f; t is the type; returns the bytes written */
-static u16 init_data(wfile *f, u16 t);
-
 static void emit_zero(wfile *f, u16 n)
 {
     if (n) { w_puts(f, ".z "); w_num(f, n); w_putc(f, '\n'); }
@@ -1774,6 +1771,11 @@ static void int_bits(int v, u8 un, u16 *hi, u16 *lo)
     *lo = (a & 0xFF) << 8;
 }
 
+static void w_wide(wfile *f, u16 hi, u16 lo)         /* a .w line with the two words of a long or float */
+{
+    w_puts(f, ".w "); w_num(f, (int)hi); w_putc(f, ','); w_num(f, (int)lo); w_putc(f, '\n');
+}
+
 /* an initializer expression that must be constant or the address of something: .b/.w/.wa */
 static void init_scalar(wfile *f, u16 t)
 {
@@ -1788,7 +1790,7 @@ static void init_scalar(wfile *f, u16 t)
             if (!toklong) int_bits(tokv, tokun, &hi, &lo);          /* (an int: float f = 1;) */
             if (neg) hi ^= 0x8000;
         } else if (neg) { lo = (u16)(~lo + 1); hi = (u16)(~hi + (lo == 0)); }
-        w_puts(f, ".w "); w_num(f, (int)hi); w_putc(f, ','); w_num(f, (int)lo); w_putc(f, '\n');
+        w_wide(f, hi, lo);
         next();
         return;
     }
@@ -1800,14 +1802,13 @@ static void init_scalar(wfile *f, u16 t)
         if (is_flt(t)) {
             u16 hi, lo;
             int_bits(e_v, is_unsigned(e_t), &hi, &lo);
-            w_puts(f, ".w "); w_num(f, (int)hi); w_putc(f, ','); w_num(f, (int)lo);
-        } else {
-            if (is_long(t)) {
-                w_puts(f, ".w "); w_num(f, e_v < 0 && !is_unsigned(e_t) ? -1 : 0); w_putc(f, ',');
-            } else w_puts(f, tys[t].size == 1 ? ".b " : ".w ");
+            w_wide(f, hi, lo);
+        } else if (is_long(t)) w_wide(f, e_v < 0 && !is_unsigned(e_t) ? -1 : 0, (u16)e_v);
+        else {
+            w_puts(f, tys[t].size == 1 ? ".b " : ".w ");
             w_num(f, e_v);
+            w_putc(f, '\n');
         }
-        w_putc(f, '\n');
     } else {
         /* addr NAME [const k add]... */
         char name[24];
@@ -1848,48 +1849,68 @@ static void init_scalar(wfile *f, u16 t)
     e_c = 0;
 }
 
-static u16 init_data(wfile *f, u16 t)
+/* an initializer, walked once for both uses: f != 0 writes the data lines of a global or static variable into f (off is not used);
+ * f == 0 writes the code that fills the local variable at frame offset off */
+static void init_any(wfile *f, u16 off, u16 t)
 {
     u8 k = tys[t].k;
     if (k == TK_ARR) {
-        u16 et = tys[t].base;
-        u16 n = tys[t].n, i = 0;
+        u16 et = tys[t].base, n = tys[t].n, i = 0, es = tys[et].size;
         if (tok == T_STR && tys[et].k == TK_CHAR) {
-            w_puts(f, ".s \"");
-            put_text(f);
-            w_puts(f, "\"\n");
             i = toklen;
-            if (!n || i < n) { w_puts(f, ".b 0\n"); i++; }
-            if (n && toklen > n) err("the string is too long for the array");
-            if (!n) tys[t].n = i, tys[t].size = i;
-            else if (i < n) emit_zero(f, (u16)(n - i));
+            if (f) {
+                w_puts(f, ".s \"");
+                put_text(f);
+                w_puts(f, "\"\n");
+                if (!n || i < n) { w_puts(f, ".b 0\n"); i++; }
+                if (n && toklen > n) err("the string is too long for the array");
+                if (!n) tys[t].n = i, tys[t].size = i;
+                else if (i < n) emit_zero(f, (u16)(n - i));
+            } else {
+                i++;
+                if (!n) { n = i; tys[t].n = n; tys[t].size = n; }
+                ins1("laddr", off);     /* copy the string from a literal */
+                string_data();
+                ins1("copy", i > n ? n : i);
+                ins0("drop");
+            }
             next();
-            return tys[t].size;
+            return;
         }
         if (tok == '{') {
             next();
             while (tok != '}' && tok != T_EOF) {
-                init_data(f, et);
+                init_any(f, (u16)(off + i * es), et);
                 i++;
                 if (tok == ',') next(); else break;
             }
             expect('}', "missing } of the initializer");
-            if (!n) { tys[t].n = i; tys[t].size = (u16)(i * tys[et].size); }
-            else if (i < n) emit_zero(f, (u16)((n - i) * tys[et].size));
-            else if (i > n) err("too many initializers");
-            return tys[t].size;
+            if (!n) { tys[t].n = i; tys[t].size = (u16)(i * es); }
+            else if (f) {
+                if (i < n) emit_zero(f, (u16)((n - i) * es));
+                else if (i > n) err("too many initializers");
+            }
+            return;
         }
         err("an array needs { } to be initialized");
-        return tys[t].size;
+        return;
     }
     if (is_agg(t)) {
-        u16 m = tys[t].n;
-        u16 done = 0;
-        if (tok != '{') { err("a structure needs { } to be initialized"); return tys[t].size; }
+        u16 m = tys[t].n, done = 0;
+        if (tok != '{') {
+            if (f) { err("a structure needs { } to be initialized"); return; }
+            ins1("laddr", off);         /* struct s = other; */
+            parse_assign();
+            rvalue();
+            if (!is_agg(e_t) || tys[e_t].size != tys[t].size) err("incompatible structures");
+            ins1("copy", (int)tys[t].size);
+            ins0("drop");
+            return;
+        }
         next();
         if (m == 0xFFFF) m = 0;
         while (tok != '}' && tok != T_EOF && m) {
-            init_data(f, mems[m - 1].ty);
+            init_any(f, (u16)(off + mems[m - 1].off), mems[m - 1].ty);
             done = (u16)(done + tys[mems[m - 1].ty].size);
             m = mems[m - 1].next;
             if (k == TK_UNION) break;
@@ -1897,90 +1918,25 @@ static u16 init_data(wfile *f, u16 t)
         }
         if (tok == ',') next();
         expect('}', "missing } of the initializer");
-        if (done < tys[t].size) emit_zero(f, (u16)(tys[t].size - done));      /* the members that are left are 0 */
-        return tys[t].size;
-    }
-    if (tok == '{') {       /* int x = { 1 }; */
-        next();
-        init_scalar(f, t);
-        if (tok == ',') next();
-        expect('}', "missing }");
-        return tys[t].size;
-    }
-    init_scalar(f, t);
-    return tys[t].size;
-}
-
-/* a local variable with an initializer: code */
-static void local_init(u16 off, u16 t)
-{
-    u8 k = tys[t].k;
-    if (k == TK_ARR) {
-        u16 et = tys[t].base, n = tys[t].n, i = 0;
-        u16 es = tys[et].size;
-        if (tok == T_STR && tys[et].k == TK_CHAR) {
-            u16 len = toklen + 1;
-            if (!n) { n = len; tys[t].n = n; tys[t].size = n; }
-            /* copy the string from a literal */
-            ins1("laddr", off);
-            string_data();
-            ins1("copy", len > n ? n : len);
-            ins0("drop");
-            next();
-            return;
-        }
-        if (tok == '{') {
-            next();
-            while (tok != '}' && tok != T_EOF) {
-                local_init((u16)(off + i * es), et);
-                i++;
-                if (tok == ',') next(); else break;
-            }
-            expect('}', "missing } of the initializer");
-            if (!n) { tys[t].n = i; tys[t].size = (u16)(i * es); }
-            return;
-        }
-        err("an array needs { } to be initialized");
-        return;
-    }
-    if (is_agg(t)) {
-        u16 m = tys[t].n;
-        if (tok == '{') {
-            next();
-            if (m == 0xFFFF) m = 0;
-            while (tok != '}' && tok != T_EOF && m) {
-                local_init((u16)(off + mems[m - 1].off), mems[m - 1].ty);
-                m = mems[m - 1].next;
-                if (tys[t].k == TK_UNION) break;
-                if (tok == ',') next(); else break;
-            }
-            if (tok == ',') next();
-            expect('}', "missing } of the initializer");
-            return;
-        }
-        /* struct s = other; */
-        ins1("laddr", off);
-        parse_assign();
-        rvalue();
-        if (!is_agg(e_t) || tys[e_t].size != tys[t].size) err("incompatible structures");
-        ins1("copy", (int)tys[t].size);
-        ins0("drop");
+        if (f && done < tys[t].size) emit_zero(f, (u16)(tys[t].size - done));      /* the members that are left are 0 */
         return;
     }
     {
-        u8 br = 0;
-        if (tok == '{') { br = 1; next(); }
-        ins1("laddr", off);
-        parse_assign();
-        if (is_wide(t)) {
-            rvalue();
-            to_wide(t);
-            ins1("copy", 4);
-            ins0("drop");
-        } else {
-            rv();
-            if (is_wide(e_t)) wide_to_int();
-            ins0(tys[t].k == TK_CHAR ? "store.b" : "store.w");
+        u8 br = tok == '{';
+        if (br) next();
+        if (f) init_scalar(f, t);
+        else {
+            ins1("laddr", off);
+            parse_assign();
+            if (is_wide(t)) {
+                rvalue();
+                to_wide(t);
+                ins1("copy", 4);
+            } else {
+                rv();
+                if (is_wide(e_t)) wide_to_int();
+                ins0(k == TK_CHAR ? "store.b" : "store.w");
+            }
             ins0("drop");
         }
         if (br) { if (tok == ',') next(); expect('}', "missing }"); }
@@ -2015,7 +1971,7 @@ static void local_decl(void)
             if (tok == '=') {
                 next();
                 data_item_label(vn, 1);
-                init_data(&df, t);
+                init_any(&df, 0, t);
                 w_puts(&df, ".end\n");
             } else {
                 w_puts(&df, ".bss ");
@@ -2033,7 +1989,7 @@ static void local_decl(void)
                 /* the size of an array without a size comes from the initializer: declare first */
                 new_local(nm, C_LOCAL, t, (int)off);
                 next();
-                local_init(off, t);
+                init_any(0, off, t);
                 fp = (u16)(fp + tys[t].size);
             } else {
                 new_local(nm, C_LOCAL, t, (int)off);
@@ -2096,6 +2052,13 @@ static void block(void)
     fp = sv_fp;
 }
 
+static void loop_body(u16 lbrk, u16 lcont)       /* the statement of a loop (or switch): break and continue go to these labels */
+{
+    brk_l[nloop] = lbrk; cont_l[nloop] = lcont; nloop++;
+    statement();
+    nloop--;
+}
+
 static void statement(void)
 {
     tmp_used = 0;
@@ -2126,9 +2089,7 @@ static void statement(void)
         expect('(', "missing ( after while");
         condition(le);
         expect(')', "missing )");
-        brk_l[nloop] = le; cont_l[nloop] = lt; nloop++;
-        statement();
-        nloop--;
+        loop_body(le, lt);
         insl("jmp", lt);
         deflabel(le);
         return;
@@ -2137,9 +2098,7 @@ static void statement(void)
         u16 lt = ++nlab, lc = ++nlab, le = ++nlab;
         next();
         deflabel(lt);
-        brk_l[nloop] = le; cont_l[nloop] = lc; nloop++;
-        statement();
-        nloop--;
+        loop_body(le, lc);
         deflabel(lc);
         if (tok != K_WHILE) { err("while expected"); return; }
         next();
@@ -2154,7 +2113,6 @@ static void statement(void)
     }
     case K_FOR: {
         u16 lt = ++nlab, lc = ++nlab, le = ++nlab, lb = ++nlab;
-        u8 has_inc = 0;
         u16 sv_nl = nlsym, sv_fp = fp;
         next();
         expect('(', "missing ( after for");
@@ -2168,14 +2126,11 @@ static void statement(void)
         /* the increment is compiled before the body: jump over it */
         insl("jmp", lb);
         deflabel(lc);
-        if (tok != ')') { has_inc = 1; expr_statement(); }
+        if (tok != ')') expr_statement();
         insl("jmp", lt);
         expect(')', "missing )");
         deflabel(lb);
-        (void)has_inc;
-        brk_l[nloop] = le; cont_l[nloop] = lc; nloop++;
-        statement();
-        nloop--;
+        loop_body(le, lc);
         insl("jmp", lc);
         deflabel(le);
         nlsym = sv_nl;
@@ -2200,11 +2155,9 @@ static void statement(void)
         expect(')', "missing )");
         insl("jmp", ldisp);
         dflt_l = 0;
-        brk_l[nloop] = le; cont_l[nloop] = nloop ? cont_l[nloop - 1] : 0; nloop++;
         sw_depth++;
-        statement();
+        loop_body(le, nloop ? cont_l[nloop - 1] : 0);
         sw_depth--;
-        nloop--;
         insl("jmp", le);
         deflabel(ldisp);
         for (i = sv_ncase; i < ncase; i++) {
@@ -2385,7 +2338,7 @@ static void external_decl(void)
                     data_item_label(nm, (g->flags & 8) != 0);
                     {
                         wfile *f = &df;
-                        init_data(f, t);
+                        init_any(f, 0, t);
                     }
                     w_puts(&df, ".end\n");
                     g->flags |= 1;
