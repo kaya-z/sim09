@@ -22,7 +22,7 @@ gzip -dc fuzix/images/sim09-fuzix.dsk.gz > /tmp/fuzix.dsk
 | メモリ | 64KB 全部が RAM。ROM は `$FF00-$FFFF` の 256 バイトだけ。I/O は `$E000-$E1FF` |
 | プロセス | **スワップのみ** (`CONFIG_SWAP_ONLY`)。ユーザ空間は 1 つ (`$6C00-$DFFF`、29KiB) で、プロセスを切り替えるたびに全体をディスクのスワップ領域に書き出し/読み込みする。MMU がないのでメモリ保護はない |
 | ディスク | シミュレータのディスク DMA ポート (`$E040-`) を `tinydisk` の 512 バイトブロックで使う。MBR のパーティション: 1 = ファイルシステム (type `0x7E`)、2 = スワップ (type `0x7F`、`CONFIG_DYNAMIC_SWAP` が検出) |
-| コンソール | ACIA0 (`$E000/$E001`)。受信は割り込み (`init_hardware` で制御レジスタに `$95`。IRQ はタイマと共有で、`plt_interrupt` が両方を見る。2026-11-06 にビルドし直し、`tests/fuzix_test.py` (17 項目) と Verilator の RTL のテストで確認。同梱のイメージは割り込み版) |
+| コンソール | ACIA0 (`$E000/$E001`)。受信は割り込み (`init_hardware` で制御レジスタに `$95`。IRQ はタイマと共有で、`plt_interrupt` が両方を見る。2026-11-06 にビルドし直し、`tests/fuzix_test.py` (17 項目) と Verilator の RTL のテストで確認、実機の Tang Nano 9K でも確認 (2026-11-06)。同梱のイメージは割り込み版) |
 | 時計 | タイマ (`$E030`、モード 2) を 50Hz で割り込みにする。`/dev/rtc` は `$E031-$E036` の RTC を読む (起動時のホストの時刻 + エミュレートした経過時間) ので、起動時に日付を聞かれない |
 | 停止 | `$E00F` に `$A5` を書くとシミュレータが終了する (`shutdown` / `halt` の最後) |
 | 使うプログラム | 完全な FUZIX の全コマンドではなく、`build-mini-filesystem` の最小セット (V7 のコマンド、`util` の一部、シェル) |
