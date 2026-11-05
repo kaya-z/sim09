@@ -95,7 +95,7 @@ def fuzix_disk(d):
     return p
 
 
-LOGIN = ['expect login:', 'send root\\r', 'expect # ']
+LOGIN = ['expect login:', 'wait 5', 'send root\\r', 'expect # ']     # (the wait: the guest echoes at once now, the rest of the prompt (a space) would come after the echo)
 
 
 def cmds(*cs):
