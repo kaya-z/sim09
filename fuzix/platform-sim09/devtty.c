@@ -10,9 +10,11 @@
 
 /*
  *	The console is the ACIA of the simulator (a 6850 style device with
- *	status at $E000 and data at $E001). The simulator's ACIA raises no
- *	interrupts: the receiver is polled from the timer interrupt (50 times a
- *	second); the transmitter is always ready.
+ *	status/control at $E000 and data at $E001). The receiver raises an
+ *	interrupt for every character (init_hardware in sim09.s turns it on);
+ *	the IRQ line is shared with the timer, so plt_interrupt looks at both.
+ *	The transmitter is always ready (the FPGA board has a FIFO and waits
+ *	when it is full).
  */
 #define ACIA_STATUS	(*(volatile uint8_t *)0xE000)
 #define ACIA_DATA	(*(volatile uint8_t *)0xE001)
@@ -70,7 +72,7 @@ void tty_data_consumed(uint_fast8_t minor)
 {
 }
 
-/* Called from the interrupt stub for every IRQ: the timer is the only source */
+/* Called from the interrupt stub for every IRQ: the console receiver and the timer */
 void plt_interrupt(void)
 {
 	while (ACIA_STATUS & 0x01)		/* receive data ready */

@@ -79,12 +79,21 @@ init_hardware:
 	; to the timer register starts it and acknowledges a pending tick
 	lda #0x8F
 	sta TIMER
+
+	; The console: master reset, then 8N1 with the receive interrupt (the ACIA raises IRQ for
+	; every received character; plt_interrupt reads them)
+	lda #0x03
+	sta ACIA0_STATUS
+	lda #0x95
+	sta ACIA0_STATUS
 	rts
 
 	.area .common
 
 _plt_reboot:
 	orcc #0x10
+	lda #0x03			; no interrupts of the console while the boot ROM loads the kernel
+	sta ACIA0_STATUS
 	jmp [0xFFFE]			; the boot ROM loads the kernel again
 
 _plt_monitor:

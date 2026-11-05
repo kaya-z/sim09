@@ -3,8 +3,9 @@
 /*
  * tty.c - the console server (TASK 1)
  *
- * Owns the ACIA.  Reads are served from a ring buffer that is filled by polling the ACIA at
- * every timer tick (the ACIA has no interrupt) and whenever a request arrives.
+ * Owns the ACIA.  Reads are served from a ring buffer, which the receive interrupt of the ACIA (in the kernel) fills: the server
+ * tells the kernel where the ring is (mk_rxreg) and is notified (NFY_RX) when characters have arrived.  The board has a FIFO of
+ * 256 characters for the time that the CPU is held (a write to the card); a character that finds the ring full is lost.
  *
  *   cooked mode (default)  a line editor: echo, BS/DEL erase one character (multi-byte
  *                          characters of UTF-8 / EUC-JP / Shift_JIS as a whole, with the right
@@ -22,12 +23,15 @@
 #include "bsp.h"
 #include "mkstr.h"
 
-#define INQ         128             /* input ring (power of two) */
+#define INQ         RX_RING         /* input ring (power of two) */
 #define LINEMAX     120
 #define CHUNK       48
 
-static u8 inq[INQ];
-static u8 qh, qt;                   /* ring head (write) and tail (read) */
+/* The ring: the kernel (the receive interrupt) is the writer of head, this server the writer of tail; mk_rxreg() tells the kernel where it is. */
+static struct { u8 h, t; u8 b[INQ]; } rxr;
+#define qh  rxr.h
+#define qt  rxr.t
+#define inq rxr.b
 static u8 mode = TM_DEFAULT;
 static u8 charset = CS_UTF8;
 static u8 cols = 80, rows = 24;
@@ -68,14 +72,6 @@ static void reply(u8 tid, u8 st, u16 a)
 static u8 qcount(void)
 {
     return (u8)(qh - qt) & (INQ - 1);
-}
-
-static void poll_acia(void)
-{
-    while ((ACIA_STATUS & ACIA_RDRF) && (u8)((qh + 1) & (INQ - 1)) != qt) {
-        inq[qh] = ACIA_DATA;
-        qh = (u8)((qh + 1) & (INQ - 1));
-    }
 }
 
 static u8 deq(void)
@@ -218,7 +214,6 @@ static void reset_line(void)
 /* run the line editor on what has arrived */
 static void pump(void)
 {
-    poll_acia();
     if (mode & TM_RAW) return;
     while (!lready && qcount())
         edit(deq());
@@ -278,7 +273,6 @@ static void do_write(msg_t *m)
         if (st) break;
         for (i = 0; i < c; i++) outc(buf[i]);
         off += c;
-        poll_acia();
     }
     reply(m->src, off ? E_OK : st, off);
 }
@@ -308,7 +302,7 @@ static void do_ioctl(msg_t *m)
         r.a = (mode & TM_RAW) ? (u16)qcount() : (lready ? (u16)(llen - lpos) : (u16)0);
         break;
     case TTYC_FLUSH:
-        qh = qt = 0;
+        qt = qh;                    /* (the kernel writes the head) */
         reset_line();
         break;
     case TTYC_SETFG:
@@ -325,7 +319,8 @@ int main(void)
     msg_t m;
     taskinfo_t ti;
 
-    mk_hook(NFY_TICK);
+    mk_hook(NFY_TICK);          /* the tick, and NFY_RX of the receive interrupt (the kernel notifies the hook task) */
+    mk_rxreg(rxr.b);            /* tell the kernel the ring: the receive interrupt is on from here */
     for (;;) {
         if (mk_recv(TID_ANY, &m)) continue;
         if (m.src == TID_HW) {

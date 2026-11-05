@@ -163,6 +163,16 @@ _mk_hook
 	rts
 	endc
 
+	ifdef	STUB_mk_rxreg
+	export	_mk_rxreg
+_mk_rxreg
+	ldx	2,s
+	lda	#SYS_RXREG
+	swi
+	clra
+	rts
+	endc
+
 	ifdef	STUB_mk_tstart
 	export	_mk_tstart
 _mk_tstart

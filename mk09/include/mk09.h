@@ -51,6 +51,8 @@ typedef struct msg {
 #define NFY_TICK    0x0001  /* timer tick (to the task that did mk_hook())  */
 #define NFY_EXIT    0x0002  /* a task has exited (to PM)                     */
 #define NFY_INT     0x0004  /* interrupt key (^C) typed on the console (PM)  */
+#define NFY_RX      0x0010  /* characters arrived at the console (to the task that did mk_hook()) */
+#define NFY_RX      0x0010  /* characters arrived at the console (to the task that did mk_hook()) */
 #define NFY_USER    0x0008  /* free for user protocols                       */
 
 /* ---- status / error codes ------------------------------------------ */
@@ -104,6 +106,9 @@ u8  mk_self(void);                          /* own task id                    */
 
 /* privileged calls (tasks started with the PRIV flag: PM, TTY) */
 u8  mk_hook(u16 bits);                      /* get NFY_TICK etc. every tick   */
+#define RX_RING     128                     /* the size of the ring of mk_rxreg(): a power of 2 (the kernel knows the number) */
+u8  mk_rxreg(void *buf);                    /* { u8 head, tail; u8 buf[RX_RING]; }: buf = the bytes, head and tail are the two bytes before them: the kernel puts the console characters in (and notifies NFY_RX); it turns the receive interrupt on, again after a full ring */
+u16 mk_rxget(u8 *buf, u16 n);               /* up to n console characters that the receive interrupt collected: the number */
 /* create a task (state NEW) with memory region [lo, hi), first stack pointer 'top', entry
  * point and one argument (passed in X); returns the new task id in *tid */
 typedef struct tcreate {

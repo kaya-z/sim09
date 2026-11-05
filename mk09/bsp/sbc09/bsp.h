@@ -3,7 +3,7 @@
 /*
  * bsp.h - board support: the sbc09 machine (sim09, and the Tang Nano 9K implementation)
  *
- *   $E000 ACIA control/status   $E001 ACIA data        (6850 style, polled)
+ *   $E000 ACIA control/status   $E001 ACIA data        (6850 style; the receive interrupt is for the console server)
  *   $E00F power control         ($A5 = power off)
  *   $E030 timer                 ($8F = start/acknowledge, bit 4 of the status = fired)
  *   $E031-$E036                 RTC: year-1900 month day hour min sec (after writing 4 to $E030)
@@ -22,6 +22,7 @@
 #define ACIA_DATA       (*(u8 *)0xE001)
 #define ACIA_RDRF       0x01
 #define ACIA_TDRE       0x02
+#define ACIA_CTL        (*(u8 *)0xE000)    /* write: $03 master reset, $15 = 8N1 /16 without interrupts, $95 with the receive interrupt */
 #define POWER_REG       (*(u8 *)0xE00F)
 #define TIMER_REG       (*(u8 *)0xE030)
 #define RTC_REG(n)      (*(u8 *)(0xE030 + (n)))

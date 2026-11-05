@@ -6,6 +6,8 @@
 void bsp_timer_start(void)
 {
     TIMER_REG = 0x8F;               /* start; the first tick comes one period later */
+    ACIA_CTL = 0x03;                /* the console: master reset, then 8N1 without interrupts (the console server asks for the receive interrupt) */
+    ACIA_CTL = 0x15;
 }
 
 /* returns 1 when the timer has fired; acknowledges it (and restarts it) */

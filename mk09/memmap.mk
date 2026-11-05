@@ -22,15 +22,15 @@ DATA_BASE  = E200
 TPA_END    = E000
 
 # size of the code slots (the build checks that the code fits)
-K_CSZ      = 0858
-TTY_CSZ    = 088A
+K_CSZ      = 0894
+TTY_CSZ    = 0859
 DISK_CSZ   = 029C
-FS_CSZ     = 2814
+FS_CSZ     = 2813
 MM_CSZ     = 01C4
 PM_CSZ     = 0B6A
 
 # size of the data slots (rwdata + bss + stack)
-K_DSZ      = 0260
+K_DSZ      = 0264
 TTY_DSZ    = 01C0
 DISK_DSZ   = 0190
 FS_DSZ     = 0780

@@ -39,6 +39,7 @@ TID_ANY	equ	$FF
 TID_HW	equ	$FE
 OP_NOTIFY equ	$FF
 NFY_EXIT equ	2
+NFY_RX	equ	$10
 
 TS_FREE	equ	0
 TS_READY equ	1
@@ -94,6 +95,8 @@ F_U	equ	8
 F_PC	equ	10
 
 TIMER	equ	$E030
+ACIA	equ	$E000			the console: status / control, data at +1
+RXQ	equ	128			the size of the ring of the console server (servers/tty.c, RX_RING)
 POWER	equ	$E00F
 
 * ================================================================================ variables
@@ -110,6 +113,8 @@ cnt	rmb	1
 sendhint rmb	1			not 0: a task may be blocked in a send (set when one blocks, cleared by a receive that finds none)
 sseen	rmb	1			(sc_recv: a task in SEND state was seen)
 hookbits rmb	2
+rxp	rmb	2			the ring of the console server (the bytes; the head and the tail are the two bytes before them) that the receive interrupt fills (0: none yet)
+rxgot	rmb	1			(rxdrain: characters were moved)
 ticks	rmb	2
 curp	rmb	2			&tasks[cur]
 frm	rmb	2			the frame of the task that trapped
@@ -255,7 +260,7 @@ swi_entry
 	bne	@ok
 	ldb	#E_PERM
 	bra	@done
-@ok	cmpb	#SYS_POWER
+@ok	cmpb	#SYS_RXREG
 	bhi	@nosys
 	clra
 	aslb
@@ -268,7 +273,7 @@ swi_entry
 	stx	F_X,u
 @done	ldu	<frm
 	stb	F_B,u
-	bra	sched
+	lbra	sched
 @nosys	ldb	#E_NOSYS
 	bra	@done
 
@@ -281,9 +286,15 @@ irq_entry
 	stu	<frm
 	ldy	<curp
 	stu	T_SP,y
+	lbsr	rxdrain			the console (the IRQ line is shared with the timer)
 	lda	TIMER
 	anda	#$10
-	beq	@out			(not the timer)
+	bne	@tick
+	tst	<rxgot			(not the timer) characters have arrived: tell the console server
+	beq	@out
+	ldx	#NFY_RX
+	bra	@ntf
+@tick
 	lda	#$8F
 	sta	TIMER
 	ldd	<ticks
@@ -317,9 +328,9 @@ irq_entry
 @nx	leax	TSZ,x
 	dec	<cnt
 	bne	@sl
-	ldb	<hooktid
-	beq	@out
 	ldx	<hookbits
+@ntf	ldb	<hooktid
+	beq	@out
 	lbsr	notify
 @out	ldy	<curp
 	ldu	<frm
@@ -457,6 +468,28 @@ uok	pshs	d
 	orcc	#1
 	rts
 
+* rxdrain: move the characters of the console ACIA into the ring of the console server (rxp: the bytes; the head is at rxp-2, the tail at rxp-1), rxgot not 0 if there were any.
+* A character that finds the ring full is lost (the server empties it at once; the board has a FIFO of 256 characters for the time that the CPU is held).
+* Clobbers A, B, X, U.
+rxdrain	clr	<rxgot
+	ldu	<rxp
+	beq	@x
+@rx	lda	ACIA
+	lsra
+	bcc	@x			(no character)
+	ldb	-2,u			the head
+	leax	b,u			X = the place of the character (the head is below 128)
+	incb
+	andb	#RXQ-1
+	lda	ACIA+1
+	cmpb	-1,u			the tail
+	beq	@rx
+	sta	,x
+	stb	-2,u
+	inc	<rxgot
+	bra	@rx
+@x	rts
+
 * copymsg: a message (MSGSZ = 10 bytes) from X to U; D is clobbered
 copymsg	ldd	,x++
 	std	,u++
@@ -513,7 +546,7 @@ wake	ldu	T_SP,x
 deliver	pshs	x,y
 	ldu	T_UBUF,x
 	tfr	y,x
-	lbsr	copymsg
+	bsr	copymsg
 	ldx	,s
 	ldb	#0
 	ldy	#0
@@ -627,6 +660,7 @@ sctab	fdb	0
 	fdb	sc_tload		20
 	fdb	sc_treap		21
 	fdb	sc_power		22
+	fdb	sc_rxreg		23
 
 * common ends of the handlers
 okret	clrb
@@ -987,6 +1021,16 @@ sc_tinfo
 	lbra	errret
 @fault	ldb	#E_FAULT
 	lbra	errret
+
+* rxreg: X = the ring of the console server (the bytes; head and tail are the two bytes before them): the receive interrupt puts the characters of the console into it and notifies the hook
+* task (NFY_RX).  The call turns the interrupt on.
+sc_rxreg
+	ldu	<frm
+	ldx	F_X,u
+	stx	<rxp
+	lda	#$95			8N1 with the receive interrupt
+	sta	ACIA
+	lbra	okret
 
 sc_hook	ldu	<frm
 	ldx	F_X,u

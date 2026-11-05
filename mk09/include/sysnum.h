@@ -24,4 +24,6 @@
 #define SYS_TLOAD       20
 #define SYS_TREAP       21
 #define SYS_POWER       22
+#define SYS_RXREG       23      /* privileged: the ring that the console receive interrupt fills (and turn the interrupt on) */
+#define SYS_RXGET       23      /* privileged: take the characters that the receive interrupt has collected */
 #endif

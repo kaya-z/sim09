@@ -339,10 +339,30 @@ static u8 check_stack(struct frame *f)
     return 1;
 }
 
+/* The console receive interrupt (the IRQ line is shared with the timer): the characters go into the ring of the console server (rxp),
+ * which asked for it with SYS_RXREG (the bytes; the head and the tail are the two bytes before them). */
+static u8 *rxp;
+static u8 rxdrain(void)
+{
+    u8 got = 0, h;
+    u8 c;
+    if (!rxp) return 0;
+    while (ACIA_STATUS & ACIA_RDRF) {
+        c = ACIA_DATA;
+        h = (u8)((rxp[-2] + 1) & (RX_RING - 1));
+        if (h == rxp[-1]) continue;                 /* a full ring loses the character */
+        rxp[rxp[-2]] = c;
+        rxp[-2] = h;
+        got = 1;
+    }
+    return got;
+}
+
 void k_irq(struct frame *f)
 {
     u8 i;
     tasks[cur].sp = (u16)f;
+    if (rxdrain() && hook_task) notify(hook_task, NFY_RX);
     if (!bsp_timer_fired()) return;
     ticks++;
     tasks[cur].cpu++;
@@ -382,6 +402,10 @@ static u8 sc_priv(u8 me, struct frame *f)
 
     if (!t->priv) return E_PERM;
     switch (nr) {
+    case SYS_RXREG:
+        rxp = (u8 *)SC_X(f);
+        ACIA_CTL = 0x95;
+        break;
     case SYS_HOOK:
         hook_task = me;
         hook_bits = SC_X(f);
