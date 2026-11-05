@@ -7,7 +7,7 @@
 //   RAM       64 KB in the PSRAM of the Tang Nano 9K, through the controller of Feng Zhou (vendor/psram);
 //             cleared (byte by byte) after every reset, like the memory of the simulator
 //   ROM       a read-only image in block RAM, from ROM_BASE up to $FFFF, over the RAM
-//   $E000/01  console ACIA on the UART (acia_uart.v)
+//   $E000/01  console ACIA on the UART (acia_uart.v); its interrupt request is on the IRQ line (with the timer)
 //   $E00F     power control: $A5 stops the machine (until the reset button)
 //   $E030-36  timer and clock (timer_rtc.v)
 //   $E040-47  disk port on the microSD card (sd_disk.v)
@@ -110,11 +110,12 @@ module sbc09_soc #(
     reg         e, q;
     reg         nreset_cpu;
     wire        timer_irq;
+    wire        acia_irq;               // the console ACIA (OS-9 uses its receive and transmit interrupts)
 
     mc6809i #(.ILLEGAL_INSTRUCTIONS("GHOST")) cpu (
         .D(cpu_d_in), .DOut(cpu_d_out), .ADDR(cpu_a), .RnW(cpu_rnw),
         .E(e), .Q(q), .BS(cpu_bs), .BA(cpu_ba),
-        .nIRQ(FREERUN ? 1'b1 : ~timer_irq), .nFIRQ(FREERUN ? ~timer_irq : 1'b1), .nNMI(1'b1),
+        .nIRQ(FREERUN ? ~acia_irq : ~(timer_irq | acia_irq)), .nFIRQ(FREERUN ? ~timer_irq : 1'b1), .nNMI(1'b1),
         .AVMA(cpu_avma), .BUSY(), .LIC(cpu_lic),
         .nHALT(1'b1), .nRESET(nreset_cpu), .nDMABREQ(1'b1),
         .RegData(dbg_regs)
@@ -212,6 +213,7 @@ module sbc09_soc #(
     endfunction
     // registered (the address and the pass are stable for several clocks before the values are used)
     reg [7:0]  td_r, t_got_r;
+    reg [7:0]  msg_r;                                // the character of the result message (mi, the pass and the address are stable for several clocks)
     reg [21:0] cw_n;                                 // cw + 1, registered (the carry chain of the counter was the critical path)
     reg        cw_last, cw_pg;
     always @(posedge clk) begin
@@ -220,6 +222,7 @@ module sbc09_soc #(
         t_got_r <= cw[0] ? ps_dout_m[15:8] : ps_dout_m[7:0];
         cw_last <= (cw == MT_LAST);
         cw_pg   <= (cw[17:0] == 18'h3ffff);
+        msg_r   <= msg(mi, t_fail, t_faddr);
     end
 
     always @(posedge clk) begin
@@ -260,8 +263,8 @@ module sbc09_soc #(
                     end else begin cw <= cw_n; cs_ <= M_R; end
                 end
                 M_FIN: if (!p_go && !st_wr && !st_d) begin                    // " OK 2048K" or " NG @address"
-                    if (msg(mi, t_fail, t_faddr) == 8'h00) cs_ <= C_CLR;       // then clear (tp = 3: zero bytes)
-                    else begin p_ch <= msg(mi, t_fail, t_faddr); p_go <= 1'b1; mi <= mi + 1'b1; end
+                    if (msg_r == 8'h00) cs_ <= C_CLR;                          // then clear (tp = 3: zero bytes)
+                    else begin p_ch <= msg_r; p_go <= 1'b1; mi <= mi + 1'b1; end
                 end
                 C_CLR: begin                            // write zero bytes 0, 1, 2 ... 65535 (2 MB - 1 for Level 2; the access the controller was tested with)
                     c_wr <= 1'b1;
@@ -354,6 +357,8 @@ module sbc09_soc #(
     reg        acia_rd;                 // a clock after the read: rd_reg has taken the character by then
     always @(posedge clk) acia_rd <= acc2 && vma_pend && cpu_rnw && io_acia && off[0];
     reg  [7:0] acia_byte;
+    reg        acia_cwr;                // one clock: a write to the control register
+    reg  [7:0] acia_cbyte;
     wire       acia_wr = acia_pend && !acia_tx_full && !term_busy;    // the screen can also hold a character back
     assign term_stb  = acia_wr | st_wr;
     assign term_byte = st_wr ? st_byte : acia_byte;
@@ -363,7 +368,8 @@ module sbc09_soc #(
     acia_uart #(.BAUD_DIV(BAUD_DIV)) acia (
         .clk(clk), .rst(rst), .rxd(rxd), .txd(txd),
         .rd_data(acia_rd), .wr_data(acia_wr | st_wr), .wdata(st_wr ? st_byte : acia_byte),
-        .tx_full(acia_tx_full), .status(acia_status), .rdata(acia_rdata)
+        .wr_ctl(acia_cwr), .cdata(acia_cbyte),
+        .tx_full(acia_tx_full), .status(acia_status), .rdata(acia_rdata), .irq(acia_irq)
     );
 
     timer_rtc #(
@@ -428,6 +434,7 @@ module sbc09_soc #(
 
     always @(posedge clk) begin
         dgo  <= 1'b0;
+        acia_cwr <= 1'b0;
         go_req <= 1'b0;
         c_rd <= 1'b0;
         c_cwr <= 1'b0;
@@ -452,6 +459,7 @@ module sbc09_soc #(
                             if (io_power && cpu_d_out == 8'ha5) begin pwroff <= 1'b1; osrun <= 1'b0; end      // shutdown: LED5 on, LED4 off
                             if (io_power && cpu_d_out == 8'ha4) osrun <= 1'b1;
                             if (io_modr) begin
+                                acia_cwr <= 1'b1; acia_cbyte <= 8'h03;       // a new machine mode: the ACIA interrupts are off
                                 if (cpu_d_out == 8'ha2 && !l2) begin           // to the Level 2 mode: the identity map for the blocks 0-6
                                     l2 <= 1'b1; tr <= 1'b0; tr_raw <= 8'hff;
                                     for (mk = 0; mk < 7; mk = mk + 1) map_s[mk] <= mk[7:0];
@@ -468,6 +476,10 @@ module sbc09_soc #(
                             if (io_acia && off[0]) begin
                                 acia_pend <= 1'b1;                  // the guest does not look at TDRE: wait for it here
                                 acia_byte <= cpu_d_out;
+                            end
+                            if (io_acia && !off[0]) begin
+                                acia_cwr <= 1'b1;                   // the control register: interrupt enables, master reset
+                                acia_cbyte <= cpu_d_out;
                             end
                         end
                     end else if (cpu_rnw && rom_sel) begin

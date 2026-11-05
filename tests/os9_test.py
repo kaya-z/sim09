@@ -171,6 +171,18 @@ for level in (1, 2):
     check('done' in s.text(), '%s sleep/scheduler works' % tag)
     s.close()
 
+    # --- the terminal driver is interrupt driven (ACIA RIE/TIE, pty.asm): ^C reaches a running program
+    #     at once (error #003), characters typed while a command runs wait in the input ring
+    s = Session(level)
+    s.run(['send "list /v0/cmds/asm.lst\\r"', 'expect "0000"', 'send "\\x03"', 'expect "OS9:"',
+           'send "echo alive\\r"', 'expect "alive"'])
+    check('#003' in s.text() and 'alive' in s.text(), '%s ^C stops a running program (keyboard interrupt from the ACIA IRQ)' % tag, s.text()[-300:])
+    s.close()
+    s = Session(level)
+    s.run(['send "sleep 2\\r"', 'send "echo typed" ', 'send "ahead\\r"', 'expect "typedahead"'])
+    check('typedahead' in s.text(), '%s characters typed while a command runs are kept (receive ring)' % tag, s.text()[-300:])
+    s.close()
+
 # --- creating, reading and deleting files on the raw RBF images (PDisk must fill the drive table from LSN 0)
 for level in (1, 2):
     s = Session(level)

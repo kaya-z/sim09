@@ -329,7 +329,7 @@ int main(int argc, char **argv)
 #endif
     Uart u;
     size_t step = 0; size_t scan = 0; long waituntil = -1;
-    int rc = 0; bool powered_off = false;
+    int rc = 0; bool powered_off = false; long off_clk = -1;
     top->resetn = 0; top->rxd = 1; top->sd_miso = 1; top->fl_miso = 1; top->clk = 0;
     for (int i = 0; i < 8; i++) { top->clk = 0; top->eval(); top->clk = 1; top->eval(); }
     top->resetn = 1;
@@ -375,7 +375,10 @@ int main(int argc, char **argv)
         top->sd_miso = sd.step(top->sd_clk, top->sd_cs, top->sd_mosi);
         u.rx(top->txd, !quiet);
         u.tx(); top->rxd = u.line;
-        if (!(top->led & 0x20)) { rc = 0; powered_off = true; fprintf(stderr, "\n[power off at clk %ld, led %02x]\n", clk, (~top->led) & 0x3f); break; }
+        if (!(top->led & 0x20)) {                       // power off: the UART goes on for a while, it holds up to 16 characters
+            if (off_clk < 0) { off_clk = clk; fprintf(stderr, "\n[power off at clk %ld, led %02x]\n", clk, (~top->led) & 0x3f); }
+            if (clk >= off_clk + 200000) { rc = 0; powered_off = true; break; }
+        }
         if ((clk & 0xfff) == 0 && step < steps.size()) {
             const auto &s = steps[step];
             if (s.first == "expect") {

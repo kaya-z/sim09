@@ -60,7 +60,7 @@ v0 : v0.asm
 clock :  
 	$(A09) clock.asm -o clock $(LST)
 
-pty :
+pty : ../level1/pty.asm
 	$(A09) ../level1/pty.asm -o pty $(LST)
 
 shell :

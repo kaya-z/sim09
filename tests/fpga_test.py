@@ -175,8 +175,8 @@ def t_os9k(exe):
     mods = out[out.find('Module Directory'):]
     return [('NitrOS-9 Level 1 boots with the boot ROM of FUZIX / MK09: the kernel comes from the card, the machine is named Tang Nano 9K',
              'NitrOS-9/6809 Level 1' in out and 'Tang Nano 9K' in out and 'OS9:' in out, out[:600]),
-            ('the modules of the kernel image (Boot, Init, IOMan, SCF, KrnP2, Krn) and of the boot file (RBF, Pdisk, Shell, SysGo) are there, 175 pages are free',
-             all(x in mods for x in ('Boot', 'Init', 'IOMan', 'SCF', 'KrnP2', 'Krn', 'RBF', 'Pdisk', 'Shell', 'SysGo')) and 'Total pages free = 176' in out, out[-500:]),
+            ('the modules of the kernel image (Boot, Init, IOMan, SCF, KrnP2, Krn) and of the boot file (RBF, Pdisk, Shell, SysGo) are there, 174 pages are free',
+             all(x in mods for x in ('Boot', 'Init', 'IOMan', 'SCF', 'KrnP2', 'Krn', 'RBF', 'Pdisk', 'Shell', 'SysGo')) and 'Total pages free = 175' in out, out[-500:]),
             ('shutdown powers the board off', 'System halted' in out, out[-200:])]
 
 

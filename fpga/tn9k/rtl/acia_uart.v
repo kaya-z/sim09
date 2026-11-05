@@ -1,15 +1,25 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 sim09 contributors
 //
-// The console port of the sim09 / sbc09 "v09" machine: a 6850 style ACIA (status at +0,
-// data at +1, polled, no interrupts) on a 8N1 UART.
+// The console port of the sim09 / sbc09 "v09" machine: a 6850 style ACIA (control / status at +0,
+// data at +1) on a 8N1 UART.
 //
-//   status: bit0 RDRF (a received character is waiting), bit1 TDRE (the transmitter can take one)
-//   data:   read = the oldest received character (the last one again when none is waiting, like the
-//           simulator), write = send
+//   status:  bit0 RDRF (a received character is waiting), bit1 TDRE (the transmitter can take one),
+//            bit7 IRQ (the ACIA requests an interrupt)
+//   control: bit7 RIE (interrupt for RDRF), bits6-5 = 01 TIE (interrupt for TDRE), bits1-0 = 11 master
+//            reset (no interrupts until the next write); the other bits (clock divider, word format)
+//            are ignored, the line is always 8N1 at BAUD_DIV
+//   data:    read = the oldest received character (the last one again when none is waiting, like the
+//            simulator), write = send
+//
+// Guests that poll (FUZIX, MK09, the monitor) never write the control register: no interrupts.
+// OS-9 enables RIE and TIE and has the interrupt request on the IRQ line (irq output).
 //
 // The simulator's console is not paced, the FPGA's is: a 256 character receive FIFO keeps what
-// is typed or pasted between two polls of a guest that looks at the port 50 times a second.
+// is typed or pasted between two polls of a guest that looks at the port 50 times a second (an
+// interrupt driven guest needs far less).  The transmitter has a FIFO of 15 characters: TDRE means
+// that the FIFO has room, so that the transmit interrupt handler can write a burst and a handler that
+// needs more than one character time to be entered still keeps the line busy.
 
 module acia_uart #(
     parameter BAUD_DIV = 586                // clk / baud (67.5 MHz / 115200)
@@ -21,9 +31,12 @@ module acia_uart #(
     input  wire       rd_data,              // one clk pulse: the guest reads the data register
     input  wire       wr_data,              // one clk pulse: the guest writes the data register
     input  wire [7:0] wdata,
+    input  wire       wr_ctl,               // one clk pulse: the guest writes the control register
+    input  wire [7:0] cdata,
     output wire       tx_full,              // the transmitter cannot take a character now
     output wire [7:0] status,
-    output wire [7:0] rdata
+    output wire [7:0] rdata,
+    output reg        irq                   // interrupt request (level)
 );
 
     // ---------------------------------------------------------------- receiver
@@ -92,28 +105,37 @@ module acia_uart #(
     end
 
     // ---------------------------------------------------------------- transmitter
-    reg [7:0] thold;
-    reg       tfull;
+    reg [7:0] tfifo [0:15];
+    reg [3:0] twp, trp;
+    wire      tempty = (twp == trp);
+    reg       tfull;                                          // 15 characters in the FIFO (a clock late: writes are far apart)
+    always @(posedge clk) tfull <= ((twp + 1'b1) == trp);
+    reg [7:0] tq;
+    always @(posedge clk) tq <= tfifo[trp];                    // the head of the queue, a clock late
     reg [9:0] tsh;
     reg [3:0] tbit;
     reg [9:0] tbaud;
     reg       tbusy;
+    reg       tload;                                           // tq is valid (a clock after the FIFO head moved)
 
     always @(posedge clk) begin
+        tload <= 1'b0;
         if (rst) begin
-            txd <= 1'b1; tfull <= 1'b0; tbusy <= 1'b0;
+            txd <= 1'b1; tbusy <= 1'b0; twp <= 4'd0; trp <= 4'd0;
         end else begin
-            if (wr_data) begin
-                thold <= wdata;
-                tfull <= 1'b1;
+            if (wr_data && !tfull) begin
+                tfifo[twp] <= wdata;
+                twp <= twp + 1'b1;
             end
             if (!tbusy) begin
-                if (tfull) begin
-                    tsh   <= {1'b1, thold, 1'b0};
+                if (!tempty && !tload) begin
+                    tload <= 1'b1;                              // tq follows the new head in the next clock
+                end else if (tload) begin
+                    tsh   <= {1'b1, tq, 1'b0};
+                    trp   <= trp + 1'b1;
                     tbit  <= 4'd0;
                     tbaud <= BAUD_DIV - 1;
                     tbusy <= 1'b1;
-                    tfull <= wr_data;           // a write in this very cycle stays pending
                     txd   <= 1'b0;
                 end
             end else if (tbaud != 0) begin
@@ -132,10 +154,20 @@ module acia_uart #(
         end
     end
 
+    // ---------------------------------------------------------------- control register and interrupt
+    reg [7:0] cr;
+    wire      cr_rst = (cr[1:0] == 2'b11);
+    always @(posedge clk) begin
+        if (rst) cr <= 8'h03;
+        else if (wr_ctl) cr <= (cdata[1:0] == 2'b11) ? 8'h03 : cdata;     // master reset: interrupts off
+    end
+    wire      irq_c = !cr_rst && ((cr[7] && !empty) || (cr[6:5] == 2'b01 && !tfull));
+
     // registered: the guest reads the port at most once per bus cycle, long after a change
     reg [7:0] status_r, rdata_r;
     always @(posedge clk) begin
-        status_r <= {6'b0, !tfull, !empty};
+        irq      <= irq_c;
+        status_r <= {irq_c, 5'b0, !tfull, !empty};
         rdata_r  <= !empty ? rq : last;
     end
     assign tx_full = tfull;

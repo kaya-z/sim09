@@ -8,7 +8,7 @@
 * (it is one record of the image on the card: tools/mkl2disk.py).  It
 *   - writes $A2 to the mode register ($E00E): the machine becomes the Level 2 machine (MMU, 2 MB, I/O at $FF80);
 *     the system map is the identity for the blocks 0-6, so that this code goes on,
-*   - reads the ROM image of the Level 2 machine (os9/os9v2_tn9k.rom, 106 sectors from LSN IMGLSN) through the window
+*   - reads the ROM image of the Level 2 machine (os9/os9v2_tn9k.rom, NSECT sectors from LSN IMGLSN) through the window
 *     $2000-$3FFF (system map 1) into the physical blocks $3F, $40, $41, $42 ($7E000 on: where sim09 -2 puts it),
 *   - writes $A3 to the mode register: the CPU is reset (the maps as the simulator has them), and runs the boot code
 *     of the image at $FFD0.
@@ -18,7 +18,7 @@
 ********************************************************************
 
 IMGLSN   equ   1100           first sector of the image on the card
-NSECT    equ   106            27134 bytes = 106 sectors
+NSECT    equ   112            28672 bytes = 112 sectors (the image is about 27.6 KB; the four blocks hold 128 sectors)
 
          org   $0300
 

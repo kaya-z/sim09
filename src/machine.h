@@ -15,7 +15,8 @@
  *                   I/O registers based at $FF80.
  *
  * I/O map (offsets from the I/O base, i.e. $E000 or $FF80):
- *    00 ACIA0 control/status      01 ACIA0 data      (console)
+ *    00 ACIA0 control/status      01 ACIA0 data      (console; control: bit7 RIE, bits6-5=01 TIE, 11 master reset;
+ *                                                  status bit7 = IRQ: the interrupt request is on the IRQ line)
  *    04 ACIA1 ctl/status          05 ACIA1 data      (network port 1)
  *    06/07 ACIA2                  08/09 ACIA3        (network ports 2,3)
  *    11 MMU task register         20-27 system map   28-2F user map   (L2)
@@ -47,6 +48,7 @@ typedef struct acia {
     uint64_t next_rx_cycle;   /* pacing: earliest cycle of next RX byte */
     uint64_t baud_cycles;     /* cycles per character (0 = unlimited)   */
     int      last_rx;         /* last byte presented on data register    */
+    uint8_t  cr;              /* 6850 control register: bit7 RIE, bits6-5 = 01 TIE, bits1-0 = 11 master reset (ACIA0 only) */
 } acia_t;
 
 typedef struct machine {

@@ -5,7 +5,7 @@
 
 The 256 byte boot ROM of the bitstream loads the code from LSN 2 (as it does for FUZIX and MK09): the loader of
 os9/level2/l2boot.asm (one record, LSN 2, and the entry record, LSN 3).  The loader switches the machine to the Level 2
-mode, reads the ROM image of the Level 2 machine (os9/os9v2_tn9k.rom: 106 sectors, LSN 1100-1205, marked used in the
+mode, reads the ROM image of the Level 2 machine (os9/os9v2_tn9k.rom: 112 sectors, LSN 1100-1211, marked used in the
 allocation map) into the physical memory and starts it.  The disk is /d0 of the Level 2 system.
 
 Starts from os9/OS9.dsk (the Level 1 disk), makes it larger (default 2048 sectors: DD.TOT and the allocation map) and
@@ -40,7 +40,7 @@ def main():
     r = subprocess.run([os.path.join(ROOT, 'tools', 'a09'), '-o', ldr, os.path.join(ROOT, 'os9', 'level2', 'l2boot.asm')], capture_output=True)
     code = open(ldr, 'rb').read()
     rom = open(os.path.join(ROOT, 'os9', 'os9v2_tn9k.rom'), 'rb').read()
-    imglsn, nsect = 1100, 106
+    imglsn, nsect = 1100, 112
     if len(rom) > nsect * SEC or len(code) > 253 or imglsn + nsect > size:
         sys.exit('mkl2disk: the ROM image (%d bytes) or the loader (%d bytes) does not fit: see os9/level2/l2boot.asm' % (len(rom), len(code)))
     d[2 * SEC:3 * SEC] = bytes([0x03, 0x00, len(code)]) + code + bytes(253 - len(code))        # [dest $0300][n][code]
