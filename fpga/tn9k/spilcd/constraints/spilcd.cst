@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: MIT
+// The ILI9341 module (MSP2807, docs/LCD_SPI.md) on five pins of the Tang Nano 9K (used together with tn9k.cst, with or without hdmi.cst: these pins are free).
+// The pins are the IOB8A/B, IOB11A/B, IOB13A of the schematic, in the 3.3 V bank; WHICH HEADER POSITIONS THEY ARE IS NOT CHECKED (the pin map of the board is a picture):
+// look at it before wiring, and change the numbers here.  The module: CS, SCK, SDI (MOSI), DC/RS, RESET; the LED pin to 3.3 V; SDO and the touch pins are not used.
+IO_LOC "LCD_CS" 25;
+IO_PORT "LCD_CS" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "LCD_SCK" 26;
+IO_PORT "LCD_SCK" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "LCD_MOSI" 27;
+IO_PORT "LCD_MOSI" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "LCD_DC" 28;
+IO_PORT "LCD_DC" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "LCD_RESET" 29;
+IO_PORT "LCD_RESET" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
