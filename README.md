@@ -23,6 +23,7 @@ C 言語で書かれた MC6809 シミュレータです。Debian 12 (gcc 12) で
 * **FUZIX** (UNIX 風 OS): **64KB のフラットメモリ (MMU なし)** で起動してシェルまで動く。プロセスはスワップで切り替える (29KiB / プロセス)。
   `./sim09 -rom fuzix/images/bootrom.bin -0 fuzix.dsk` → [docs/FUZIX.md](docs/FUZIX.md)
 * **MK09**: MC6809 用のマイクロカーネルと、その上で動く小さな OS。シェル、`jwp`、BASIC、**C コンパイラとアセンブラ**まで MK09 の上で動く (下の「MK09」の節) → [mk09/README.md](mk09/README.md)
+* **C** (`cc`): MK09 の C コンパイラも **OS-9 Level 2** に移した。`cc hello.c` で OS-9 のモジュールができる (`cpp` `cc1` `cg` `as` が順に動く。ヘッダは `/d0/INC`、サンプルは `/d0/C`、ライブラリは Pascal と共通)。`OS9L2.dsk` に入っている → [docs/OS9_MANUAL.md](docs/OS9_MANUAL.md) の 9.6 節
 * **Pascal** (`pc`): MK09 の Pascal コンパイラを **OS-9 Level 2** に移したもの。OS-9 の上で `pc hello.pas` と打つと OS-9 のモジュールができる (`pas0` `pas1` `cg` `as` が順に動く。`string` `real` `longint` `set` ファイルなど)。`OS9L2.dsk` に入っている (実機の Tang Nano 9K で `hello.pas` のコンパイルと実行を確認)。Level 1 はメモリが足りず対象外 → [docs/OS9_MANUAL.md](docs/OS9_MANUAL.md) の 9.5 節、[mk09/docs/PASCAL.md](mk09/docs/PASCAL.md)
 * **BASIC**: OS-9 では 2 種類使えます。**YSD BASIC (`ysdbasic`)** は MK09 の BASIC の OS-9 版で、ディスクイメージに入っています (Level 1 / 2 とも。実機の FPGA でも動作を確認)。
   **BASIC09** は Microware のソースの取得とビルドの手順 (`os9/basic09/`) だけを置いてあり、ソースもビルド済みモジュールも**リポジトリには入れていません**
@@ -112,6 +113,7 @@ OS9:date                  時計 (起動時のホストの時刻 + エミュレ�
 ```
 OS9:chx /v0/cmds
 OS9:shutdown          電源断レジスタ (I/O ベース+$0F に $A5) に書いてシミュレータを正常終了 (Level 1/2 共通)
+OS9:reboot            同じレジスタに $A6 を書くと再起動 (メモリを消して、ROM から最初から。FPGA ではボード全体が電源投入のときと同じに始まる。Level 1/2 共通)
 ```
 
 FPGA では、このレジスタが LED を動かします。ブート ROM が OS に渡る前に `$A4` を書くと LED4 (OS RUN) が点灯し、`$A5` を書くと LED4 が消えて LED5 (電源断) が点灯します
@@ -213,7 +215,7 @@ I/O ベース: Level 1 は `$E000`、Level 2 は `$FF80` (以下は I/O ベー�
 | `11` | MMU タスクレジスタ (Level 2) |
 | `20-27` / `28-2F` | MMU システム / ユーザマップ (Level 2, `$FFA0`/`$FFA8`) |
 | `30` | タイマ制御: 書き込み `$8F` で開始/確認応答、`$80` 停止、`$04` で `31-36` に年月日時分秒 (RTC: 起動時のホストの時刻 + エミュレートした経過時間) |
-| `0E/0F` | 電源・状態 (FPGA)。`0F` に `$A5` で電源断 (シミュレータは終了、FPGA は LED5 点灯とクロック停止)、`$A4` で OS RUN (LED4)。`0E` は Level 2 への切り替え (FPGA のみ) |
+| `0E/0F` | 電源・状態 (FPGA)。`0F` に `$A5` で電源断 (シミュレータは終了、FPGA は LED5 点灯とクロック停止)、`$A6` で再起動 (`reboot`。シミュレータはメモリを消して ROM から、FPGA はボード全体を電源投入と同じに)、`$A4` で OS RUN (LED4)。`0E` は Level 2 への切り替え (FPGA のみ) |
 | `40` | ディスク/VRBF コマンド (`$81` 読み、`$55` 書き、`$D1`-`$DD` VRBF) と `41-47` パラメータ |
 
 Level 1 は 64KB のフラットメモリで ROM は書き込み保護、Level 2 は物理 2MB で `$FE00-$FFFF` が常に物理 `$7FE00` に固定されます。
@@ -231,6 +233,7 @@ Level 1 は 64KB のフラットメモリで ROM は書き込み保護、Level 2
 | `make test-hdmi` | FPGA の HDMI 文字画面: 端末の動作 (折り返し、スクロール、スクロール領域、行の挿入と削除、消去、色) を別に書いたモデルと 1 セルずつ比較 (88 項目)、TMDS の符号と直流平衡、**漢字**: 3 つの文字コードの復号、2 桁の文字の端末の動作を全画素で比較 (124 項目) |
 | `make test-fpga` | FPGA の RTL を Verilator で動かす: FUZIX の起動・ログイン・コマンド・`shutdown`・再起動、SDSC カード、カードなし、NitrOS-9 Level 1 / Level 2 の起動と `dir /d0` (約 5 分。Verilator がなければ skip) |
 | `make -C mk09 test` | MK09: カーネル、サーバ、コマンド、BASIC、C コンパイラ。EUC-JP / Shift_JIS 版も作るので数分かかります (CMOC が要ります)。`make test` には含まれません |
+| `make test-cc` | C コンパイラの OS-9 Level 2 版: `mk09/tests/cc` の 13 本のプログラムを、PC 版のコンパイラと、**OS-9 の上の `cc`** でコンパイルして動かし、できたモジュールが同じ (バイト単位) こと、出力が正しいことを確かめる (数分。gcc と python3) |
 | `make test-pascal` | Pascal コンパイラの OS-9 Level 2 版: `mk09/tests/pas` の 14 本のプログラムを、PC 版のコンパイラと、**OS-9 の上の `pc`** でコンパイルして動かし、できたモジュールが同じ (バイト単位) こと、出力が正しいことを確かめる (約 2 分。gcc と python3) |
 | `make test-net` | OS-9 Net: telnet ログイン、日本語往復、`nc` によるダイヤルアウト、切断検出 (Level 1/2) |
 | `make test-cross` | 参考実装 (タイマを命令数駆動に改造したもの) と**全命令のレジスタトレースを比較** (Level 1/2 とも 150 万命令一致) |

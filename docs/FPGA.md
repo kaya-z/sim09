@@ -94,7 +94,7 @@ FUZIX、MK09、OS-9 Level 1 と同じく、**カードを替えるだけ**で起
 6. カードが読めないとき (カードなしなど) は、ローダは電源を切る (`$FF8F`)。
 
 * 実装は `rtl/sbc09_soc.v` (`l2` というモード)。MMU は、16 個の 8 ビットのレジスタと、CPU のアドレスを物理アドレスに変える回路です。
-* **カード**は `os9/OS9L2.dsk` (524,288 バイト、`make -C os9 OS9L2.dsk`。`tools/mkl2disk.py` が、`OS9.dsk` を 2048 セクタに広げ、ローダと ROM イメージを書き、`dir`、`mdir`、`mfree`、`procs`、`jwp`、`dhry` など Level 2 の版があるコマンドを入れ替えます)。
+* **カード**は `os9/OS9L2.dsk` (1,048,576 バイト、`make -C os9 OS9L2.dsk`。`tools/mkl2disk.py` が、`OS9.dsk` のファイルを読んで、4096 セクタ (2 セクタで 1 クラスタ。割り当てマップが 1 セクタで済む) のファイルシステムを作り直し、ローダと ROM イメージを書き、`dir`、`mdir`、`mfree`、`procs`、`jwp`、`dhry` など Level 2 の版があるコマンドと、Pascal / C のコンパイラ (`/d0/LIB`、`/d0/PAS`、`/d0/C`、`/d0/INC`) を入れます)。
   `dd if=os9/OS9L2.dsk of=/dev/sdX bs=512 conv=fsync`。ドライブ 1 は Level 1 と同じ 128MB の位置です。
 * Level 2 の `Init` と `SysGo` (`init_tn9k`、`sysgo_tn9k`) は、ディスクを `/d0` にして、**起動のとき自動で実行ディレクトリを `/d0/cmds` にします** (`chx` は要りません。`/v0` はないので)。機械の名前は `Tang Nano 9K`。
 * 実機の結果 (別のビットストリームで確かめました): `mfree` が 1,984KB (シミュレータと同じ)、`dir`、`mdir`、`jwp -v`、`dhry` (204 Dhrystones/s。シミュレータの Level 2 は 208) が動く。
@@ -150,7 +150,7 @@ ROM を作り直さなくても、ディスクのファイルを入れ替えれ�
 * `fpga/tn9k/scripts/build.sh os9boot` でビットストリームを作ります (`images/sbc09_os9boot.fs.gz`)。起動ファイルがディスクにないと、OS-9 は何も出さずに止まります。
 * `make test-fpga` の `os9boot` (2 項目) と `tests/os9_test.py` (2 項目) で確かめています。
 * **実機の Tang Nano 9K でも動きます** (2026-10-15。カードに `OS9.dsk` を書いて、電源を入れるだけで `OS9:` まで起動し、`chx /d0/cmds` のあと `mdir` と `dir /d0` を確認。HDMI の画面にも出ます)。
-* `OS9.dsk` の `/d0/cmds` には、標準のコマンドに加えて **`dhry` (Dhrystone)、`jwp`、`shutdown`** を入れてあります (FPGA 版には `/v0` がないため)。`chx /d0/cmds` のあと `dhry -t 10` などで動きます。**止めるときは `shutdown`** (電源制御レジスタ `$E00F` に `$A5` を書いて CPU を止める。LED5 が点く。ディスクへの書き込みは 1 ブロックごとに完了を待つので、その前に特別な操作は要らない)。他のコマンドを入れるには、`sim09 -v os9/level1` で `copy /v0/cmds/名前 /d0/cmds/名前` と `attr /d0/cmds/名前 e pe r pr` を実行します (そのあと `python3 tools/mkboot.py` で起動ファイルが残っていることを確かめられます)。
+* `OS9.dsk` の `/d0/cmds` には、標準のコマンドに加えて **`dhry` (Dhrystone)、`jwp`、`shutdown`** を入れてあります (FPGA 版には `/v0` がないため)。`chx /d0/cmds` のあと `dhry -t 10` などで動きます。**止めるときは `shutdown`** (電源制御レジスタ `$E00F` に `$A5` を書いて CPU を止める。LED5 が点く。ディスクへの書き込みは 1 ブロックごとに完了を待つので、その前に特別な操作は要らない)。**再起動は `reboot`** (同じレジスタに `$A6` を書く。ボード全体が電源を入れたときと同じに最初から始まる: メモリ検査、PSRAM の消去、漢字のコピー、カードの初期化、ブート ROM。**カードを替えたあとの USB の挿し直しの代わりになる**)。他のコマンドを入れるには、`sim09 -v os9/level1` で `copy /v0/cmds/名前 /d0/cmds/名前` と `attr /d0/cmds/名前 e pe r pr` を実行します (そのあと `python3 tools/mkboot.py` で起動ファイルが残っていることを確かめられます)。
 
 ## `jwp` と SKK 辞書 (カード起動の OS-9)
 
@@ -192,6 +192,8 @@ sudo dd if=os9/skk/SKK_utf8.dsk of=/dev/sdX bs=512 seek=262144 conv=fsync
 | 3 | カードにアクセス中 |
 | 4 | OS RUN: ブート ROM が OS に制御を渡した。`shutdown` (`$A5`) で消える (ROM が電源制御レジスタ `$E00F` に `$A4` を書く。リセットと Level 2 への切り替え (`$A3`) で消える) |
 | 5 | 電源制御 (`$E00F` = `$A5`) で止まった |
+
+電源制御レジスタ (`$E00F` / Level 2 では `$FF8F`) の `$A6` は**再起動**です。`rst` を 256 クロック (PSRAM のアクセスが終わるまで) 保ってからはなし、ボタンのリセットと同じ手順がもう一度走ります (`reboot_req`、`rtl/sbc09_soc.v`)。シミュレータ (`sim09`) では、メモリを消して ROM を戻し、デバイスをリセットして CPU をリセットします。
 
 **メモリ検査** (`sbc09_soc.v` の `MEMTEST`、CPU が動く前に RTL が行う): 2MB の全部に、`$55`、`$AA`、アドレスを内容にした値 (下位 8 ビット ^ 次の 8 ビット ^ 上位 6 ビット) の順で、
 書いて読み戻して比べます。コンソール (UART と HDMI) に `Memory ` のあと 256KB ごとに `>` を 1 つ (全部で 24 個) 出し、最後に ` OK 2048K` を出します。食い違いがあれば ` NG @` と最初の

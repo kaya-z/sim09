@@ -85,6 +85,9 @@ int machine_load_rom(machine_t *m, const char *file, long romstart)
             return -1;
         }
         if (fread(m->mem + 0xe000, 1, len, f) != (size_t)len) { fclose(f); return -1; }
+        free(m->rom_img);
+        m->rom_img = malloc((size_t)len); m->rom_len = (size_t)len; m->rom_at = 0xe000;
+        if (m->rom_img) memcpy(m->rom_img, m->mem + 0xe000, (size_t)len);
         if (romstart != 0x8000) m->romstart = (uint32_t)romstart;
         m->mem[0xff90] = 0;
         m->mem[0xffa7] = 0x3f;
@@ -92,6 +95,9 @@ int machine_load_rom(machine_t *m, const char *file, long romstart)
         if (romstart == 0x8000) romstart = 0x10000 - len;
         m->romstart = (uint32_t)romstart;
         if (fread(m->mem + (romstart & 0xffff), 1, len, f) != (size_t)len) { fclose(f); return -1; }
+        free(m->rom_img);
+        m->rom_img = malloc((size_t)len); m->rom_len = (size_t)len; m->rom_at = romstart & 0xffff;
+        if (m->rom_img) memcpy(m->rom_img, m->mem + (romstart & 0xffff), (size_t)len);
     }
     fclose(f);
     return 0;
@@ -103,6 +109,19 @@ void machine_set_timer(machine_t *m, long hz, int irq_line, int mode)
     m->timer_irq_line = irq_line;
     m->timer_mode = mode;
     m->timer_period = (uint64_t)m->clock_hz / (uint64_t)m->timer_hz;
+}
+
+void machine_reboot(machine_t *m)
+{
+    int i;
+    if (m->level2) memset(m->phymem, 0, m->memsize > 0x82000 ? m->memsize : 0x82000);
+    else memset(m->mem1, 0, sizeof m->mem1);
+    if (m->rom_img) memcpy(m->mem + m->rom_at, m->rom_img, m->rom_len);
+    if (m->level2) { m->mem[0xff90] = 0; m->mem[0xffa7] = 0x3f; }
+    for (i = 0; i < MAX_ACIA; i++) m->acia[i].cr = 0;
+    m->timer_pending = 0;
+    machine_reset(m);
+    irq_update(m);
 }
 
 void machine_reset(machine_t *m)
@@ -225,6 +244,7 @@ static void io_write(machine_t *m, uint16_t addr, uint8_t v)
         }
         if (off == 0x0f) {                       /* power control: $A5 = power off */
             if (v == 0xa5) { m->stop = 1; m->quit = 1; m->exit_code = 0; }
+            if (v == 0xa6) m->reboot_req = 1;      /* reboot: done between two instructions (machine_run) */
             return;
         }
         if (off >= 0x30 && off < 0x40) { do_timer_write(m, off - 0x30, v); return; }
@@ -377,6 +397,7 @@ static void dev_io(machine_t *m)
 
 int dev_tick(machine_t *m)
 {
+    if (m->reboot_req) { m->reboot_req = 0; machine_reboot(m); }
     int changed = dev_timer(m);
     dev_io(m);
     irq_update(m);                               /* a character that came in, or whose pacing time is over */

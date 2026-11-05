@@ -26,10 +26,10 @@ MIT の著作権者の表記 `sim09 contributors` は仮のものです。実際
 | `os9/jwp/jwp.c` `skk.c` `genmsgs.py` `Makefile` と、生成される `msgs.h` | ワードプロセッサ `jwp` と SKK 入力 (**著作権者は YUKARI Semiconductor Devices**、各ファイルの先頭に Copyright 行) | SKK は入力方式に従った独自実装で、SKK のコードは使っていません。**ビルド済みのモジュール `jwp` `jwp-l2` は GPL-3.0 です** (3 章) |
 | `mk09/` のうち、ビルドして作るもの以外のすべて (カーネル `kernel/` `arch/`、サーバ `servers/`、ライブラリ `lib/`、コマンド `apps/` (`apps/jwp/` を含む)、ブート ROM `boot/`、`bsp/` `include/` `tools/` `tests/`、`disk/bas/*.bas` `disk/doc/guide.txt`、`docs/*.md`、`Makefile`) | マイクロカーネル **MK09** とその上のサーバ・コマンド・文書 (**著作権者は YUKARI Semiconductor Devices**、ファイルの先頭に `SPDX-License-Identifier: MIT` と Copyright 行) | 第三者のコードは入っていません (ソフト浮動小数点 `apps/basic/sfp*` も自作で、`tests/sfp_vectors.h` は PC で作った試験値です)。`apps/jwp/` は `os9/jwp/` (MIT) からの派生です。ブート ROM は FUZIX と共通の 256 バイトで、`fuzix/bootrom.s` と同じ内容です。ビルド済みのバイナリについては 3 章 |
 | `os9/ysdbasic/` (`ysdbasic.c` `sfp.h` `sfpm.h` `types.h` `Makefile`) | YSD BASIC: MK09 の BASIC (`mk09/apps/basic`) の OS-9 への移植 (**著作権者は YUKARI Semiconductor Devices**) | 第三者のコードは入っていません |
-| `os9/pascal/` (`os9shim.c` `inc/` `Makefile` `samples/`) と、`mk09/apps` のうち OS-9 でも使うもの (`pc.c` `pas0.c` `pas1.c` `cg.c` `as.c` `as_text.h`)、`mk09/lib/cc/rt9.s` | MK09 の Pascal コンパイラの OS-9 Level 2 への移植 (**著作権者は YUKARI Semiconductor Devices**) | 第三者のコードは入っていません。`samples/` の Pascal のプログラムは自作 |
+| `os9/pascal/` (`os9shim.c` `inc/` `Makefile` `samples/` `csamples/`) と、`mk09/apps` のうち OS-9 でも使うもの (`pc.c` `pas0.c` `pas1.c` `cg.c` `as.c` `as_text.h` `cc.c` `cpp.c` `cc1.c`)、`mk09/lib/cc/rt9.s` | MK09 の Pascal コンパイラの OS-9 Level 2 への移植 (**著作権者は YUKARI Semiconductor Devices**) | 第三者のコードは入っていません。`samples/` の Pascal のプログラムは自作 |
 | `os9/dhry/Makefile`、`dhry.c` の時間計測と OS-9 呼び出しの部分 | Dhrystone の実行部分 | Dhrystone 本体は原作者の著作物で、ライセンス文がない (4.2) |
 | `os9/skk/Makefile` | 辞書ディスクの作成 | 辞書は同梱していません (手元の `skkdic` から生成) |
-| `os9/misc/shutdown.asm` `os9/net/nc.asm` `os9/kanji/kmode.asm` と、`os9/kanji` `os9/net` `os9/misc` の `defsfile` | OS-9 のコマンド | NitrOS-9 の定義ファイル (`os9/nitros9-code/defs`) を `use` してアセンブルします (定義ファイルの内容は埋め込んでいません) |
+| `os9/misc/shutdown.asm` `os9/misc/reboot.asm` `os9/net/nc.asm` `os9/kanji/kmode.asm` と、`os9/kanji` `os9/net` `os9/misc` の `defsfile` | OS-9 のコマンド | NitrOS-9 の定義ファイル (`os9/nitros9-code/defs`) を `use` してアセンブルします (定義ファイルの内容は埋め込んでいません) |
 | `Makefile` `os9/Makefile` `os9/level1/cmds/Makefile` `os9/level2/cmds/Makefile` | ビルド | |
 | `fuzix/build.sh` `fuzix/bootrom.s` `fuzix/mkdisk.py` `tools/build_gcc6809.sh` `tests/fuzix_test.py` | FUZIX の移植のビルド、ブート ROM (`bootrom.bin` はそのアセンブル結果)、ディスク作成、テスト | `platform-sim09/` は 2.1 章 |
 | `fpga/tn9k/rtl/*` `sim/*` `scripts/*` `constraints/*` `tests/fpga_test.py` `tests/hdmi_*.py` | FPGA 版の RTL、Verilator のテストベンチ、ビルド | `vendor/` は 2.2 章 |
@@ -83,7 +83,7 @@ FPGA のビットストリームは、この 3 つと自作の RTL (MIT)、載�
 
 ## 3. CMOC の実行時ライブラリを含むバイナリ: GPL-3.0
 
-`os9/jwp/jwp` `os9/jwp/jwp-l2` `os9/ysdbasic/ysdbasic` `os9/ysdbasic/ysdbasic-l2` `os9/dhry/dhry` `os9/pascal/pc` `os9/pascal/pas0` `os9/pascal/pas1` `os9/pascal/cg` `os9/pascal/as` (と `os9/level*/cmds/` にある同じもの、`jwp_chk`) は、CMOC (Pierre Sarrazin、GPL v3) の
+`os9/jwp/jwp` `os9/jwp/jwp-l2` `os9/ysdbasic/ysdbasic` `os9/ysdbasic/ysdbasic-l2` `os9/dhry/dhry` `os9/pascal/pc` `os9/pascal/pas0` `os9/pascal/pas1` `os9/pascal/cg` `os9/pascal/as` `os9/pascal/cc` `os9/pascal/cpp` `os9/pascal/cc1` (と `os9/level*/cmds/` にある同じもの、`jwp_chk`) は、CMOC (Pierre Sarrazin、GPL v3) の
 実行時ライブラリ (起動コード、16 ビット乗除算、`memcpy` `strcat` `strcpy` `strlen`) を含むので、**モジュールとしては GPL v3 です**。
 ソース (`jwp.c` など) は MIT ですが、ビルド済みのモジュールを配布するときは GPL v3 の条件 (ソースの提供など) に従ってください。
 ビルド済みのモジュールを同梱せず、CMOC で各自ビルドしてもらう形にすれば、この条件は配布物から外れます。

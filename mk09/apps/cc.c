@@ -10,11 +10,13 @@
  * (exec, PM_EXEC).  This program only makes the command line  cpp ... ; cc1 ... ; cg ... ; as ... ; rm ...  and starts the first stage.
  *   -S   stop after cg (out is the assembler text; default: the name of the source with .s)     -k   keep the temporary files
  *   -V   print the command line     -v   the version     -o out   the output (default: the name of the source with .mx)
+ * On OS-9 (os9/pascal, -DOS9) the output is an OS-9 module (as -9) named like the file of the output, the default output is the name of the source without the
+ * extension, the stages are started one after the other (F$Fork) and the temporary files are removed by del.
  * A command line is at most about 120 characters.
  */
 #include "ccio.h"
 
-#define TOOL_VERSION "1.1"          /* the version of this program: changed when it changes (-v) */
+#define TOOL_VERSION "1.2"          /* the version of this program: changed when it changes (-v) */
 
 #ifdef CC_HOST
 #define putstr(s) fputs(s, stdout)
@@ -47,7 +49,11 @@ int main(int argc, char **argv)
     if (!out) {
         strcpy(outn, src);
         if (len > 2 && outn[len - 2] == '.') outn[len - 2] = 0;
+#ifdef OS9
+        if (stop_s) strcat(outn, ".s");
+#else
         strcat(outn, stop_s ? ".s" : ".mx");
+#endif
         out = outn;
     }
     av[n++] = "cc";
@@ -71,13 +77,20 @@ int main(int argc, char **argv)
     if (!stop_s) {
         av[n++] = ";";
         av[n++] = "as";
+#ifdef OS9
+        av[n++] = "-9";
+#endif
         av[n++] = "-o";
         av[n++] = (char *)out;
         av[n++] = "_.A";
     }
     if (!keep) {
         av[n++] = ";";
+#ifdef OS9
+        av[n++] = "del";
+#else
         av[n++] = "rm";
+#endif
         av[n++] = "_.I";
         av[n++] = "_.ir";
         if (!stop_s) av[n++] = "_.A";
@@ -86,5 +99,19 @@ int main(int argc, char **argv)
         for (i = 2; i < n; i++) { putstr(av[i]); putstr(av[i][0] == ';' ? "\n" : " "); }
         puts("");
     }
+#ifdef OS9
+    {                       /* (the stages are started one after the other: a program of OS-9 gets only a few arguments from the C library of CMOC) */
+        int st = 2, rc = 0;
+        while (st < n && !rc) {
+            int e = st;
+            while (e < n && strcmp(av[e], ";")) e++;
+            rc = o9_run(e - st, av + st);
+            if (rc < 0) { puts("cc: cannot run a stage"); rc = 1; }
+            st = e + 1;
+        }
+        return rc;
+    }
+#else
     return run_tail(n, av, 1);
+#endif
 }

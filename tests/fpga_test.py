@@ -194,6 +194,24 @@ def t_os9l2(exe):
              'Directory of .' in out and 'CMDS' in out and all(x in out for x in ('KrnP2', 'SysGo', 'Clock', 'PDisk', 'RBF', 'IOMan')), out[-600:])]
 
 
+def t_reboot(exe):
+    # the reboot command writes $A6 to the power register: the whole board starts again (memory test, clear, kanji, card, boot ROM)
+    r = []
+    for name, dsk, wait in (('Level 1', OS9_DSK, 4000), ('Level 2', OS9L2_DSK, 6000)):
+        d = tempfile.mkdtemp(prefix='fpgat_rb_')
+        disk = os.path.join(d, 'card.dsk')
+        shutil.copy(dsk, disk)
+        out, rc = run(exe, ['wait %d' % (wait // 2), 'send \\r', 'wait 500', 'send chx /d0/cmds\\r', 'wait 500', 'send reboot\\r', 'wait %d' % (wait * 2), 'send \\r', 'wait 500',
+                            'send chx /d0/cmds\\r', 'wait 500', 'send mfree\\r', 'wait %d' % wait, 'quit'], disk, clks=6000000000)
+        shutil.rmtree(d, ignore_errors=True)
+        r += [('OS-9 %s: reboot restarts the board: the banner and the shell come twice, and the shell works after it' % name,
+               out.count('NitrOS-9/6809 %s' % name) == 2 and 'Rebooting...' in out and 'Total pages free' in out.rsplit('Rebooting...', 1)[-1]
+               if name == 'Level 1' else
+               out.count('NitrOS-9/6809 %s' % name) == 2 and 'Rebooting...' in out and 'Total:' in out.rsplit('Rebooting...', 1)[-1],
+               out[-900:])]
+    return r
+
+
 def t_nocard(exe):
     out, rc = run(exe, ['wait 3000', 'quit'], None, extra=['-nosd'], clks=1500000000)
     return [('without a card the boot ROM gives up and powers off (exit code 0, no kernel banner)',
@@ -236,7 +254,7 @@ if have_os9boot:
 if have_os9 and have_fuzix:
     jobs += [('os9k', 'fuzix', t_os9k)]
 if os.path.exists(OS9L2_DSK) and have_fuzix:
-    jobs += [('os9l2', 'fuzix', t_os9l2)]
+    jobs += [('os9l2', 'fuzix', t_os9l2), ('reboot', 'fuzix', t_reboot)]
 else:
     print('SKIP os9 test: os9/os9v1.rom or os9/OS9.dsk is missing (make)')
 

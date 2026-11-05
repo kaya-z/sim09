@@ -89,7 +89,8 @@ int main(void)
         f = fopen("ftest.txt", "r");
         printf("%d ", (int)fread(line, 1, 30, f));
         fclose(f);
-        printf("%d %d\n", remove("ftest.txt"), fopen("ftest.txt", "r") == NULL);
+        i = remove("ftest.txt");        /* (a separate statement: the order of the arguments is not defined, and OS-9 does not delete a file that is open) */
+        printf("%d %d\n", i, fopen("ftest.txt", "r") == NULL);
         fprintf(stdout, "to stdout %d\n", 5);
     }
     return 0;

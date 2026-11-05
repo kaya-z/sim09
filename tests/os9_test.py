@@ -204,6 +204,16 @@ for level in (1, 2):
           'L%d shutdown ends the simulator with exit code 0' % level)
     s.close()
 
+# --- reboot command: the machine starts again from the ROM (memory cleared), the second boot shows the banner again and works
+for level in (1, 2):
+    s = Session(level)
+    s.run(['send "reboot\\r"', 'expect "Rebooting..."', 'expect "OS9:"', 'send "chx /v0/cmds\\r"', 'expect "OS9:"',
+           'send "echo again\\r"', 'expect "OS9:"'])
+    t = s.text()
+    check(t.count('NitrOS-9/6809 Level') == 2 and 'Rebooting...' in t and t.rstrip().endswith('OS9:') and 'again' in t.split('Rebooting...', 1)[-1],
+          'L%d reboot starts the system again (second banner, shell works)' % level, t[-600:])
+    s.close()
+
 # --- regression: a09 mis-assembled help / error (wrong module size and entry) and `help` froze the system
 for level in (1, 2):
     bad = []

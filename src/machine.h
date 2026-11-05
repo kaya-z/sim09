@@ -65,6 +65,9 @@ typedef struct machine {
     uint32_t romstart;             /* L1: first protected address; L2: >=  */
     uint32_t rommemsize;
     uint8_t *mmu;                  /* L2: currently active MMU map (8 bytes) */
+    uint8_t *rom_img;              /* a copy of the ROM image, to put it back at a reboot ($A6 to the power register) */
+    size_t   rom_len;
+    long     rom_at;               /* L1: the address it was loaded at */
 
     /* peripherals */
     acia_t   acia[MAX_ACIA];
@@ -100,6 +103,7 @@ typedef struct machine {
     int      step_count;
     int      want_monitor;
     int      quit;
+    int      reboot_req;           /* the guest wrote $A6 to the power register */
     uint64_t timer_fire_count;
     unsigned long dettype_start, dettype_gap;   /* -dettype: instruction counted type-in */
     const char  *dettype_text;
@@ -121,6 +125,7 @@ typedef struct machine {
 machine_t *machine_create(int level2, size_t memsize);
 int  machine_load_rom(machine_t *m, const char *file, long romstart);
 void machine_reset(machine_t *m);
+void machine_reboot(machine_t *m);      /* as the power on: the memory is cleared, the ROM put back, the devices reset */
 void machine_set_timer(machine_t *m, long hz, int irq_line, int mode);
 
 /* bus accessors (what the CPU sees) */

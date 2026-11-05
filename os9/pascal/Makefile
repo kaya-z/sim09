@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 YUKARI Semiconductor Devices
-# The Pascal compiler of MK09 on OS-9 Level 2:  pc  pas0  pas1  cg  as   (the same sources as on MK09, mk09/apps, compiled by CMOC with --os9, plus os9shim.c)
+# The Pascal compiler and the C compiler of MK09 on OS-9 Level 2:  pc  pas0  pas1  cg  as   cc  cpp  cc1   (the same sources as on MK09, mk09/apps, compiled by CMOC with --os9, plus os9shim.c)
 # and the library of the programs that they make (lib/: CLIB.OBJ CLIB.IDX RT.OBJ RT.IDX START.S, put on the disk in /d0/LIB).
 #
 # The prebuilt modules and the library are part of the distribution, so CMOC is only needed to change a program (the library needs gcc and python3):
@@ -13,7 +13,7 @@ MK      = ../../mk09
 APPS    = $(MK)/apps
 INCS    = -Iinc -I$(MK)/include -I$(APPS)
 CFLAGS  = --os9 -O2 -DOS9 $(INCS)
-TOOLS   = pc pas0 pas1 cg as
+TOOLS   = pc pas0 pas1 cg as cc cpp cc1
 LIBS    = lib/CLIB.OBJ lib/CLIB.IDX lib/RT.OBJ lib/RT.IDX lib/START.S
 B       = build
 
@@ -35,6 +35,9 @@ $(eval $(call tool,pas0,--add-os9-stack-space=2000 -DCC_BUF=512))
 $(eval $(call tool,pas1,--add-os9-stack-space=3000))
 $(eval $(call tool,cg,--add-os9-stack-space=2000 -DCC_BUF=512))
 $(eval $(call tool,as,--add-os9-stack-space=2000))
+$(eval $(call tool,cc,--add-os9-stack-space=2000))
+$(eval $(call tool,cpp,--add-os9-stack-space=4000))
+$(eval $(call tool,cc1,--add-os9-stack-space=8000))
 
 # the library: made by the PC builds of cpp, cc1, cg and as (-DAS_OBJ), as for MK09 (mk09/Makefile), with -DOS9 (clib.c) and rt9.s (the system calls of OS-9)
 $(B)/host_%: $(APPS)/%.c $(APPS)/ccio.h

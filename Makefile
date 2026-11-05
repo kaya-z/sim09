@@ -42,7 +42,7 @@ skk:
 	$(MAKE) -C os9/skk
 
 # ------------------------------------------------------------------ tests
-test: all test-cpu test-os9 test-jwp test-dhry test-net test-fuzix test-hdmi test-fpga test-pascal
+test: all test-cpu test-os9 test-jwp test-dhry test-net test-fuzix test-hdmi test-fpga test-pascal test-cc
 
 test-cpu: tests/cpu_test
 	tests/cpu_test
@@ -85,6 +85,9 @@ test-fpga:
 test-pascal: all
 	LC_ALL=C python3 mk09/tests/pas9_test.py
 
+test-cc: all
+	LC_ALL=C python3 mk09/tests/cc9_test.py
+
 test-cross: all
 	tests/crosscheck/crosscheck.sh $(REF_SBC09)
 
@@ -101,4 +104,4 @@ distclean: clean
 
 
 
-.PHONY: all tools os9 skk test test-cpu test-diff test-os9 test-jwp test-dhry test-net test-fuzix test-hdmi test-fpga test-pascal test-cross clean distclean
+.PHONY: all tools os9 skk test test-cpu test-diff test-os9 test-jwp test-dhry test-net test-fuzix test-hdmi test-fpga test-pascal test-cc test-cross clean distclean

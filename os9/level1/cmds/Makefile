@@ -7,7 +7,7 @@ CMDS = asm attr calldbg cmp config copy cputype date debug del deldir devs dir_c
        echo edit disasm free ident irqs link list load makdir mdir mfree \
        procs prompt shellplus sleep tee touch tsmon unlink
 
-all : dhry jwp ysdbasic help error $(CMDS) dir kmode nc login shutdown pxd pwd
+all : dhry jwp ysdbasic help error $(CMDS) dir kmode nc login shutdown reboot pxd pwd
 
 $(CMDS) :
 	$(A09) -l $@.lst -o $@ $(SRC1)/$@.asm
@@ -25,6 +25,8 @@ login : ../../net/login.asm
 	$(A09) -l $@.lst -o $@ ../../net/login.asm
 shutdown : ../../misc/shutdown.asm
 	$(A09) -l $@.lst -o $@ ../../misc/shutdown.asm
+reboot : ../../misc/reboot.asm
+	$(A09) -l $@.lst -o $@ ../../misc/reboot.asm
 # Dhrystone (os9/dhry) and the word processor (os9/jwp) are built with CMOC when it is installed; prebuilt modules are part of the distribution
 dhry :
 	$(MAKE) -C ../../dhry dhry

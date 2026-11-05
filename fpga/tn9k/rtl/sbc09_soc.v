@@ -8,7 +8,7 @@
 //             cleared (byte by byte) after every reset, like the memory of the simulator
 //   ROM       a read-only image in block RAM, from ROM_BASE up to $FFFF, over the RAM
 //   $E000/01  console ACIA on the UART (acia_uart.v); its interrupt request is on the IRQ line (with the timer)
-//   $E00F     power control: $A5 stops the machine (until the reset button)
+//   $E00F     power control: $A5 stops the machine (until the reset button), $A6 restarts the whole board (reboot)
 //   $E030-36  timer and clock (timer_rtc.v)
 //   $E040-47  disk port on the microSD card (sd_disk.v)
 //   $E080-1FF plain RAM
@@ -99,8 +99,16 @@ module sbc09_soc #(
     localparam ECYC_PER_SEC  = CLK_HZ / (4 * PH_DIV);
     localparam ECYC_PER_TICK = ECYC_PER_SEC / 50;
 
+    // The reset: the button (resetn), or the guest writing $A6 to the power register (reboot): the same restart as at the power on
+    // (memory test, clear, kanji copy, the card is set up again, the boot ROM starts the OS).  The reset is held for 256 clocks (a PSRAM access in progress ends).
     reg rst = 1'b1;
-    always @(posedge clk) rst <= ~resetn;
+    reg reboot_req = 1'b0;                  // a one clock pulse: the guest wrote $A6 to the power register
+    reg [7:0] rbcnt = 8'd0;
+    always @(posedge clk) begin
+        rst <= ~resetn || (rbcnt != 8'd0);
+        if (reboot_req) rbcnt <= 8'd255;
+        else if (rbcnt != 8'd0) rbcnt <= rbcnt - 1'b1;
+    end
 
     // ---------------------------------------------------------------- the CPU and its bus
     wire [7:0]  cpu_d_out;
@@ -436,6 +444,7 @@ module sbc09_soc #(
         dgo  <= 1'b0;
         acia_cwr <= 1'b0;
         go_req <= 1'b0;
+        reboot_req <= 1'b0;
         c_rd <= 1'b0;
         c_cwr <= 1'b0;
         disk_busy_d <= disk_busy;
@@ -458,6 +467,7 @@ module sbc09_soc #(
                         else begin
                             if (io_power && cpu_d_out == 8'ha5) begin pwroff <= 1'b1; osrun <= 1'b0; end      // shutdown: LED5 on, LED4 off
                             if (io_power && cpu_d_out == 8'ha4) osrun <= 1'b1;
+                            if (io_power && cpu_d_out == 8'ha6) reboot_req <= 1'b1;                                   // reboot: the whole board starts again
                             if (io_modr) begin
                                 acia_cwr <= 1'b1; acia_cbyte <= 8'h03;       // a new machine mode: the ACIA interrupts are off
                                 if (cpu_d_out == 8'ha2 && !l2) begin           // to the Level 2 mode: the identity map for the blocks 0-6

@@ -27,11 +27,12 @@ static char pbuf[132];          /* the path name of the call that is made now */
 static char nbuf[40];           /* the name of the module of F$Fork and F$Chain */
 static char xbuf[ARGMAX + 4];   /* the parameters of F$Fork and F$Chain */
 
-/* a path name: the part that starts with /LIB/ is on /d0 (the MK09 programs find their library there), then CR at the end */
+/* a path name: the part that starts with /LIB/ or /INC/ is on /d0 (the MK09 programs find their library and the headers there), then CR at the end */
 static char *ospath(const char *p)
 {
     u16 i = 0;
-    if (p[0] == '/' && (p[1] == 'L' || p[1] == 'l') && (p[2] == 'I' || p[2] == 'i') && (p[3] == 'B' || p[3] == 'b') && p[4] == '/') {
+    if (p[0] == '/' && (((p[1] == 'L' || p[1] == 'l') && (p[2] == 'I' || p[2] == 'i') && (p[3] == 'B' || p[3] == 'b') && p[4] == '/') ||
+                        ((p[1] == 'I' || p[1] == 'i') && (p[2] == 'N' || p[2] == 'n') && (p[3] == 'C' || p[3] == 'c') && p[4] == '/'))) {
         pbuf[0] = '/'; pbuf[1] = 'd'; pbuf[2] = '0';
         i = 3;
     }

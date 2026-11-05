@@ -4,14 +4,14 @@ SRC2  = ../../nitros9-code/level2/cmds
 SRC1  = ../../nitros9-code/level1/cmds
 A09   = ../../../tools/a09 -I ../../nitros9-code/defs/
 
-CMDS2 = mdir mfree proc reboot smap mmap pmap dmem
+CMDS2 = mdir mfree proc smap mmap pmap dmem
 CMDS1 = asm attr calldbg cmp config copy cputype date debug del deldir devs dir_cb dirsort dump \
         echo edit disasm free ident irqs link list load makdir procs prompt \
         shellplus sleep tee touch tsmon unlink
 
-PASCAL = pc pas0 pas1 cg as
+PASCAL = pc pas0 pas1 cg as cc cpp cc1
 
-all : dhry jwp ysdbasic $(PASCAL) help error $(CMDS2) $(CMDS1) sbc09 pxd pwd dir kmode nc login shutdown
+all : dhry jwp ysdbasic $(PASCAL) help error $(CMDS2) $(CMDS1) sbc09 pxd pwd dir kmode nc login shutdown reboot
 
 $(CMDS2) :
 	$(A09) -l $@.lst -o $@ $(SRC2)/$@.asm
@@ -33,6 +33,8 @@ login : ../../net/login.asm
 	$(A09) -l $@.lst -o $@ ../../net/login.asm
 shutdown : ../../misc/shutdown.asm
 	$(A09) -D L2 -l $@.lst -o $@ ../../misc/shutdown.asm
+reboot : ../../misc/reboot.asm
+	$(A09) -D L2 -l $@.lst -o $@ ../../misc/reboot.asm
 # Dhrystone (os9/dhry) and the word processor (os9/jwp) are built with CMOC when it is installed; prebuilt modules are part of the distribution
 dhry :
 	$(MAKE) -C ../../dhry dhry
@@ -43,7 +45,7 @@ ysdbasic :
 	$(MAKE) -C ../../ysdbasic ysdbasic-l2
 	cp ../../ysdbasic/ysdbasic-l2 ysdbasic
 .PHONY : ysdbasic
-# the Pascal compiler (the programs of MK09, Level 2 only) is built (CMOC, if installed) in os9/pascal; prebuilt modules are part of the distribution
+# the Pascal and the C compiler (the programs of MK09, Level 2 only) is built (CMOC, if installed) in os9/pascal; prebuilt modules are part of the distribution
 $(PASCAL) :
 	$(MAKE) -C ../../pascal $@
 	cp ../../pascal/$@ $@
