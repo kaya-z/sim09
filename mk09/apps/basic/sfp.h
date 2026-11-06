@@ -173,19 +173,22 @@ static f32 f_div(f32 a, f32 b)
 static f32 f_sub(f32 a, f32 b) { return f_add(a, f_neg(b)); }
 
 /* -1, 0, 1 */
+/* comparison: the bit patterns of the floats are in the order of the numbers if the negative ones are turned around (a zero, also a denormal, is 0) */
+static s32 f_key(f32 a)
+{
+    s32 k;
+    if (!(a & 0x7F800000UL)) return 0;
+    k = (s32)(a & 0x7FFFFFFFUL);
+    if (a & F_SIGN) return -k;
+    return k;
+}
+#define F_KEY(a)  f_key(a)
 static int f_cmp(f32 a, f32 b)
 {
-    u8 sa, sb;
-    if (!F_EXP(a)) a = 0;
-    if (!F_EXP(b)) b = 0;
-    if (a == b) return 0;
-    sa = (u8)(a >> 31);
-    sb = (u8)(b >> 31);
-    if (!a) return sb ? 1 : -1;
-    if (!b) return sa ? -1 : 1;
-    if (sa != sb) return sa ? -1 : 1;
-    if (sa) return a > b ? -1 : 1;
-    return a > b ? 1 : -1;
+    s32 x = F_KEY(a), y = F_KEY(b);
+    if (x < y) return -1;
+    if (x > y) return 1;
+    return 0;
 }
 
 #ifndef SFP_ASM

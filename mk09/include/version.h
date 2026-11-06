@@ -66,6 +66,10 @@
  *   1.23 2026-10-29  reboot (a program); PM loads a program with ONE request: FS_READTL, FS reads the file into the memory of the new task itself (FS is privileged for
  *                    tload); the code slots of TTY and FS were adjusted (cwidth is shorter).  hello.pas: 19M cycles.
  *   1.24 2026-10-29  -v prints the version and the copyright (as cpp cc1 cg cc pas0 pas1 pc); cc and pc print the command lines with -V now.
+ *   1.29 2026-11-06  BASIC 1.2, taken over from the YSD9000 port (its MK09 1.15): FOR / NEXT with a step of 1 or -1 on whole numbers add to the bits of the variable and compare the words, NEXT returns to the statement
+ *                    after the colon, an IF finds its ELSE once, GOTO / GOSUB / THEN n remember the line, "variable <op> variable or number" is one operation; run() keeps pc and sp in registers
+ *                    (run_cold, run_cmp); disk/bas/tfor.bas, tif.bas and the loop benchmarks bfor bif bmix bnop.  The code of basic is 1.8 KB bigger (cmoc), so the program area is 2400 bytes (was 3800)
+ *                    and the arrays 220 elements (was 300); cmoc miscompiles a ?: of longs, which the YSD9000 sources use (f_cmp, run_cmp, NEXT): if / else there.
  *   1.28 2026-11-05  the console receive interrupt: the kernel (IRQ) puts the characters of the ACIA into the ring of the console server (SYS_RXREG, NFY_RX); the server no longer polls the ACIA.
  *                    The board has a FIFO of 256 characters for the time that the CPU is held (a write to the card); a character that finds the ring (128) full is lost.  TPA_BASE stays $3C00 (K_CSZ, TTY_CSZ, FS_CSZ resized).
  *   1.27 2026-11-04  YSD Pascal (the name of the Pascal compiler): variant records (case in a record) and range checks ({$R+}: array indexes and subrange assignments, __prchk); pas0 1.5, pas1 1.9.
@@ -76,7 +80,7 @@
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.28"
+#define MK09_VERSION    "1.29"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

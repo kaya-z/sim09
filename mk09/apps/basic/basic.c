@@ -27,15 +27,15 @@
 #define SFP_ASM
 #include "sfpm.h"
 
-#define BASIC_VERSION "1.1"     /* 1.0: the interpreter of the text; 1.1: the internal form (tokens, compiled expressions), as in the YSD9000 port */
+#define BASIC_VERSION "1.2"     /* 1.0: the interpreter of the text; 1.1: the internal form (tokens, compiled expressions), as in the YSD9000 port; 1.2: faster FOR / NEXT / IF (step1, the ELSE and line number caches, fused compares), as in the YSD9000 port */
 #ifndef PGM
-#define PGM     3800           /* (7000 on the YSD9000, where a program has up to 56 KB; here 41 KB are for the program, the variables, the stack and the code) */
+#define PGM     2400           /* (7000 on the YSD9000, where a program has up to 56 KB; here 41 KB are for the program, the variables, the stack and the code) */
 #endif
 #ifndef NVARS
 #define NVARS   128            /* number variables: a name gets a slot when it is first met (varslot()); 962 names are possible, 26 * 37 */
 #endif
 #ifndef APOOL
-#define APOOL   300
+#define APOOL   220
 #endif
 #define STRL    40
 #define LINEMAX 200
@@ -104,7 +104,7 @@ static char *tp;                     /* current position in the line */
 static u8 running, bye, loaded;
 static const char *errmsg;
 
-typedef struct { u16 vi; f32 lim, step; u8 *line; char *tp; } forent;
+typedef struct { u16 vi; f32 lim, step; u8 *line; char *tp; u8 fast, lpos; u16 lhi, llo, lmh, lml; } forent;   /* fast: 1 / 2 = a step of +1 / -1 on whole numbers (NEXT adds it to the bits, see step1()); lhi:llo = the value that NEXT stored last; lpos: the limit is positive */
 static forent fors[FORMAX];
 static u8 nfor;
 typedef struct { u8 *line; char *tp; } gosent;
@@ -370,11 +370,12 @@ static void checkerr(void)
  * test them (a wrong type is a C_TYPERR in the code). The result is left in vt, vf and vs. */
 enum { C_END, C_NEG, C_CMP, C_SCMP, C_STR, C_SV, C_AV, C_FN, C_POW, C_NOT, C_AND, C_OR, C_CAT, C_TYPERR,
        C_DIV, C_SUB, C_ADD, C_MUL, C_STV,
-       C_MULV, C_MULN, C_DIVV, C_DIVN, C_ADDV, C_ADDN, C_SUBV, C_SUBN, C_NUM, C_NV };    /* (the fused operations: the right operand is a variable (V) or a number (N)) */
+       C_MULV, C_MULN, C_DIVV, C_DIVN, C_ADDV, C_ADDN, C_SUBV, C_SUBN, C_NUM, C_NV, C_CMPVV, C_CMPVN };    /* (the fused operations: the right operand is a variable (V) or a number (N)) */
 #define NARENA 450
 #define NCE    32
-typedef struct { char *p; char *end; u16 *code; u16 gen; u8 kind; } cent_t;    /* kind: 0 an expression of a number, 1 of a string, 2 a LET statement */
+typedef struct { char *p; char *end; u16 *code; u16 gen; u8 kind; char *alt; } cent_t;   /* alt: for an IF, where the false branch goes on (the ELSE or the end of the line), found once */    /* kind: 0 an expression of a number, 1 of a string, 2 a LET statement */
 static cent_t cache[NCE];
+static cent_t *lastce;                       /* the entry of the expression that expr() has just run (0: none) */
 static u16 arena[NARENA];
 static u16 *cfree, *cw;                      /* the free place in the arena, the place the code is written to */
 static u16 cgen = 1;
@@ -540,7 +541,9 @@ static u8 c_sum(void)
 
 static u8 c_compare(void)
 {
-    u8 op = 0, ty = c_sum();
+    u8 op = 0, ty;
+    u16 *m0 = cw, *m1;
+    ty = c_sum();
     skipsp();
     if (*tp != '=' && *tp != '<' && *tp != '>') return ty;
     for (;;) {
@@ -550,7 +553,16 @@ static u8 c_compare(void)
         else if (ch == '>') { op |= 4; tp++; }
         else break;
     }
+    m1 = cw;
     if (c_sum() != ty) EM(C_TYPERR);
+    if (!ty && !cfull && m1 - m0 == 2 && *m0 == C_NV && cw - m1 == 2 && (*m1 == C_NV || *m1 == C_NUM)) {       /* variable <op> variable or number: one operation */
+        *m0 = (u16)(*m1 == C_NV ? C_CMPVV : C_CMPVN);
+        m0[2] = m1[1];
+        m0[3] = op;
+        cw = m0 + 4;
+        cdep--;
+        return 0;
+    }
     EM(ty ? C_SCMP : C_CMP); EM(op);
     cdep--;
     return 0;
@@ -579,8 +591,121 @@ static u8 c_expr(void)
     return ty;
 }
 
-/* the machine: sp is the next free cell of the stack. (ysd-cc makes a chain of comparisons of a switch, so that the most frequent operations come first) */
 #define VAR(o) (*(f32 *)((u8 *)numv + (o)))
+/* the rare operations, out of run(): with them in it the compiler kept pc and sp in the stack frame instead of in registers (a pass through run() cost 40 instructions an
+ * operation).  Returns the new stack pointer, or 0 after an error (reported) */
+static const u16 *cold_pc;                       /* where the code goes on */
+static f32 *run_cold(u16 op, const u16 *pc, f32 *sp)
+{
+    switch (op) {
+    case C_DIVV: sp[-1] = f_div(sp[-1], VAR(*pc)); pc++; if (sfp_err) { checkerr(); return 0; } break;
+    case C_DIVN: sp[-1] = f_div(sp[-1], *(f32 *)*pc++); if (sfp_err) { checkerr(); return 0; } break;
+    case C_DIV: sp--; sp[-1] = f_div(sp[-1], sp[0]); if (sfp_err) { checkerr(); return 0; } break;
+    case C_NEG: sp[-1] = f_neg(sp[-1]); break;
+    case C_SCMP: {
+        u8 m = (u8)*pc++;
+        int c = strcmp(CSTR(sp - 2), CSTR(sp - 1));
+        sp--;
+        if ((c < 0 && (m & 1)) || (c == 0 && (m & 2)) || (c > 0 && (m & 4))) sp[-1] = F_SIGN | F_ONE; else sp[-1] = 0;
+        break;
+    }
+    case C_STR: {
+        char *s = newtmp();
+        const char *q = (const char *)*pc++;
+        u8 n = 0;
+        q++;
+        while (*q && *q != '"') { if (n < STRL - 1) s[n++] = *q; q++; }
+        s[n] = 0;
+        CSTR(sp) = s;
+        sp++;
+        break;
+    }
+    case C_SV: CSTR(sp) = strv[*pc++]; sp++; break;
+    case C_CAT: {
+        u16 la, lb;
+        char *s;
+        sp--;
+        la = (u16)strlen(CSTR(sp - 1));
+        lb = (u16)strlen(CSTR(sp));
+        if (la + lb >= STRL) { fail("String too long"); return 0; }
+        s = newtmp();
+        memcpy(s, CSTR(sp - 1), la);
+        memcpy(s + la, CSTR(sp), lb);
+        s[la + lb] = 0;
+        CSTR(sp - 1) = s;
+        break;
+    }
+    case C_AV: {
+        u16 w = *pc++;
+        u8 nd = (u8)(w >> 8);
+        s32 j = 0;
+        sp -= nd;
+        if (nd == 2) j = f_to_long(sp[1]);
+        *sp = *elem_ij((u8)w, f_to_long(*sp), j);
+        sp++;
+        if (errmsg) return 0;
+        break;
+    }
+    case C_FN: {
+        u16 w = *pc++;
+        u8 n = (u8)(w >> 8);
+        sp -= n;
+        fn_apply((u8)w, n, sp);
+        sp++;
+        if (errmsg) return 0;
+        break;
+    }
+    case C_POW: {
+        f32 x, y;
+        sp--;
+        x = sp[-1];
+        y = sp[0];
+        if (!x) { if (y) x = 0; else x = F_ONE; }
+        else if (f_int(y) == y && f_cmp(f_abs(y), f_n(1000)) < 0) {
+            s32 k = f_to_long(f_abs(y));
+            f32 r = F_ONE, p = x;
+            while (k) { if (k & 1) r = f_mul(r, p); k >>= 1; if (k) p = f_mul(p, p); }
+            if (y & F_SIGN) r = f_div(F_ONE, r);
+            x = r;
+        } else if (x & F_SIGN) { fail("Illegal function call"); return 0; }
+#ifndef NOMATH
+        else x = f_exp(f_mul(y, f_log(x)));
+#else
+        else { fail("Illegal function call"); return 0; }
+#endif
+        sp[-1] = x;
+        break;
+    }
+    case C_NOT: sp[-1] = f_from_long(~f_to_long(sp[-1])); break;
+    case C_AND: sp--; sp[-1] = f_from_long(f_to_long(sp[-1]) & f_to_long(sp[0])); break;
+    case C_OR: sp--; sp[-1] = f_from_long(f_to_long(sp[-1]) | f_to_long(sp[0])); break;
+    default: fail("Type mismatch"); return 0;                     /* C_TYPERR */
+    }
+    cold_pc = pc;
+    return sp;
+}
+
+/* the comparisons (out of run(): their local variables would keep registers for the whole loop, see run_cold) */
+static f32 *run_cmp(u16 op, const u16 *pc, f32 *sp)
+{
+    f32 fa, fb;
+    u8 m;
+    s32 ka, kb;
+    if (op == C_CMP) { m = (u8)pc[0]; fa = sp[-2]; fb = sp[-1]; sp--; }
+    else {
+        fa = VAR(pc[0]);
+        if (op == C_CMPVN) fb = *(f32 *)pc[1]; else fb = VAR(pc[1]);
+        m = (u8)pc[2];
+        sp++;
+    }
+    ka = F_KEY(fa);
+    kb = F_KEY(fb);
+    if (ka < kb) m &= 1; else if (ka == kb) m &= 2; else m &= 4;       /* (if / else: cmoc miscompiles a ?: of longs and constants) */
+    if (m) sp[-1] = F_SIGN | F_ONE; else sp[-1] = 0;                    /* true is -1 */
+    return sp;
+}
+
+/* the machine: sp is the next free cell of the stack. (ysd-cc makes a chain of comparisons of a switch, so that the most frequent operations come first) */
 static void run(const u16 *pc)
 {
     f32 *sp = vv_f;
@@ -602,99 +727,12 @@ static void run(const u16 *pc)
         if (op == C_MULN) { sp[-1] = f_mul(sp[-1], *(f32 *)*pc++); if (sfp_err) goto err; continue; }
         if (op == C_ADD) { sp--; sp[-1] = f_add(sp[-1], sp[0]); if (sfp_err) goto err; continue; }
         if (op == C_MUL) { sp--; sp[-1] = f_mul(sp[-1], sp[0]); if (sfp_err) goto err; continue; }
-        if (op == C_CMP) {
-            u8 m = (u8)*pc++;
-            int c = f_cmp(sp[-2], sp[-1]);
-            sp--;
-            if ((c < 0 && (m & 1)) || (c == 0 && (m & 2)) || (c > 0 && (m & 4))) sp[-1] = F_SIGN | F_ONE; else sp[-1] = 0;       /* true is -1 */
-            continue;
-        }
+        if (op == C_CMP || op == C_CMPVN || op == C_CMPVV) { sp = run_cmp(op, pc, sp); pc += op == C_CMP ? 1 : 3; continue; }
         if (op == C_ADDN) { sp[-1] = f_add(sp[-1], *(f32 *)*pc++); if (sfp_err) goto err; continue; }
         if (op == C_SUBN) { sp[-1] = f_sub(sp[-1], *(f32 *)*pc++); if (sfp_err) goto err; continue; }
-        switch (op) {
-        case C_DIVV: sp[-1] = f_div(sp[-1], VAR(*pc)); pc++; if (sfp_err) goto err; break;
-        case C_DIVN: sp[-1] = f_div(sp[-1], *(f32 *)*pc++); if (sfp_err) goto err; break;
-        case C_DIV: sp--; sp[-1] = f_div(sp[-1], sp[0]); if (sfp_err) goto err; break;
-        case C_NEG: sp[-1] = f_neg(sp[-1]); break;
-        case C_SCMP: {
-            u8 m = (u8)*pc++;
-            int c = strcmp(CSTR(sp - 2), CSTR(sp - 1));
-            sp--;
-            if ((c < 0 && (m & 1)) || (c == 0 && (m & 2)) || (c > 0 && (m & 4))) sp[-1] = F_SIGN | F_ONE; else sp[-1] = 0;
-            break;
-        }
-        case C_STR: {
-            char *s = newtmp();
-            const char *q = (const char *)*pc++;
-            u8 n = 0;
-            q++;
-            while (*q && *q != '"') { if (n < STRL - 1) s[n++] = *q; q++; }
-            s[n] = 0;
-            CSTR(sp) = s;
-            sp++;
-            break;
-        }
-        case C_SV: CSTR(sp) = strv[*pc++]; sp++; break;
-        case C_CAT: {
-            u16 la, lb;
-            char *s;
-            sp--;
-            la = (u16)strlen(CSTR(sp - 1));
-            lb = (u16)strlen(CSTR(sp));
-            if (la + lb >= STRL) { fail("String too long"); goto bad; }
-            s = newtmp();
-            memcpy(s, CSTR(sp - 1), la);
-            memcpy(s + la, CSTR(sp), lb);
-            s[la + lb] = 0;
-            CSTR(sp - 1) = s;
-            break;
-        }
-        case C_AV: {
-            u16 w = *pc++;
-            u8 nd = (u8)(w >> 8);
-            s32 j = 0;
-            sp -= nd;
-            if (nd == 2) j = f_to_long(sp[1]);
-            *sp = *elem_ij((u8)w, f_to_long(*sp), j);
-            sp++;
-            if (errmsg) goto bad;
-            break;
-        }
-        case C_FN: {
-            u16 w = *pc++;
-            u8 n = (u8)(w >> 8);
-            sp -= n;
-            fn_apply((u8)w, n, sp);
-            sp++;
-            if (errmsg) goto bad;
-            break;
-        }
-        case C_POW: {
-            f32 x, y;
-            sp--;
-            x = sp[-1];
-            y = sp[0];
-            if (!x) { if (y) x = 0; else x = F_ONE; }
-            else if (f_int(y) == y && f_cmp(f_abs(y), f_n(1000)) < 0) {
-                s32 k = f_to_long(f_abs(y));
-                f32 r = F_ONE, p = x;
-                while (k) { if (k & 1) r = f_mul(r, p); k >>= 1; if (k) p = f_mul(p, p); }
-                if (y & F_SIGN) r = f_div(F_ONE, r);
-                x = r;
-            } else if (x & F_SIGN) { fail("Illegal function call"); goto bad; }
-#ifndef NOMATH
-            else x = f_exp(f_mul(y, f_log(x)));
-#else
-            else { fail("Illegal function call"); goto bad; }
-#endif
-            sp[-1] = x;
-            break;
-        }
-        case C_NOT: sp[-1] = f_from_long(~f_to_long(sp[-1])); break;
-        case C_AND: sp--; sp[-1] = f_from_long(f_to_long(sp[-1]) & f_to_long(sp[0])); break;
-        case C_OR: sp--; sp[-1] = f_from_long(f_to_long(sp[-1]) | f_to_long(sp[0])); break;
-        default: fail("Type mismatch"); goto bad;                     /* C_TYPERR */
-        }
+        sp = run_cold(op, pc, sp);
+        if (!sp) goto bad;
+        pc = cold_pc;
     }
 err:
     checkerr();
@@ -708,6 +746,7 @@ static void expr(void)
     char *p;
     cent_t *ce = 0;
     u8 again = 1, ty;
+    lastce = 0;
     if (errmsg) { setn(0); return; }
     skipsp();
     p = tp;
@@ -716,6 +755,7 @@ static void expr(void)
         if (ce->p == p && ce->gen == cgen && ce->kind < 2) {
             tp = ce->end;
             vt = ce->kind;
+            lastce = ce;
             run(ce->code);
             return;
         }
@@ -734,8 +774,9 @@ static void expr(void)
         ce = 0;
     }
     if (ce) {
-        ce->p = p; ce->end = tp; ce->code = cfree; ce->gen = cgen; ce->kind = ty;
+        ce->p = p; ce->end = tp; ce->code = cfree; ce->gen = cgen; ce->kind = ty; ce->alt = 0;
     }
+    lastce = ce;
     vt = ty;
     run(cfree);
     if (ce) cfree = cw;
@@ -936,10 +977,17 @@ static void upcase(char *s)                /* upper case outside the quotes */
     }
 }
 
+typedef struct { u16 n, gen; u8 *p; } jent;          /* GOTO / GOSUB / THEN n: where a line number was found (until the program changes) */
+static jent jcache[16];
+
 static void jump(u16 n)
 {
-    u8 *p = findline(n);
+    jent *j = &jcache[n & 15];
+    u8 *p;
+    if (j->n == n && j->gen == cgen) { cl = j->p; tp = LTEXT(cl); return; }
+    p = findline(n);
     if (p >= pend || LNUM(p) != n) { fail("Undefined line"); return; }
+    j->n = n; j->gen = cgen; j->p = p;
     cl = p;
     tp = LTEXT(p);
 }
@@ -1093,7 +1141,9 @@ static void st_if(void)
 {
     u8 t;
     char *p;
+    cent_t *ce;
     expr();
+    ce = lastce;
     if (errmsg) return;
     t = vt ? 1 : (vf != 0 && F_EXP(vf) != 0);
     if (!eat(T_THEN) && !eat(T_GOTO)) { fail("Syntax error"); return; }
@@ -1102,7 +1152,11 @@ static void st_if(void)
         if (TK(tp) == T_LN) jump(getlineno());
         return;                                   /* the statements after THEN follow */
     }
-    for (p = tp; *p && TK(p) != T_ELSE; p = skiptok(p)) ;           /* look for ELSE */
+    if (ce && ce->alt) p = ce->alt;                                 /* (found when this IF ran before) */
+    else {
+        for (p = tp; *p && TK(p) != T_ELSE; p = skiptok(p)) ;       /* look for ELSE */
+        if (ce) ce->alt = p;
+    }
     if (*p) {
         tp = p + 1;
         skipsp();
@@ -1137,16 +1191,88 @@ static void st_for(void)
     e->lim = lim;
     e->step = step;
     e->line = cl;
+    skipsp();
+    if (*tp == ':') tp++;                         /* (NEXT comes back to the statement after the colon: one pass less through the dispatch) */
     e->tp = tp;
+    e->fast = 0;
+    if (!F_EXP(lim)) lim = 0;
+    e->lim = lim;
+    e->lpos = !(lim & F_SIGN);
+    e->lmh = (u16)(lim >> 16);
+    e->lml = (u16)lim;
+    if ((step == F_ONE || step == (F_SIGN | F_ONE)) && f_int(init) == init && (init & 0x7FFFFFFFUL) < 0x4B000000UL) {      /* whole numbers below 2**23, step 1 or -1 */
+        e->fast = (u8)(step == F_ONE ? 1 : 2);
+        e->lhi = (u16)(init >> 16);
+        e->llo = (u16)init;
+    }
+}
+
+/* v + 1 or v - 1 (dn) for a whole number v below 2**23, done on the two words of the bits of v (no call of f_add: its argument and result pass the stack);
+ * 0 if it cannot be done this way (a power of two on the way down, the numbers above 2**23) */
+/* the two words of a float in memory: the 6809 keeps the high word first (the YSD9000 the low word) */
+#define WHI 0
+#define WLO 1
+static const u16 inc_hi[8] = { 1, 2, 4, 8, 16, 32, 64, 128 };                 /* 1 << sh for sh = 16 .. 23 (the high word of 1 ulp of 1.0 ...) */
+static u8 step1(u16 *w, u8 dn)
+{
+    u16 hi = w[WHI], lo = w[WLO], x;
+    u8 e = (u8)((hi >> 7) & 0xFF), neg = (u8)(hi >> 15), sh;
+    if (!e) { w[WHI] = dn ? 0xBF80 : 0x3F80; w[WLO] = 0; return 1; }              /* 0 -> 1 or -1 */
+    if (e >= 150) return 0;
+    sh = (u8)(150 - e);                                                        /* 1.0 is 1 << sh units of the last place */
+    if (dn == neg) {                                                           /* the magnitude grows */
+        if (sh >= 16) hi += inc_hi[sh - 16];
+        else { x = lo; lo += (u16)(1u << sh); if (lo < x) hi++; }
+    } else {                                                                   /* the magnitude shrinks */
+        if (!lo && !(hi & 0x7F)) {                                             /* a power of two */
+            if (e == 127) { w[WHI] = 0; w[WLO] = 0; return 1; }                    /* 1 - 1 */
+            return 0;
+        }
+        if (sh >= 16) hi -= inc_hi[sh - 16];
+        else { x = lo; lo -= (u16)(1u << sh); if (lo > x) hi--; }
+    }
+    w[WHI] = hi;
+    w[WLO] = lo;
+    return 1;
 }
 
 static void st_next(void)
 {
+    if (nfor) {                                       /* the usual case first: the innermost loop goes on */
+        forent *e = &fors[nfor - 1];
+        char *q = tp;
+        while (*q == ' ') q++;
+        if (e->fast && (TK(q) != T_NV || (OFS(q) == e->vi && TK(q + 3) != T_XN))) {
+            u16 *vw = (u16 *)((u8 *)numv + e->vi), w[2];
+            w[0] = vw[0];
+            w[1] = vw[1];
+            if (w[WHI] == e->lhi && w[WLO] == e->llo && step1(w, (u8)(e->fast - 1))) {      /* (the program has not touched the variable) */
+                u8 ok;
+                if (!(w[WHI] & 0x8000) && e->lpos) {                                     /* both positive: the bits are in the order of the numbers */
+                    if (e->fast == 1) ok = w[WHI] < e->lmh || (w[WHI] == e->lmh && w[WLO] <= e->lml);
+                    else ok = w[WHI] > e->lmh || (w[WHI] == e->lmh && w[WLO] >= e->lml);
+                } else {
+                    int c = f_cmp(((u32)w[WHI] << 16) | w[WLO], e->lim);
+                    if (e->fast == 1) ok = c <= 0; else ok = c >= 0;
+                }
+                if (ok) {
+                    vw[0] = w[0];
+                    vw[1] = w[1];
+                    e->lhi = w[WHI];
+                    e->llo = w[WLO];
+                    cl = e->line;
+                    tp = e->tp;
+                    return;
+                }
+            }
+        }
+    }
     for (;;) {
         forent *e;
         int ix = -1;
         f32 v, *vp;
         int c;
+        u8 go;
         skipsp();
         if (TK(tp) == T_NV) { ix = (int)OFS(tp); tp += 3; ext(); }
         if (!nfor) { fail("NEXT without FOR"); return; }
@@ -1156,10 +1282,23 @@ static void st_next(void)
         }
         e = &fors[nfor - 1];
         vp = (f32 *)((u8 *)numv + e->vi);
-        v = f_add(*vp, e->step);
-        *vp = v;
-        c = f_cmp(v, e->lim);
-        if ((e->step & F_SIGN) ? c >= 0 : c <= 0) {
+        {
+            u16 *w = (u16 *)vp;
+            if (e->fast && w[WHI] == e->lhi && w[WLO] == e->llo && step1(w, (u8)(e->fast - 1))) {          /* (the program has not touched the variable) */
+                e->lhi = w[WHI];
+                e->llo = w[WLO];
+                v = *vp;
+            } else {
+                v = f_add(*vp, e->step);
+                *vp = v;
+                e->fast = 0;
+            }
+        }
+        if (!(v & F_SIGN) && e->lpos) {                                     /* (both are positive: the bits are in the order of the numbers) */
+            if (v < e->lim) c = -1; else if (v > e->lim) c = 1; else c = 0;
+        } else c = f_cmp(v, e->lim);
+        if (e->step & F_SIGN) go = c >= 0; else go = c <= 0;
+        if (go) {
             cl = e->line;
             tp = e->tp;
             return;

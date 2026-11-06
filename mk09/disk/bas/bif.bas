@@ -1,0 +1,10 @@
+10 REM IF: THEN with a statement, THEN with a line number, ELSE, a string test
+20 C=0: D=0
+30 FOR I=1 TO 800
+40 IF I>400 THEN C=C+1 ELSE D=D+1
+50 IF I<10 THEN 70
+60 IF I=5 THEN C=C+1
+70 IF I>=400 AND I<=410 THEN D=D+1
+80 NEXT I
+90 A$="X": FOR I=1 TO 300: IF A$="X" THEN C=C+1
+100 NEXT I
