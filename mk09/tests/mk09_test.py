@@ -95,6 +95,7 @@ check('utf8 cooked 80x24 echo' in out, 'stty shows the console mode')
 check('nosuch: command not found' in out, 'an unknown command is reported')
 check('name > file' in out, 'help prints the usage')
 check(rc == 0, 'shutdown powers the simulator off (exit code 0)', 'rc=%d' % rc)
+check(out.rstrip().endswith('CPU halted.'), 'shutdown prints CPU halted. last', out[-200:])
 
 # ---- dhrystone (the checks of the final values are the ones of the benchmark; the time is the uptime)
 out, rc = run(disk, BOOT + sh('dhry 200', prompt=P) + OFF)
@@ -134,11 +135,11 @@ check(re.search(r'^\s*5 receive\s+1\s+[0-9a-f]{4}-[0-9a-f]{4}', out, re.M) is no
 out, rc = run(disk, BOOT + sh('stk', prompt=P) + OFF)
 rows = re.findall(r'^\s*([1-5]) [0-9a-f]{4}-[0-9a-f]{4}\s+(\d+) \(the run ends', out, re.M)
 check(len(rows) == 5 and all(int(r[1]) >= 10 for r in rows), 'stk: the five servers (TTY DISK FS PM MM) have some unused stack left', out[-600:])
-check('MK09 1.30: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
+check('MK09 1.31: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
 
 # ---- reboot: the files are written, the system starts again (the banner twice), the file is there
 out, rc = run(disk, BOOT + sh('cp /ETC/RC.SH /RB.TXT', 'reboot', 'cat /RB.TXT', 'rm /RB.TXT', prompt=P) + OFF)
-check(out.count('MK09 1.30: kernel TTY DISK FS PM MM') == 2 and 'stty utf8' in out.split('type help')[-1], 'reboot writes the files and starts the system again', out[-700:])
+check(out.count('MK09 1.31: kernel TTY DISK FS PM MM') == 2 and 'stty utf8' in out.split('type help')[-1], 'reboot writes the files and starts the system again', out[-700:])
 
 # ---- -v: the version and the copyright of the compilers and the assembler
 tools = ('as', 'cpp', 'cc1', 'cg', 'cc', 'pas0', 'pas1', 'pc')

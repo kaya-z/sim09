@@ -66,6 +66,7 @@
  *   1.23 2026-10-29  reboot (a program); PM loads a program with ONE request: FS_READTL, FS reads the file into the memory of the new task itself (FS is privileged for
  *                    tload); the code slots of TTY and FS were adjusted (cwidth is shorter).  hello.pas: 19M cycles.
  *   1.24 2026-10-29  -v prints the version and the copyright (as cpp cc1 cg cc pas0 pas1 pc); cc and pc print the command lines with -V now.
+ *   1.31 2026-11-06  shutdown and halt print "CPU halted." (PM, after the sync, before the power register is written).
  *   1.30 2026-11-06  BASIC 1.3: Break.  While a program runs the console is raw without echo and without the ^C of the shell, and execute() looks at the keys every 16 statements; a ^C stops the program with
  *                    "?Break in n" and basic goes on at Ok (INPUT and the prompt use the console as before).  Program area 2200 bytes (was 2400).
  *   1.29 2026-11-06  BASIC 1.2, taken over from the YSD9000 port (its MK09 1.15): FOR / NEXT with a step of 1 or -1 on whole numbers add to the bits of the variable and compare the words, NEXT returns to the statement
@@ -82,7 +83,7 @@
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.30"
+#define MK09_VERSION    "1.31"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

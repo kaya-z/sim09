@@ -359,6 +359,7 @@ int main(void)
             break;
         case PM_SHUTDOWN:
             fsc(FS_SYNC, 0, 0);
+            say("CPU halted.\r\n");
             mk_power();
             break;
         default:
