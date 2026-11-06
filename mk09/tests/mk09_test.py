@@ -134,11 +134,11 @@ check(re.search(r'^\s*5 receive\s+1\s+[0-9a-f]{4}-[0-9a-f]{4}', out, re.M) is no
 out, rc = run(disk, BOOT + sh('stk', prompt=P) + OFF)
 rows = re.findall(r'^\s*([1-5]) [0-9a-f]{4}-[0-9a-f]{4}\s+(\d+) \(the run ends', out, re.M)
 check(len(rows) == 5 and all(int(r[1]) >= 10 for r in rows), 'stk: the five servers (TTY DISK FS PM MM) have some unused stack left', out[-600:])
-check('MK09 1.29: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
+check('MK09 1.30: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
 
 # ---- reboot: the files are written, the system starts again (the banner twice), the file is there
 out, rc = run(disk, BOOT + sh('cp /ETC/RC.SH /RB.TXT', 'reboot', 'cat /RB.TXT', 'rm /RB.TXT', prompt=P) + OFF)
-check(out.count('MK09 1.29: kernel TTY DISK FS PM MM') == 2 and 'stty utf8' in out.split('type help')[-1], 'reboot writes the files and starts the system again', out[-700:])
+check(out.count('MK09 1.30: kernel TTY DISK FS PM MM') == 2 and 'stty utf8' in out.split('type help')[-1], 'reboot writes the files and starts the system again', out[-700:])
 
 # ---- -v: the version and the copyright of the compilers and the assembler
 tools = ('as', 'cpp', 'cc1', 'cg', 'cc', 'pas0', 'pas1', 'pc')
@@ -221,6 +221,10 @@ steps = BOOT + ['send "basic /bas/mandel.bas\\r"',
                 'expect "000111111111111111112222222233445C      643332222111110000000000000000000000000"']
 out, rc = run(disk, steps)
 check(rc == 0 or 'timeout' not in out, 'BASIC: mandel.bas draws the first rows of the Mandelbrot set correctly', out[-600:])
+
+out, rc = run(disk, BOOT + ['send "basic\\r"', 'expect "Ok"', 'send "10 GOTO 10\\r"', 'expect "Ok"', 'send "RUN\\r"', 'sleep 300', 'send "\\x03"', 'expect "Break in 10"', 'expect "Ok"',
+                           'send "PRINT 7*6\\r"', 'expect " 42"', 'expect "Ok"', 'send "bye\\r"', 'expect "/> "'] + OFF)
+check(rc == 0 or 'timeout' not in out, 'BASIC: ^C breaks an endless GOTO loop (Break in 10), basic goes on at Ok and exits with BYE', out[-500:])
 
 for prog, want, what in (('tfor', [' 5050', ' 55', ' 28  4', ' 4  5', ' 3', ' 1  6', ' 6', ' 820', ' 820', ' 7 -4', '-36', ' 11  65541'], 'FOR / NEXT (steps of 1 and -1 on whole numbers, a changed control variable, STEP .5, empty ranges, NEXT J,I, a loop over 65535)'),
                          ('tif', [' 6', 'a', 'c', ' 1', 'two', ' 3', 'xs', 'ye'], 'nested FOR / NEXT, IF / ELSE and GOTO')):

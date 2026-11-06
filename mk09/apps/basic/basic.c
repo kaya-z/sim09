@@ -27,9 +27,9 @@
 #define SFP_ASM
 #include "sfpm.h"
 
-#define BASIC_VERSION "1.2"     /* 1.0: the interpreter of the text; 1.1: the internal form (tokens, compiled expressions), as in the YSD9000 port; 1.2: faster FOR / NEXT / IF (step1, the ELSE and line number caches, fused compares), as in the YSD9000 port */
+#define BASIC_VERSION "1.3"     /* 1.3: ^C breaks a running program (Break in n, back to Ok); 1.0: the interpreter of the text; 1.1: the internal form (tokens, compiled expressions), as in the YSD9000 port; 1.2: faster FOR / NEXT / IF (step1, the ELSE and line number caches, fused compares), as in the YSD9000 port */
 #ifndef PGM
-#define PGM     2400           /* (7000 on the YSD9000, where a program has up to 56 KB; here 41 KB are for the program, the variables, the stack and the code) */
+#define PGM     2200           /* (7000 on the YSD9000, where a program has up to 56 KB; here 41 KB are for the program, the variables, the stack and the code) */
 #endif
 #ifndef NVARS
 #define NVARS   128            /* number variables: a name gets a slot when it is first met (varslot()); 962 names are possible, 26 * 37 */
@@ -1038,6 +1038,31 @@ static void st_print(void)
     if (nl) outc('\n');
 }
 
+/* Break: while a program runs, the console is raw without echo and without the ^C of the shell (TM_ISIG), and execute() looks at the keys now and then; a ^C stops the program with
+ * "?Break in n" and the interpreter goes on at Ok.  INPUT and the prompt use the console as it was (a ^C there still stops the whole of basic, as before). */
+static u8 brk_raw, brk_mode, brk_cnt;
+static void brk_on(void)
+{
+    u8 m, c, w, h;
+    if (brk_raw) return;
+    tty_getmode(&m, &c, &w, &h);
+    brk_mode = m;
+    tty_setmode((u8)((m | TM_RAW) & ~(TM_ECHO | TM_ISIG)), 0xFF, 0xFF, 0xFF);
+    brk_raw = 1;
+}
+static void brk_off(void)
+{
+    if (!brk_raw) return;
+    tty_setmode(brk_mode, 0xFF, 0xFF, 0xFF);
+    brk_raw = 0;
+}
+static void brk_poll(void)
+{
+    u8 hit = 0;
+    while (tty_ready() > 0) if (getchar() == 3) hit = 1;       /* (the other keys are dropped) */
+    if (hit) fail("Break");
+}
+
 static void st_input(void)
 {
     char line[LINEMAX], *p;
@@ -1050,7 +1075,9 @@ static void st_input(void)
         if (*tp == ';' || *tp == ',') tp++;
     } else outs("? ");
     flush();
+    brk_off();
     r = gets_(line, sizeof(line));
+    brk_on();
     col = 0;
     if (r < 0) { fail("End of input"); return; }
     upcase(line);
@@ -1590,8 +1617,10 @@ static void execute(void)
     running = 1;
     errmsg = 0;
     sfp_err = 0;
+    brk_on();
     while (running && !errmsg) {
         u8 t;
+        if (!(++brk_cnt & 15)) brk_poll();
         while (*tp == ' ') tp++;
         t = TK(tp);
         if (t == T_NV) {                                              /* A = ... : the code of the whole statement is kept */
@@ -1613,6 +1642,8 @@ static void execute(void)
         else stmt_kw_p();
         if (sfp_err) checkerr();
     }
+    flush();
+    brk_off();
     if (errmsg) {
         if (col) outc('\n');
         outc('?');
