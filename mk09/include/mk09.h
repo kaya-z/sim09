@@ -51,6 +51,7 @@ typedef struct msg {
 #define NFY_TICK    0x0001  /* timer tick (to the task that did mk_hook())  */
 #define NFY_EXIT    0x0002  /* a task has exited (to PM)                     */
 #define NFY_INT     0x0004  /* interrupt key (^C) typed on the console (PM)  */
+#define NFY_DISK    0x0020  /* the disk command is finished (to the disk server) */
 #define NFY_RX      0x0010  /* characters arrived at the console (to the task that did mk_hook()) */
 #define NFY_RX      0x0010  /* characters arrived at the console (to the task that did mk_hook()) */
 #define NFY_USER    0x0008  /* free for user protocols                       */

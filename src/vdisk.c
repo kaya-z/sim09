@@ -75,10 +75,18 @@ static int vdisk_env(const char *name)
 }
 int vdisk_kanji_names;       /* 1: bytes >= 0x80 are file name characters */
 
+/* 1 when a host directory is a virtual drive (-v): the VRBF commands share the registers of the disk port with the raw disk, which is then synchronous */
+static int vdisk_given;
+int vdisk_in_use(void)
+{
+    return vdisk_given;
+}
+
 int vdisk_set_root(int drv, const char *dir)
 {
     if (drv < 0 || drv >= MAXVDRV) return -1;
     drv_root[drv] = dir;
+    vdisk_given = 1;
     return 0;
 }
 

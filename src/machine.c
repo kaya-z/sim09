@@ -26,6 +26,7 @@
 
 static uint8_t bitbucket[8192];
 static void irq_update(machine_t *m);
+static void disk_poll(machine_t *m);
 
 static int acia_debug = -1;         /* ACIADEBUG=1: log serial port traffic to stderr */
 #define ACIA_DEBUG() (acia_debug < 0 ? (acia_debug = getenv("ACIADEBUG") != NULL) : acia_debug)
@@ -119,6 +120,7 @@ void machine_reboot(machine_t *m)
     if (m->rom_img) memcpy(m->mem + m->rom_at, m->rom_img, m->rom_len);
     if (m->level2) { m->mem[0xff90] = 0; m->mem[0xffa7] = 0x3f; }
     for (i = 0; i < MAX_ACIA; i++) m->acia[i].cr = 0;
+    m->disk_async = m->disk_ien = m->disk_busy = m->disk_done = 0;
     m->timer_pending = 0;
     machine_reset(m);
     irq_update(m);
@@ -186,6 +188,15 @@ static uint8_t io_read(machine_t *m, uint16_t addr)
         if (ai >= 0 && (ai == 0 || m->acia[ai].kind)) return acia_read(m, ai, off & 1);
         /* an unconfigured network port is not there: plain memory like on the reference machine */
     }
+    if (off == 0x40) {                           /* the result of the disk command: reading it takes the 'done' flag */
+        disk_poll(m);
+        if (m->disk_done) { m->disk_done = 0; irq_update(m); }
+        return io[addr & 0x1ff];
+    }
+    if (off == 0x49) {                           /* the disk status: done, interrupt enabled, asynchronous, busy */
+        disk_poll(m);
+        return (uint8_t)((m->disk_done << 7) | (m->disk_ien << 6) | (m->disk_async << 1) | m->disk_busy);
+    }
     return io[addr & 0x1ff];
 }
 
@@ -239,6 +250,12 @@ static void io_write(machine_t *m, uint16_t addr, uint8_t v)
         }
         if (off >= 0x40 && off < 0x50) {
             if (off == 0x40) do_disk_write(m, 0, v);
+            else if (off == 0x49) {
+                /* (with a virtual drive (-v) the VRBF commands use the same registers: the raw disk stays synchronous, a guest then finds the result at once) */
+                m->disk_async = vdisk_in_use() ? 0 : (v & 1);
+                m->disk_ien = v >> 7;
+                irq_update(m);
+            }
             else io[addr & 0x1ff] = v;
             return;
         }
@@ -302,6 +319,10 @@ void do_disk_write(machine_t *m, int off, uint8_t cmd)
     uint8_t sect[SECSIZE];
     (void)off;
 
+    if (m->disk_busy) {                     /* a command that is under way is not disturbed */
+        disk_poll(m);
+        if (m->disk_busy) { if (getenv("DISKDEBUG")) fprintf(stderr, "disk command %02x ignored: busy\n", cmd); return; }
+    }
     if (cmd != 0x81 && cmd != 0x55) {      /* VRBF command (0xd1..0xdd) */
         r[0] = cmd;
         do_vdisk(m, cmd);
@@ -310,7 +331,7 @@ void do_disk_write(machine_t *m, int off, uint8_t cmd)
     drv = r[1];
     lsn = ((long)r[2] << 16) | (r[3] << 8) | r[4];
     buf = (uint16_t)((r[5] << 8) | r[6]);
-    if (getenv("DISKDEBUG")) fprintf(stderr, "disk %s drv=%d lsn=%ld buf=%04x\n", cmd == 0x81 ? "read " : "write", drv, lsn, buf);
+    if (getenv("DISKDEBUG")) fprintf(stderr, "disk %s drv=%d lsn=%ld buf=%04x%s\n", cmd == 0x81 ? "read " : "write", drv, lsn, buf, m->disk_async ? " (async)" : "");
     if (drv > 1 || !m->disk[drv]) goto error;
     if (fseek(m->disk[drv], lsn * SECSIZE, SEEK_SET) != 0) goto error;
     if (cmd == 0x81) {
@@ -328,6 +349,28 @@ void do_disk_write(machine_t *m, int off, uint8_t cmd)
     }
 error:
     r[0] = ok ? 0 : 0xff;
+    if (m->disk_async) {
+        /* the data has been moved (the guest must not touch the buffer meanwhile); the command ends after the time that the board needs
+         * (about 0.4 ms for a read; a write waits for the card: about 4 ms) */
+        m->disk_res = r[0];
+        r[0] = 0xfe;
+        m->disk_busy = 1;
+        m->disk_done = 0;
+        m->disk_end = m->cpu.total_cycles + (cmd == 0x81 ? 800 : 7500);
+        irq_update(m);
+    }
+}
+
+/* the end of an asynchronous command */
+static void disk_poll(machine_t *m)
+{
+    if (m->disk_busy && m->cpu.total_cycles >= m->disk_end) {
+        uint8_t *io = iomem(m);
+        io[(m->iopage & 0x1ff) + 0x40] = m->disk_res;
+        m->disk_busy = 0;
+        m->disk_done = 1;
+        irq_update(m);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -400,6 +443,7 @@ int dev_tick(machine_t *m)
     if (m->reboot_req) { m->reboot_req = 0; machine_reboot(m); }
     int changed = dev_timer(m);
     dev_io(m);
+    disk_poll(m);
     irq_update(m);                               /* a character that came in, or whose pacing time is over */
     return changed;
 }
@@ -439,7 +483,7 @@ static uint64_t acia_irq_wait(machine_t *m)
 static void irq_update(machine_t *m)
 {
     int ti = m->timer_pending && m->timer_irq_line == M6809_IRQ_LINE;
-    m6809_set_line(&m->cpu, M6809_IRQ_LINE, ti || acia_irq_pending(m));
+    m6809_set_line(&m->cpu, M6809_IRQ_LINE, ti || acia_irq_pending(m) || (m->disk_ien && m->disk_done));
     if (m->timer_irq_line != M6809_IRQ_LINE)
         m6809_set_line(&m->cpu, m->timer_irq_line, m->timer_pending);
 }
@@ -522,6 +566,10 @@ static uint64_t cycles_to_event(machine_t *m, uint64_t slice)
     }
     uint64_t w = acia_irq_wait(m);
     if (w && w < lim) lim = w;
+    if (m->disk_busy) {                          /* the end of the asynchronous disk command */
+        uint64_t d = m->disk_end > now ? m->disk_end - now : 1;
+        if (d < lim) lim = d;
+    }
     return lim ? lim : 1;
 }
 

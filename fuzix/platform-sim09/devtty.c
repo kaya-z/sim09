@@ -72,11 +72,15 @@ void tty_data_consumed(uint_fast8_t minor)
 {
 }
 
-/* Called from the interrupt stub for every IRQ: the console receiver and the timer */
+/* Called from the interrupt stub for every IRQ: the console receiver, the end of a disk command and the timer */
+extern void devhd_irq(void);
+
 void plt_interrupt(void)
 {
 	while (ACIA_STATUS & 0x01)		/* receive data ready */
 		tty_inproc(1, ACIA_DATA);
+
+	devhd_irq();				/* the end of a disk command (the IRQ line is shared) */
 
 	if (TIMER_REG & 0x10) {			/* timer fired */
 		TIMER_REG = 0x8F;		/* acknowledge and restart */

@@ -66,6 +66,9 @@
  *   1.23 2026-10-29  reboot (a program); PM loads a program with ONE request: FS_READTL, FS reads the file into the memory of the new task itself (FS is privileged for
  *                    tload); the code slots of TTY and FS were adjusted (cwidth is shorter).  hello.pas: 19M cycles.
  *   1.24 2026-10-29  -v prints the version and the copyright (as cpp cc1 cg cc pas0 pas1 pc); cc and pc print the command lines with -V now.
+ *   1.32 2026-11-07  the disk server uses the asynchronous mode of the disk port ($E049): the command returns at once, the kernel IRQ turns the interrupt off and notifies
+ *                    the disk server (NFY_DISK), which waits in mk_recv, so the other tasks run while the SD card works.  The boot ROM and the C kernel were adapted; the boot code
+ *                    of the kernel (section start) is loaded into the transient area (it runs once), which gave back 185 bytes of the slot of the kernel.
  *   1.31 2026-11-06  shutdown and halt print "CPU halted." (PM, after the sync, before the power register is written).
  *   1.30 2026-11-06  BASIC 1.3: Break.  While a program runs the console is raw without echo and without the ^C of the shell, and execute() looks at the keys every 16 statements; a ^C stops the program with
  *                    "?Break in n" and basic goes on at Ok (INPUT and the prompt use the console as before).  Program area 2200 bytes (was 2400).
@@ -83,7 +86,7 @@
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.31"
+#define MK09_VERSION    "1.32"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif

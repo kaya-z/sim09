@@ -7,6 +7,9 @@
  * blocks; the hardware moves 256 byte sectors with DMA (bsp.h), so a block is two sectors.
  * The data goes through a 256 byte buffer of this server and is copied to / from the client's granted
  * buffer by the kernel (no direct DMA into a client: the same code works with an MMU).
+ * A command goes to the hardware in its asynchronous mode (DISK_CTL): the command returns at once and the server waits for the notification
+ * NFY_DISK of the interrupt at the end of the command (the kernel), so the other tasks use the time (a write waits for the card for milliseconds).
+ * A board without the asynchronous mode has finished the command when it returns, and the result is read at once.
  */
 #include "types.h"
 #include "mk09.h"
@@ -17,6 +20,8 @@ static u8 buf[256];
 
 static u8 sector_io(u8 drive, u16 lba_lo, u8 lba_hi, u8 half, u8 *p, u8 cmd)
 {
+    msg_t m;
+    u8 st;
     /* sector number = block * 2 + half (24 bits in the interface) */
     u8 lo = (u8)(lba_lo << 1) | half;
     u8 hi = (u8)(lba_hi << 1) | (u8)(lba_lo >> 15);
@@ -26,8 +31,11 @@ static u8 sector_io(u8 drive, u16 lba_lo, u8 lba_hi, u8 half, u8 *p, u8 cmd)
     DISK_LSN_MID = (u8)((lba_lo >> 7) & 0xFF);
     DISK_LSN_LO = lo;
     DISK_DMA = (u16)p;
+    DISK_CTL = 0x81;                    /* asynchronous, with the interrupt at the end */
     DISK_CMD = cmd;
-    return DISK_CMD == 0 ? E_OK : E_IO;
+    while ((st = DISK_CMD) == DISK_BUSY)
+        mk_recv(TID_ANY, &m);           /* (only the notification of the kernel comes: the only client waits for our reply) */
+    return st == 0 ? E_OK : E_IO;
 }
 
 /* one half (sector) of a block between the card and the client's buffer */

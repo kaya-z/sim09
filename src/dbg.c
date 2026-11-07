@@ -72,8 +72,11 @@ static void os9_log(machine_t *m)
         str[i] = (char)ch;
     }
     str[i] = 0;
-    fprintf(stderr, "os9 %04X %-9s A=%02X B=%02X X=%04X Y=%04X U=%04X \"%s\"\n", pc,
-            nm ? nm : "?", REG_A(c), REG_B(c), c->x, c->y, c->u, str);
+    {   /* the process (Level 1: D.Proc at $4B, the id is the first byte of the descriptor) */
+        uint16_t dpp = (uint16_t)((machine_peek(m, 0x4b) << 8) | machine_peek(m, 0x4c));
+        fprintf(stderr, "os9 %04X p%02X %-9s A=%02X B=%02X X=%04X Y=%04X U=%04X \"%s\"\n", pc, dpp ? machine_peek(m, dpp) : 0,
+                nm ? nm : "?", REG_A(c), REG_B(c), c->x, c->y, c->u, str);
+    }
     os9_ret_pc = (uint16_t)(pc + 3);
     os9_ret_name = nm ? nm : "?";
 }

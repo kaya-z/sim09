@@ -15,7 +15,9 @@ for line in open(mp):
     m = re.match(r'Section: (\w+) \(.*\) load at ([0-9A-F]+), length ([0-9A-F]+)', line)
     if m:
         secs.append((m.group(1), int(m.group(2), 16), int(m.group(3), 16)))
-code_end = max(a + l for n, a, l in secs if n in ('start', 'code', 'rodata', 'initgl_start', 'initgl', 'initgl_end'))
+# (a section 'start' that is not in front of the code is the code that runs once at the boot: it is in the transient area, see mklink.py)
+relocated = any(n == 'start' and a != cb for n, a, l in secs)
+code_end = max(a + l for n, a, l in secs if n in ('code', 'rodata', 'initgl_start', 'initgl', 'initgl_end') or (n == 'start' and not relocated))
 ok = code_end <= cb + cs
 msg = '%-7s code %04X-%04X (%d of %d bytes)' % (name, cb, code_end, code_end - cb, cs)
 if len(sys.argv) > 5:
@@ -29,5 +31,8 @@ for l in open(mp):                          # variables addressed with direct pa
     if m and len(sys.argv) > 5 and int(m.group(2), 16) - int(sys.argv[5], 16) > 256:
         ok = False
         msg += '   (the direct page variables reach %s)' % m.group(2)
+for n, a, l in secs:
+    if n == 'start' and relocated:
+        msg += ', boot code %04X-%04X (%d bytes, run once)' % (a, a + l, l)
 print(msg + ('' if ok else '   ** DOES NOT FIT **'))
 sys.exit(0 if ok else 1)

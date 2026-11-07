@@ -46,8 +46,10 @@ os9v1_tn9k.rom: modules
 # Level 1 booting from the disk: the ROM (8 KB at $E000) holds the kernel, Init, the booter, IOMan and SCF (they take
 # 15 pages of RAM less than in the boot file: jwp needs the room); everything else is the boot
 # file OS9Boot (OS9Boot.bin: the modules one after the other, written to a disk image by tools/mkboot.py)
+# (without the network terminals NPty N1-N3: they need the simulator, and the 138 bytes more of the asynchronous Pdisk would take one page of the free memory away,
+#  which jwp needs; the ROM images os9v1.rom, os9v1_tn9k.rom have them)
 BOOTMODS = level1/rbf level1/pdisk level1/d0 level1/d1 level1/vrbf level1/v0 level1/clock \
-           level1/term$(CS) level1/pty level1/npty level1/n1$(CS) level1/n2$(CS) level1/n3$(CS) level1/shell level1/sysgo
+           level1/term$(CS) level1/pty level1/shell level1/sysgo
 os9v1boot.rom: modules
 	$(MAKE9ROM) -o $@ level1/boot level1/init_tn9k level1/ioman level1/scf level1/os9p2 level1/os9p1_tn9k
 

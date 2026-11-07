@@ -118,12 +118,13 @@ module sbc09_soc #(
     reg         e, q;
     reg         nreset_cpu;
     wire        timer_irq;
-    wire        acia_irq;               // the console ACIA (OS-9 uses its receive and transmit interrupts)
+    wire        acia_irq;               // the console ACIA (the guests use its receive interrupt; OS-9 the transmit interrupt too)
+    wire        disk_irq;               // an asynchronous disk command has finished (and the guest asked for the interrupt)
 
     mc6809i #(.ILLEGAL_INSTRUCTIONS("GHOST")) cpu (
         .D(cpu_d_in), .DOut(cpu_d_out), .ADDR(cpu_a), .RnW(cpu_rnw),
         .E(e), .Q(q), .BS(cpu_bs), .BA(cpu_ba),
-        .nIRQ(FREERUN ? ~acia_irq : ~(timer_irq | acia_irq)), .nFIRQ(FREERUN ? ~timer_irq : 1'b1), .nNMI(1'b1),
+        .nIRQ(FREERUN ? ~(acia_irq | disk_irq) : ~(timer_irq | acia_irq | disk_irq)), .nFIRQ(FREERUN ? ~timer_irq : 1'b1), .nNMI(1'b1),
         .AVMA(cpu_avma), .BUSY(), .LIC(cpu_lic),
         .nHALT(1'b1), .nRESET(nreset_cpu), .nDMABREQ(1'b1),
         .RegData(dbg_regs)
@@ -149,6 +150,17 @@ module sbc09_soc #(
     reg       acc2;                 // and one clock later (the access itself: it needs the decoded address)
     reg       mem_pend;             // a PSRAM access of the CPU is under way
     wire      disk_busy;
+    reg [7:0]  d_47;
+    reg        d_async, d_ien;          // $E049 bit 0: the asynchronous mode, bit 7: the interrupt at the end of a command
+    reg        d_arun;                  // the command that is under way is an asynchronous one
+    reg        d_done;                  // an asynchronous command has finished and its result has not been read ($E049 bit 7)
+    reg [7:0]  dm_blk0, dm_blk1;        // the map at the command (the guest may switch the task while the disk transfers): the block of the buffer address
+    reg [2:0]  dm_idx;                  // ... and of the next 8K block
+    reg         m3_req = 1'b0, m3_wrr = 1'b0;      // the PSRAM master 3: the disk
+    reg  [21:0] m3_addr;
+    reg  [7:0]  m3_din;
+    wire        m3_ack;
+    wire [15:0] m3_rdata;
     wire      acia_tx_full;         // the transmitter cannot take a character now
     wire      ps_busy_m;
     wire [15:0] ps_dout_m;           // the word the arbiter read for master 0 (the CPU, the disk)
@@ -160,8 +172,10 @@ module sbc09_soc #(
     // (the carry chain, 49 ns in the timing report) of the core before that (on the board this was a wrong result of ADDB with an operand
     // from the PSRAM, +-$10).
     reg [5:0] settle = 6'd0;
-    always @(posedge clk) settle <= {settle[4:0], mem_pend | disk_busy};
-    wire      stall = mem_pend | disk_busy | pwroff | acia_pend | (|settle);
+    // (a disk command holds the CPU, unless the guest asked for the asynchronous mode: then the CPU goes on and the disk transfers with the PSRAM master 3)
+    wire      disk_hold = disk_busy & ~d_arun;
+    always @(posedge clk) settle <= {settle[4:0], mem_pend | disk_hold};
+    wire      stall = mem_pend | disk_hold | pwroff | acia_pend | (|settle);
 
     always @(posedge clk) begin
         ecyc   <= 1'b0;
@@ -321,7 +335,7 @@ module sbc09_soc #(
     // Level 1: the registers are at $E000 (the page $E000-$E1FF); Level 2: at $FF80 (the same offsets), in the fixed page.
     wire        in_io  = l2 ? (a[15:7] == 9'h1ff) : (a[15:9] == 7'b1110000);
     wire [8:0]  off    = l2 ? {2'b00, a[6:0]} : a[8:0];
-    reg io_acia, io_power, io_timer, io_disk, io_hit, io_quiet, rom_sel, io_mmu, io_map, io_ta, io_modr;
+    reg io_acia, io_power, io_timer, io_disk, io_dctl, io_hit, io_quiet, rom_sel, io_mmu, io_map, io_ta, io_modr;
     // Level 2: the registers of the clock are in the fixed page, and the OS reads the time with F$Move, i.e. through another
     // window of the same physical page ($7FFB1-B6).  In the simulator the registers live in that RAM; here a read of that
     // physical address gives the registers of the clock too.  (pa is declared below: it is the physical address of a.)
@@ -335,11 +349,12 @@ module sbc09_soc #(
         io_power <= in_io && off == 9'h00f;
         io_timer <= in_io && off >= 9'h030 && off <= 9'h036;
         io_disk  <= in_io && off >= 9'h040 && off <= 9'h047;
+        io_dctl  <= in_io && off == 9'h049;                      // the control / status of the asynchronous mode of the disk
         io_mmu   <= l2 && in_io && off == 9'h011;            // the task register
         io_map   <= l2 && in_io && off >= 9'h020 && off <= 9'h02f;   // the system map, the user map
-        io_hit   <= (in_io && ((off[8:1] == 8'd0) || off == 9'h00f || off == 9'h00e || (off >= 9'h030 && off <= 9'h036) || (off >= 9'h040 && off <= 9'h047)
+        io_hit   <= (in_io && ((off[8:1] == 8'd0) || off == 9'h00f || off == 9'h00e || (off >= 9'h030 && off <= 9'h036) || (off >= 9'h040 && off <= 9'h049)
                               || (l2 && (off == 9'h011 || (off >= 9'h020 && off <= 9'h02f))))) || ta;
-        io_quiet <= !l2 && in_io && off < 9'h080 && !((off[8:1] == 8'd0) || off == 9'h00f || off == 9'h00e || (off >= 9'h030 && off <= 9'h036) || (off >= 9'h040 && off <= 9'h047));
+        io_quiet <= !l2 && in_io && off < 9'h080 && !((off[8:1] == 8'd0) || off == 9'h00f || off == 9'h00e || (off >= 9'h030 && off <= 9'h036) || (off >= 9'h040 && off <= 9'h049));
         rom_sel  <= !l2 && (a >= ROM_BASE);
     end
 
@@ -364,6 +379,8 @@ module sbc09_soc #(
     wire [7:0] timer_rdata;
     reg        acia_rd;                 // a clock after the read: rd_reg has taken the character by then
     always @(posedge clk) acia_rd <= acc2 && vma_pend && cpu_rnw && io_acia && off[0];
+    reg        disk_rd;                 // a clock after the read of $E040, the result of the disk command
+    always @(posedge clk) disk_rd <= acc2 && vma_pend && cpu_rnw && io_disk && off[2:0] == 3'd0;
     reg  [7:0] acia_byte;
     reg        acia_cwr;                // one clock: a write to the control register
     reg  [7:0] acia_cbyte;
@@ -391,7 +408,8 @@ module sbc09_soc #(
     );
 
     // disk registers
-    reg [7:0]  d_drive, d_lsn2, d_lsn1, d_lsn0, d_bufh, d_bufl, d_47;
+    reg [7:0]  d_drive, d_lsn2, d_lsn1, d_lsn0, d_bufh, d_bufl;
+    assign disk_irq = d_ien & d_done;
     reg [7:0]  e040;
     reg        dgo, dwr;
     wire [7:0] disk_result;
@@ -406,7 +424,7 @@ module sbc09_soc #(
         .clk(clk), .rst(rst),
         .go(dgo), .wr(dwr), .drive(d_drive), .lsn({d_lsn2, d_lsn1, d_lsn0}), .buf_addr({d_bufh, d_bufl}),
         .busy(disk_busy), .result(disk_result),
-        .m_rd(d_rd), .m_wr(d_wr), .m_addr(d_addr), .m_din(d_din), .m_dout(ps_dout_m), .m_busy(ps_busy_m),
+        .m_rd(d_rd), .m_wr(d_wr), .m_addr(d_addr), .m_din(d_din), .m_dout(m3_rdata), .m_busy(m3_req),
         .sd_clk(sd_clk), .sd_mosi(sd_mosi), .sd_miso(sd_miso), .sd_cs(sd_cs),
         .ready(sd_ready), .fail(sd_fail), .active(sd_active), .dbg_st(sd_st)
     );
@@ -430,6 +448,7 @@ module sbc09_soc #(
                 3'd6: io_rdata = d_bufl;
                 default: io_rdata = d_47;
             endcase
+        else if (io_dctl)  io_rdata = {d_done, d_ien, 4'b0000, d_async, disk_busy};      // $E049: the status
     end
 
     // a write to the disk registers: noted at the access, done one clock later (c_wdata holds the byte)
@@ -448,13 +467,14 @@ module sbc09_soc #(
         c_rd <= 1'b0;
         c_cwr <= 1'b0;
         disk_busy_d <= disk_busy;
-        if (disk_busy_d && !disk_busy) e040 <= disk_result;
+        if (disk_busy_d && !disk_busy) begin e040 <= disk_result; if (d_arun) d_done <= 1'b1; end
+        if (disk_rd) d_done <= 1'b0;                                    // the guest has read the result
         if (rst) begin
             mem_pend <= 1'b0; mp_wait <= 1'b0; vma_pend <= 1'b1; pwroff <= 1'b0; osrun <= 1'b0; acia_pend <= 1'b0;
             for (mk = 0; mk < 8; mk = mk + 1) begin map_s[mk] <= 8'hff; map_u[mk] <= 8'hff; end
             map_s[7] <= 8'h3f; tr <= 1'b0; tr_raw <= 8'hff; l2 <= 1'b0;
             rd_reg <= 8'h00; e040 <= 8'h00; d_drive <= 0; d_lsn2 <= 0; d_lsn1 <= 0; d_lsn0 <= 0;
-            d_bufh <= 0; d_bufl <= 0; d_47 <= 0;
+            d_bufh <= 0; d_bufl <= 0; d_47 <= 0; d_async <= 0; d_ien <= 0; d_arun <= 0; d_done <= 0;
         end else begin
             c_addr  <= l2 ? pa : {6'd0, a};
             c_wdata <= cpu_d_out;
@@ -470,6 +490,7 @@ module sbc09_soc #(
                             if (io_power && cpu_d_out == 8'ha6) reboot_req <= 1'b1;                                   // reboot: the whole board starts again
                             if (io_modr) begin
                                 acia_cwr <= 1'b1; acia_cbyte <= 8'h03;       // a new machine mode: the ACIA interrupts are off
+                                d_async <= 1'b0; d_ien <= 1'b0;               // ... and the disk is synchronous
                                 if (cpu_d_out == 8'ha2 && !l2) begin           // to the Level 2 mode: the identity map for the blocks 0-6
                                     l2 <= 1'b1; tr <= 1'b0; tr_raw <= 8'hff;
                                     for (mk = 0; mk < 7; mk = mk + 1) map_s[mk] <= mk[7:0];
@@ -481,6 +502,7 @@ module sbc09_soc #(
                                     map_s[7] <= 8'h3f;
                                 end
                             end
+                            if (io_dctl) begin d_async <= cpu_d_out[0]; d_ien <= cpu_d_out[7]; end      // $E049: the asynchronous mode and its interrupt
                             if (io_mmu) begin tr_raw <= cpu_d_out; tr <= cpu_d_out[0]; end
                             if (io_map) begin if (off[3]) map_u[off[2:0]] <= cpu_d_out; else map_s[off[2:0]] <= cpu_d_out; end
                             if (io_acia && off[0]) begin
@@ -509,7 +531,14 @@ module sbc09_soc #(
                 case (w_off)
                     3'd0: begin
                         if (c_wdata == 8'h81 || c_wdata == 8'h55) begin
-                            dgo <= 1'b1; dwr <= (c_wdata == 8'h55);
+                            if (!disk_busy) begin                         // (a command that is under way is not disturbed)
+                                dgo <= 1'b1; dwr <= (c_wdata == 8'h55);
+                                d_arun <= d_async; d_done <= 1'b0;
+                                if (d_async) e040 <= 8'hfe;              // not finished: the result comes at the end
+                                dm_idx  <= d_bufh[7:5];
+                                dm_blk0 <= tr ? map_u[d_bufh[7:5]] : map_s[d_bufh[7:5]];
+                                dm_blk1 <= tr ? map_u[d_bufh[7:5] + 3'd1] : map_s[d_bufh[7:5] + 3'd1];
+                            end
                         end else e040 <= 8'hff;                       // no VRBF (host files) on the FPGA
                     end
                     3'd1: d_drive <= c_wdata;
@@ -535,14 +564,13 @@ module sbc09_soc #(
     // become a request that is held until the arbiter has done it; ps_busy_m is high from the clock of the pulse
     // until then (so no master has to count clocks).
     // the buffer address of the disk port is a logical address: it goes through the map that is active (like the simulator)
+    // (through the map as it was at the command, see dm_blk0: the guest may have switched the task when the transfer is under way)
     wire [15:0] dl     = d_addr[15:0];
-    wire [7:0]  dblk   = (dl[15:9] == 7'b1111111) ? 8'h3f : (tr ? map_u[dl[15:13]] : map_s[dl[15:13]]);
+    wire [7:0]  dblk   = (dl[15:9] == 7'b1111111) ? 8'h3f : (dl[15:13] == dm_idx) ? dm_blk0 : dm_blk1;
     wire [21:0] d_pa   = {1'b0, dblk, dl[12:0]};
     wire use_clr  = !run;
-    reg  disk_sel = 1'b0;                       // the disk owns the port (a clock late: the CPU is waiting at both ends)
-    always @(posedge clk) disk_sel <= disk_busy;
-    wire m_rd_s   = use_clr ? t_rd : disk_sel ? d_rd : c_rd;
-    wire m_wr_s   = use_clr ? (c_wr | ld_wr) : disk_sel ? d_wr : c_cwr;
+    wire m_rd_s   = use_clr ? t_rd : c_rd;
+    wire m_wr_s   = use_clr ? (c_wr | ld_wr) : c_cwr;
     wire m0_pulse = m_rd_s | m_wr_s;
     reg         m0_req = 1'b0, m0_wrr = 1'b0;
     reg  [21:0] m0_addr;
@@ -553,18 +581,31 @@ module sbc09_soc #(
         if (m0_pulse) begin
             m0_req  <= 1'b1;
             m0_wrr  <= m_wr_s;
-            m0_addr <= use_clr ? (ld_wr ? ld_addr : cw) : disk_sel ? (l2 ? d_pa : d_addr) : c_addr;
-            m0_din  <= use_clr ? (ld_wr ? ld_data : td_r) : disk_sel ? d_din : c_wdata;
+            m0_addr <= use_clr ? (ld_wr ? ld_addr : cw) : c_addr;
+            m0_din  <= use_clr ? (ld_wr ? ld_data : td_r) : c_wdata;
         end
     end
-    assign ps_busy_m = m0_req;                  // (high from the clock after the pulse: nobody looks at the clock of the pulse itself)
+    assign ps_busy_m = m0_req;
+
+    // master 3 of the arbiter: the disk (byte reads and writes of the sector, a request that is held until the ack).  It has the lowest priority:
+    // it gets the gaps between the accesses of the CPU, so that the CPU goes on running while the sector is transferred.
+    always @(posedge clk) begin
+        if (m3_ack || rst) m3_req <= 1'b0;
+        if ((d_rd | d_wr) && !rst) begin
+            m3_req  <= 1'b1;
+            m3_wrr  <= d_wr;
+            m3_addr <= l2 ? d_pa : d_addr;
+            m3_din  <= d_din;
+        end
+    end                  // (high from the clock after the pulse: nobody looks at the clock of the pulse itself)
 
     psram_arb arb (
         .clk(clk), .rst(rst),
         .c_rd(ps_rd), .c_wr(ps_wr), .c_addr(ps_addr), .c_din(ps_din), .c_bw(ps_bw), .c_dout(ps_dout), .c_busy(ps_busy),
         .m0_req(m0_req), .m0_wr(m0_wrr), .m0_addr(m0_addr), .m0_din(m0_din), .m0_ack(m0_ack), .m0_rdata(ps_dout_m),
         .m1_req(x1_req), .m1_addr(x1_addr), .m1_ack(x1_ack), .m1_rdata(x1_rdata),
-        .m2_req(x2_req), .m2_addr(x2_addr), .m2_ack(x2_ack), .m2_rdata(x2_rdata)
+        .m2_req(x2_req), .m2_addr(x2_addr), .m2_ack(x2_ack), .m2_rdata(x2_rdata),
+        .m3_req(m3_req), .m3_wr(m3_wrr), .m3_addr(m3_addr), .m3_din(m3_din), .m3_ack(m3_ack), .m3_rdata(m3_rdata)
     );
 
     // ---------------------------------------------------------------- feed the CPU

@@ -40,6 +40,9 @@ TID_HW	equ	$FE
 OP_NOTIFY equ	$FF
 NFY_EXIT equ	2
 NFY_RX	equ	$10
+NFY_DISK equ	$20
+DCTL	equ	$E049			the disk port: control / status of the asynchronous mode
+TID_DISK equ	2
 
 TS_FREE	equ	0
 TS_READY equ	1
@@ -287,7 +290,17 @@ irq_entry
 	ldy	<curp
 	stu	T_SP,y
 	lbsr	rxdrain			the console (the IRQ line is shared with the timer)
-	lda	TIMER
+	lda	DCTL			the disk: a command has finished and the interrupt is on?
+	anda	#$C0
+	cmpa	#$C0
+	bne	@nd
+	lda	#$01			asynchronous, the interrupt off (the disk server reads the result, which takes the done flag)
+	sta	DCTL
+	ldb	#TID_DISK
+	ldx	#NFY_DISK
+	lbsr	notify
+	ldy	<curp
+@nd	lda	TIMER
 	anda	#$10
 	bne	@tick
 	tst	<rxgot			(not the timer) characters have arrived: tell the console server

@@ -16,12 +16,17 @@
 
 *  #   date    Comments
 * -- -------- ----------------------------------------------
+*   2 26.11.07 Asynchronous disk port: the command returns at once, the process sleeps and the
+*   interrupt at the end of the command
+*   wakes it (the CPU goes on with the other processes), a board without the asynchronous mode
+*   is used as before.
 
-Revision equ 1
+Revision equ 2
 NumDrvs  set 2 Number of drives
 
          org Drvbeg
          rmb NumDrvs*DrvMem
+IRQOK    rmb 1            1: the interrupt of the disk port is entered (F$IRQ), the commands are asynchronous
 RAMSTA   equ .
 
          mod RAMEND,RAMNAM,Drivr+Objct,Reent+Revision,RAMENT,RAMSTA
@@ -51,18 +56,73 @@ L0111    sta   DD.TOT+1,x
          decb  
          bne   L0111
          clrb
+*   the interrupt at the end of an asynchronous command: the status register of the port
+*   ($E049) is polled for bit 7 (done)
+         clr   IRQOK,u
+         pshs  cc
+         orcc  #IntMasks
+         ldd   V.PORT,u
+         addd  #9
+         leax  IRQPckt,pcr
+         leay  IRQSvc,pcr
+         os9   F$IRQ
+         bcs   INIT9        no interrupt: the disk stays synchronous
+         lda   #1
+         sta   IRQOK,u
+INIT9    puls  cc           (the carry of F$IRQ is not the result of INIT)
+         clrb
 INITXIT  rts
 
-SETUPDT  lda   <PD.DRV,y      Get the drive number
-         ldu   V.PORT,u
-         sta   1,u    drive number
-         stb   2,u    msb of lsn
-         tfr   x,d
-         sta   3,u
-         stb   4,u
+*   what F$IRQ needs: flip, mask and priority.  The interrupt is requested when (status xor
+*   flip) and mask is not 0.
+IRQPckt  fcb   $00,$80,$08
+
+*   SETUPDT: the registers of the port.  In: B = LSN msb, X = LSN lsw, Y = path descriptor, U
+*   = static storage.  Out: X = the port
+SETUPDT  pshs  x
+         lda   <PD.DRV,y      Get the drive number
+         ldx   V.PORT,u
+         sta   1,x    drive number
+         stb   2,x    msb of lsn
+         ldd   ,s++
+         sta   3,x
+         stb   4,x
          ldd   PD.BUF,y
-         sta   5,u     buffer address
-         stb   6,u
+         sta   5,x     buffer address
+         stb   6,x
+         rts
+
+*   DOIO: do the command B ($81 read, $55 write) of the port X.  U = static storage.  Out: B =
+*   the result (0 = good), Z set when good.
+*   Asynchronous: the process sleeps until the interrupt at the end of the command wakes it
+*   (V.WAKE, like the terminal driver), a
+*   port that has no asynchronous mode (or no interrupt) has finished the command when it
+*   returns: the result is there at once.
+DOIO     pshs  x,cc
+         lda   IRQOK,u
+         beq   DOIO2          synchronous
+         lda   V.BUSY,u
+         sta   V.WAKE,u       the process to wake
+         orcc  #IntMasks
+         lda   #$81           asynchronous, interrupt at the end
+         sta   9,x
+DOIO2    stb   ,x             the command
+         lda   #80            a read takes less than 1 ms: look for it a while before sleeping
+DOIOP    ldb   ,x             (the sleep and the wake-up cost more), a write waits for the card for ms
+         cmpb  #$FE
+         bne   DOIO4
+         deca
+         bne   DOIOP
+DOIO3    ldb   ,x             the result, or $FE: not finished
+         cmpb  #$FE
+         bne   DOIO4
+         ldx   #5             the interrupt wakes us at once; if it never comes, look again after 5 ticks
+         os9   F$Sleep
+         ldx   1,s
+         bra   DOIO3
+DOIO4    clr   V.WAKE,u
+         puls  cc,x         the interrupt mask as it was
+         tstb
          rts
 
 *****************************
@@ -75,10 +135,9 @@ SETUPDT  lda   <PD.DRV,y      Get the drive number
 *  Exit: 256 byte sector in PD.BUF buffer
 *
 READ     pshs u,x,b         S: LSN msb(0) LSN lsw(1) static storage(3)
-         bsr  SETUPDT
-         lda  #$81
-         sta  ,u   // perform io
-         ldb  ,u   // return status
+         lbsr SETUPDT
+         ldb  #$81
+         bsr  DOIO         perform io
          beq  rd1
          orcc #1            error: carry set, B = code
          bra  rdx
@@ -115,11 +174,15 @@ rdx      leas 1,s           drop saved B, keep the result in B
 *        X = LSB's of LSN
 *        PD.Buf = Sector to write
 *
-WRITE    bsr  SETUPDT
-         lda #$55
-         sta  ,u   // perform io
-         ldb  ,u   // return status
-WRIT99   rts
+WRITE    pshs u,x          the caller gets X and U back
+         lbsr SETUPDT
+         ldb  #$55
+         bsr  DOIO         perform io
+         beq  WRIT99
+         orcc #1            error: carry set, B = code
+         puls x,u,pc
+WRIT99   clrb
+         puls x,u,pc
 
 **************************
 * GETSTA
@@ -127,7 +190,7 @@ WRIT99   rts
 *
 GETSTA
 Unknown  comb
-         clrb
+         ldb  #E$UnkSvc    unknown code: error, carry set
          rts
 
 **************************
@@ -142,7 +205,38 @@ PUTSTA90 clrb
 * TERM
 *  terminate Driver
 *
-TERM     clrb
+TERM     pshs cc
+         orcc #IntMasks
+         ldd  V.PORT,u
+         addd #9
+         ldx  #0            remove the entry of the interrupt service routine
+         leay IRQSvc,pcr
+         os9  F$IRQ
+         puls cc
+         clrb
+         rts
+
+**********************
+* IRQSvc - the interrupt service routine (entered with F$IRQ, U = static storage)
+*   The command at the port has finished: switch the interrupt off (the result is read by the
+*   process, which takes the done flag) and wake the
+*   process.  Carry set: not ours (the status says done, but the interrupt is off: the process
+*   is on its way to read the result).
+IRQSvc   ldx   V.PORT,u
+         lda   9,x
+         anda  #$C0         done and interrupt enabled?
+         cmpa  #$C0
+         bne   IRQNO
+         lda   #$01         asynchronous, interrupt off
+         sta   9,x
+         lda   V.WAKE,u
+         beq   IRQOUT
+         clr   V.WAKE,u
+         ldb   #S$Wake
+         os9   F$Send
+IRQOUT   clrb
+         rts
+IRQNO    comb
          rts
 
          emod

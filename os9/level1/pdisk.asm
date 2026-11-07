@@ -16,8 +16,14 @@
 
 *  #   date    Comments
 * -- -------- ----------------------------------------------
+*   2 26.11.07 Asynchronous disk port ($E049): the command returns at once and the CPU waits
+*   for the result with the interrupts on (the clock
+*   and the console go on).  A process does not sleep here: with two or more processes at
+*   the disks the Level 1 IOMan/RBF lost
+*   a wake-up (tests/os9_test.py), so the Level 1 driver waits itself.  A port without the
+*   asynchronous mode is used as before.
 
-Revision equ 1
+Revision equ 2
 NumDrvs  set 2 Number of drives
 
          org Drvbeg
@@ -53,16 +59,37 @@ L0111    sta   DD.TOT+1,x
          clrb
 INITXIT  rts
 
-SETUPDT  lda   <PD.DRV,y      Get the drive number
-         ldu   V.PORT,u
-         sta   1,u    drive number
-         stb   2,u    msb of lsn
-         tfr   x,d
-         sta   3,u
-         stb   4,u
+*   SETUPDT: the registers of the port.  In: B = LSN msb, X = LSN lsw, Y = path descriptor,
+*   U = static storage.  Out: X = the port
+SETUPDT  pshs  x
+         lda   <PD.DRV,y      Get the drive number
+         ldx   V.PORT,u
+         sta   1,x    drive number
+         stb   2,x    msb of lsn
+         ldd   ,s++
+         sta   3,x
+         stb   4,x
          ldd   PD.BUF,y
-         sta   5,u     buffer address
-         stb   6,u
+         sta   5,x     buffer address
+         stb   6,x
+         rts
+
+*   DOIO: do the command B ($81 read, $55 write) of the port X.  Out: B = the result (0 =
+*   good), Z set when good.
+*   The port is asynchronous (E049 = 1): the command returns at once, E040 reads $FE until
+*   it is finished.  The CPU waits with the interrupts on.
+*   A port without the asynchronous mode (or with a host file system, sim09 -v) has the
+*   result at once.
+DOIO     pshs  x,cc
+         lda   #$01           asynchronous, no interrupt of the port
+         sta   9,x
+         stb   ,x             the command
+         andcc #^IntMasks     the interrupts on while the disk works
+DOIO3    ldb   ,x             the result, or $FE: not finished
+         cmpb  #$FE
+         beq   DOIO3
+         puls  cc,x         the interrupt mask as it was
+         tstb
          rts
 
 *****************************
@@ -75,10 +102,9 @@ SETUPDT  lda   <PD.DRV,y      Get the drive number
 *  Exit: 256 byte sector in PD.BUF buffer
 *
 READ     pshs u,x,b         S: LSN msb(0) LSN lsw(1) static storage(3)
-         bsr  SETUPDT
-         lda  #$81
-         sta  ,u   // perform io
-         ldb  ,u   // return status
+         lbsr SETUPDT
+         ldb  #$81
+         lbsr DOIO         perform io
          beq  rd1
          orcc #1            error: carry set, B = code
          bra  rdx
@@ -115,11 +141,15 @@ rdx      leas 1,s           drop saved B, keep the result in B
 *        X = LSB's of LSN
 *        PD.Buf = Sector to write
 *
-WRITE    bsr  SETUPDT
-         lda #$55
-         sta  ,u   // perform io
-         ldb  ,u   // return status
-WRIT99   rts
+WRITE    pshs u,x          the caller gets X and U back
+         lbsr SETUPDT
+         ldb  #$55
+         lbsr DOIO         perform io
+         beq  WRIT99
+         orcc #1            error: carry set, B = code
+         puls x,u,pc
+WRIT99   clrb
+         puls x,u,pc
 
 **************************
 * GETSTA
@@ -127,7 +157,7 @@ WRIT99   rts
 *
 GETSTA
 Unknown  comb
-         clrb
+         ldb  #E$UnkSvc    unknown code: error, carry set
          rts
 
 **************************

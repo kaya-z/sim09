@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 sim09 contributors
 //
-// Three masters share the PSRAM controller (vendor/psram), which does one access at a time.  A master
+// Four masters share the PSRAM controller (vendor/psram), which does one access at a time.  A master
 // raises its request (with the address and, for master 0, the data) and holds it until the arbiter pulses
 // ack; with the ack, rdata (the 16 bit word at the address) is valid and stays until the next ack.
 //
-//   master 0   byte reads / writes: the CPU, the disk, the start-up (clear, kanji loader)      lowest priority
+//   master 0   byte reads / writes: the CPU, the start-up (clear, kanji loader)
+//   master 3   byte reads / writes: the disk (DMA of the sectors; the CPU goes on running)       lowest priority: it has no deadline
 //   master 1   word reads: the HDMI decoder (UTF-8 table look-ups)
 //   master 2   word reads: the HDMI display (the glyph lines of the next scan line)             highest: it has a deadline
 //
@@ -38,7 +39,14 @@ module psram_arb (
     input  wire        m2_req,
     input  wire [21:0] m2_addr,
     output reg         m2_ack,
-    output reg  [15:0] m2_rdata
+    output reg  [15:0] m2_rdata,
+    // master 3
+    input  wire        m3_req,
+    input  wire        m3_wr,               // 1: write the byte m3_din
+    input  wire [21:0] m3_addr,
+    input  wire [7:0]  m3_din,
+    output reg         m3_ack,
+    output reg  [15:0] m3_rdata
 );
     localparam [2:0] S_IDLE = 3'd0, S_ISSUE = 3'd1, S_W1 = 3'd2, S_WAIT = 3'd3, S_ACK = 3'd4, S_GAP = 3'd5;
     reg [2:0] st;
@@ -52,6 +60,7 @@ module psram_arb (
         m0_ack <= 1'b0;
         m1_ack <= 1'b0;
         m2_ack <= 1'b0;
+        m3_ack <= 1'b0;
         if (rst) begin
             st <= S_IDLE;
         end else case (st)
@@ -59,10 +68,11 @@ module psram_arb (
             if (m2_req)      begin sel <= 2'd2; c_addr <= m2_addr; c_din <= 16'd0; st <= S_ISSUE; end
             else if (m1_req) begin sel <= 2'd1; c_addr <= m1_addr; c_din <= 16'd0; st <= S_ISSUE; end
             else if (m0_req) begin sel <= 2'd0; c_addr <= m0_addr; c_din <= {m0_din, m0_din}; st <= S_ISSUE; end
+            else if (m3_req) begin sel <= 2'd3; c_addr <= m3_addr; c_din <= {m3_din, m3_din}; st <= S_ISSUE; end
         end
         S_ISSUE: begin
-            c_rd <= (sel != 2'd0) || !m0_wr;
-            c_wr <= (sel == 2'd0) && m0_wr;
+            c_rd <= (sel == 2'd1) || (sel == 2'd2) || ((sel == 2'd0) && !m0_wr) || ((sel == 2'd3) && !m3_wr);
+            c_wr <= ((sel == 2'd0) && m0_wr) || ((sel == 2'd3) && m3_wr);
             st   <= S_W1;
         end
         S_W1:   st <= S_WAIT;                       // the request is visible to the controller
@@ -71,7 +81,8 @@ module psram_arb (
             case (sel)
                 2'd0: begin m0_rdata <= c_dout; m0_ack <= 1'b1; end
                 2'd1: begin m1_rdata <= c_dout; m1_ack <= 1'b1; end
-                default: begin m2_rdata <= c_dout; m2_ack <= 1'b1; end
+                2'd2: begin m2_rdata <= c_dout; m2_ack <= 1'b1; end
+                default: begin m3_rdata <= c_dout; m3_ack <= 1'b1; end
             endcase
             st <= S_GAP;
         end

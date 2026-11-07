@@ -104,6 +104,10 @@ typedef struct machine {
     int      want_monitor;
     int      quit;
     int      reboot_req;           /* the guest wrote $A6 to the power register */
+    /* the disk port in its asynchronous mode ($E049 bit 0): the command returns at once, E040 = $FE until it is finished, status/interrupt at the end */
+    int      disk_async, disk_ien, disk_busy, disk_done;
+    uint64_t disk_end;             /* the cycle at which the command that is under way is finished */
+    uint8_t  disk_res;             /* ... and its result */
     uint64_t timer_fire_count;
     unsigned long dettype_start, dettype_gap;   /* -dettype: instruction counted type-in */
     const char  *dettype_text;
@@ -152,6 +156,7 @@ void    acia_write(machine_t *m, int idx, int reg, uint8_t v);
 
 /* vdisk.c */
 int  vdisk_set_root(int drv, const char *dir);
+int  vdisk_in_use(void);                 /* a host directory is a virtual drive: the raw disk stays synchronous */
 void do_vdisk(machine_t *m, uint8_t cmd);
 
 #endif

@@ -28,7 +28,9 @@ def check(cond, what, detail=''):
 class Session:
     """one simulator run in a scratch directory"""
 
-    def __init__(self, level, kanji='utf8', rom=None, extra=()):
+    def __init__(self, level, kanji='utf8', rom=None, extra=(), virt=True, env=None):
+        self.virt = virt
+        self.env = env or {}
         self.level = level
         self.kanji = kanji
         self.dir = tempfile.mkdtemp(prefix='os9t_')
@@ -41,18 +43,18 @@ class Session:
         self.rom = rom or os.path.join(ROOT, 'os9', 'os9v%d%s.rom' % (level, suffix))
         self.extra = list(extra)
 
-    def run(self, steps, timeout=120):
+    def run(self, steps, timeout=120, tmo=30000):
         script = os.path.join(self.dir, 'script.txt')
         with open(script, 'w', encoding='utf-8') as f:
-            f.write('timeout 30000\nexpect "OS9:"\nsend "chx /v0/cmds\\r"\nexpect "OS9:"\n')
+            f.write('timeout %d\nexpect "OS9:"\nsend "chx /%s/cmds\\r"\nexpect "OS9:"\n' % (tmo, 'v0' if self.virt else 'd0'))
             for st in steps:
                 f.write(st + '\n')
             f.write('quit\n')
         cmd = [SIM] + (['-2'] if self.level == 2 else []) + [
             '-max', '-rom', self.rom, '-0', os.path.join(self.dir, 'OS9.dsk'),
-            '-1', os.path.join(self.dir, 'WORK.dsk'), '-v', self.v0,
+            '-1', os.path.join(self.dir, 'WORK.dsk')] + (['-v', self.v0] if self.virt else []) + [
             '-kanji', self.kanji, '-script', script] + self.extra
-        env = dict(os.environ, LC_ALL='C')
+        env = dict(os.environ, LC_ALL='C', **self.env)
         p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, env=env)
         self.rc = p.returncode
         self.out = p.stdout
@@ -202,6 +204,29 @@ for level in (1, 2):
     s.run(['send "shutdown\\r"', 'expect "NEVER-APPEARS" 5000'])
     check(s.rc == 0 and 'System halted.' in s.text() and 'timeout' not in s.text(),
           'L%d shutdown ends the simulator with exit code 0' % level)
+    s.close()
+
+# --- the disk port in its asynchronous mode ($E049): the driver starts the command, the process sleeps, the interrupt at the end wakes it
+# (without -v: with a virtual drive the raw disk stays synchronous, the VRBF commands use the same registers)
+for level in (1, 2):
+    s = Session(level, virt=False, env={'DISKDEBUG': '1'})
+    s.run(cmds('copy /d0/startup /d0/as1', 'copy /d0/cmds/dir /d0/as2', 'cmp /d0/cmds/dir /d0/as2', 'list /d0/as1', 'dir /d1',
+               'attr /d0/as1 e pe w r pr', 'attr /d0/as2 e pe w r pr', 'del /d0/as1', 'del /d0/as2', 'dir /d0'))
+    t = s.text()
+    check(len(re.findall(r'\(async\)', t)) > 50 and 'Differences' in t and 'None' in t and 'printerr' in t and 'Error' not in t.split('copy /d0/startup')[-1],
+          'L%d the raw disk is used in the asynchronous mode (sleep and interrupt): copy, cmp, list, dir, del' % level, t[-700:])
+    s.close()
+
+# --- three processes use the raw disks at the same time (/d0 and /d1 share the controller): the driver of the port serialises them, every file is right
+for level in (1, 2):
+    s = Session(level, virt=False, env={'DISKDEBUG': '1'})
+    s.run(['send "copy /d0/cmds/jwp /d0/cc1 & copy /d0/cmds/dhry /d1/cc2 & copy /d0/cmds/ysdbasic /d0/cc3 &\\r"', 'expect "OS9:"', 'send "sleep 3000\\r"', 'expect "OS9:"'] +
+           cmds('cmp /d0/cmds/jwp /d0/cc1', 'cmp /d0/cmds/dhry /d1/cc2', 'cmp /d0/cmds/ysdbasic /d0/cc3', 'attr /d0/cc1 e pe w r pr', 'attr /d1/cc2 e pe w r pr', 'attr /d0/cc3 e pe w r pr',
+                'del /d0/cc1', 'del /d1/cc2', 'del /d0/cc3', 'dir /d0'), tmo=200000)
+    t = s.text()
+    tail = t.split("sleep 3000")[-1]
+    check(tail.count('Bytes different:  00000000') == 3 and 'rror' not in tail and 'OS9Boot' in tail,
+          'L%d three processes copy at the same time on /d0 and /d1 (asynchronous disk port, the controller is shared): the files are right' % level, tail[-600:])
     s.close()
 
 # --- reboot command: the machine starts again from the ROM (memory cleared), the second boot shows the banner again and works

@@ -212,6 +212,23 @@ def t_reboot(exe):
     return r
 
 
+def t_disk(exe):
+    # the asynchronous mode of the disk port ($E047): scripts/disktest.s is the guest.  The card: byte i of sector n is (n*37 + 3*i + 1) & $FF.
+    d = tempfile.mkdtemp(prefix='fpgat_dk_')
+    img = os.path.join(d, 'card.img')
+    with open(img, 'wb') as f:
+        for n in range(256):
+            f.write(bytes((n * 37 + 3 * i + 1) & 0xFF for i in range(256)))
+    out, rc = run(exe, ['wait 3000'], img, clks=900000000)
+    shutil.rmtree(d, ignore_errors=True)
+    names = ['1 sync read', '2 async read, CPU runs', '3 CPU and DMA share the memory', '4 interrupt', '5 async write']
+    r = []
+    for nm in names:
+        r.append(('disk port, ' + nm, re.search(re.escape(nm) + r': PASS', out) is not None, out[-700:]))
+    r.append(('the test ends and powers off', 'DONE' in out and 'power off' in out, out[-300:]))
+    return r
+
+
 def t_nocard(exe):
     out, rc = run(exe, ['wait 3000', 'quit'], None, extra=['-nosd'], clks=1500000000)
     return [('without a card the boot ROM gives up and powers off (exit code 0, no kernel banner)',
@@ -253,6 +270,13 @@ if have_os9boot:
     jobs += [('os9boot', 'os9boot', t_os9boot)]
 if have_os9 and have_fuzix:
     jobs += [('os9k', 'fuzix', t_os9k)]
+if shutil.which('lwasm'):
+    os.makedirs(os.path.join(ROOT, 'fpga', 'tn9k', 'build'), exist_ok=True)
+    subprocess.run(['lwasm', '--format=raw', '-o', os.path.join(ROOT, 'fpga', 'tn9k', 'build', 'disktest.bin'),
+                    os.path.join(ROOT, 'fpga', 'tn9k', 'scripts', 'disktest.s')], check=True)
+    jobs += [('disk', 'disktest', t_disk)]
+else:
+    print('SKIP the disk port test: lwasm is not installed')
 if os.path.exists(OS9L2_DSK) and have_fuzix:
     jobs += [('os9l2', 'fuzix', t_os9l2), ('reboot', 'fuzix', t_reboot)]
 else:

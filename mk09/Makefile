@@ -94,7 +94,7 @@ LINK = $(LWLINK) --format=srec --script=$(B)/$(1).link --map=$(B)/$(1).map -o $$
 
 define SYSMOD
 $(B)/$(1).link: memmap.mk tools/mklink.py | $(B)
-	$(PYTHON) tools/mklink.py $$($(2)_CODE) $$($(2)_DATA) > $$@
+	$(PYTHON) tools/mklink.py $$($(2)_CODE) $$($(2)_DATA) $$($(2)_START) > $$@
 $(B)/$(1).s19: $$($(2)_OBJS) $(B)/libmk.a $(B)/$(1).link tools/chkmap.py
 	$(call LINK,$(1),$(2))
 	$(PYTHON) tools/chkmap.py $(1) $(B)/$(1).map $$($(2)_CODE) $$($(2)_CSZ) $$($(2)_DATA) $$($(2)_DSZ) $(3)
@@ -105,6 +105,11 @@ KERNEL_CODE := $(K_CODE)
 KERNEL_CSZ  := $(K_CSZ)
 KERNEL_DATA := $(K_DATA)
 KERNEL_DSZ  := $(K_DSZ)
+# the kernel in assembler has the code that runs once at the boot (the table of vectors, the first tasks) in the section 'start': it is loaded into the
+# transient area (behind the system code), where the first program overwrites it: it needs no room in the slot of the kernel
+ifeq ($(KERNEL),asm)
+KERNEL_START := $(TPA_BASE)
+endif
 $(eval $(call SYSMOD,kernel,KERNEL,0))
 $(eval $(call SYSMOD,tty,TTY,B4))
 $(eval $(call SYSMOD,disk,DISK,82))
@@ -216,7 +221,7 @@ $(B)/mk09.img: $(B)/boot.img $(B)/tree.stamp tools/mkdisk.py
 DISK_MB ?= 16
 
 $(B)/boot.img: $(foreach m,$(SYSMODS),$(B)/$(m).s19) tools/mkimage.py
-	$(PYTHON) tools/mkimage.py -o $@ -e 0x$(K_CODE) $(foreach m,$(SYSMODS),$(B)/$(m).s19)
+	$(PYTHON) tools/mkimage.py -o $@ -e 0x$(if $(KERNEL_START),$(KERNEL_START),$(K_CODE)) $(foreach m,$(SYSMODS),$(B)/$(m).s19)
 
 run: all
 	$(SIM) -rom $(B)/bootrom.bin -0 $(B)/mk09.img

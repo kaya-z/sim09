@@ -32,6 +32,9 @@
 #define DISK_LSN_MID    (*(u8 *)0xE043)
 #define DISK_LSN_LO     (*(u8 *)0xE044)
 #define DISK_DMA        (*(u16 *)0xE045)
+#define DISK_CTL        (*(u8 *)0xE049)    /* bit 0: asynchronous mode (the command returns at once: DISK_CMD reads $FE until it is finished), bit 7: interrupt at the end;
+                                              read: bit 7 finished, bit 6 interrupt on, bit 0 busy.  The kernel switches the interrupt off and notifies the disk server (NFY_DISK). */
+#define DISK_BUSY       0xFE
 
 #define DISK_READ_CMD   0x81
 #define DISK_WRITE_CMD  0x55

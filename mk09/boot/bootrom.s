@@ -24,6 +24,7 @@ start	orcc	#$50			interrupts off
 	lds	#$0100
 	ldx	#FIRSTLSN
 	clr	$E041			drive 0
+	clr	$E049			the disk synchronous (after a restart without a reset the OS may have left the asynchronous mode on)
 next	clr	$E042
 	stx	$E043			sector number (low 16 bits)
 	ldd	#BUF
