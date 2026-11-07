@@ -99,28 +99,30 @@ SETUPDT  pshs  x
 *   port that has no asynchronous mode (or no interrupt) has finished the command when it
 *   returns: the result is there at once.
 DOIO     pshs  x,cc
-         lda   IRQOK,u
-         beq   DOIO2          synchronous
-         lda   V.BUSY,u
-         sta   V.WAKE,u       the process to wake
-         orcc  #IntMasks
-         lda   #$81           asynchronous, interrupt at the end
+         lda   #$01           asynchronous, the interrupt off while we look (the interrupts stay on: the clock)
          sta   9,x
-DOIO2    stb   ,x             the command
+         stb   ,x             the command
          lda   #80            a read takes less than 1 ms: look for it a while before sleeping
 DOIOP    ldb   ,x             (the sleep and the wake-up cost more), a write waits for the card for ms
          cmpb  #$FE
          bne   DOIO4
          deca
          bne   DOIOP
-DOIO3    ldb   ,x             the result, or $FE: not finished
+DOIO3    orcc  #IntMasks      still busy: sleep until the interrupt at the end of the command
+         lda   V.BUSY,u
+         sta   V.WAKE,u       the process to wake
+         lda   #$81           the interrupt at the end
+         sta   9,x
+         ldb   ,x             finished meanwhile? (this takes the done flag)
          cmpb  #$FE
          bne   DOIO4
-         ldx   #5             the interrupt wakes us at once; if it never comes, look again after 5 ticks
+         ldx   #5             the interrupt wakes us at once, if it never comes, look again after 5 ticks
          os9   F$Sleep
          ldx   1,s
          bra   DOIO3
 DOIO4    clr   V.WAKE,u
+         lda   #$01           the interrupt off
+         sta   9,x
          puls  cc,x         the interrupt mask as it was
          tstb
          rts
