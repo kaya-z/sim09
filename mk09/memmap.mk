@@ -25,7 +25,7 @@ TPA_END    = E000
 K_CSZ      = 07F4
 TTY_CSZ    = 0859
 DISK_CSZ   = 02D0
-FS_CSZ     = 2813
+FS_CSZ     = 28B0
 MM_CSZ     = 01C4
 PM_CSZ     = 0B36
 

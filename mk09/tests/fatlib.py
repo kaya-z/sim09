@@ -21,7 +21,8 @@ class Volume:
         self.fat_blk = self.rsvd
         self.root_blk = self.fat_blk + self.nfats * self.fatsz
         self.data_blk = self.root_blk + self.rootsecs
-        self.ncl = (tot16 - self.data_blk) // self.spc
+        tot = tot16 or struct.unpack_from('<I', b, 32)[0]          # (a volume of 65536 blocks or more has the 32 bit field)
+        self.ncl = (tot - self.data_blk) // self.spc
         fb = b''.join(self.blk(self.fat_blk + i) for i in range(self.fatsz))
         self.fat = struct.unpack('<%dH' % (len(fb) // 2), fb)
 
@@ -37,11 +38,11 @@ class Volume:
         return out
 
     def read_chain(self, cl, size):
-        out = b''
+        out = []
         for c in self.chain(cl):
-            for i in range(self.spc):
-                out += self.blk(self.data_blk + (c - 2) * self.spc + i)
-        return out[:size]
+            o = (self.start + self.data_blk + (c - 2) * self.spc) * BLK
+            out.append(self.data[o:o + self.spc * BLK])
+        return b''.join(out)[:size]
 
     def entries(self, cl):
         if cl == 0:

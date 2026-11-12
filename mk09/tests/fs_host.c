@@ -8,9 +8,10 @@
  * or a random test; the image is then checked with fsck.fat by the caller.
  *
  *   fs_host IMAGE ls PATH | cat PATH | put PATH FILE | rm PATH | mkdir PATH | mv A B | stat PATH
- *   fs_host IMAGE random SEED COUNT
+ *   fs_host IMAGE random SEED COUNT | big MB | df
  */
 #define MK_HOST 1
+#define _FILE_OFFSET_BITS 64
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,10 +25,10 @@ static FILE *img;
 static u8 cbuf[70000];                 /* the client's buffer */
 static long nreads, nwrites;
 
-u8 fsx_disk(u8 write, u16 blk, u8 *buf)
+u8 fsx_disk(u8 write, u16 bhi, u16 blo, u8 *buf)
 {
-    long off = ((long)fs_part_hi << 16 | fs_part_lo) * 512L + (long)blk * 512L;
-    if (fseek(img, off, SEEK_SET)) return E_IO;
+    long long off = (((long long)fs_part_hi << 16 | fs_part_lo) + ((long long)bhi << 16 | blo)) * 512LL;
+    if (fseeko(img, (off_t)off, SEEK_SET)) return E_IO;
     if (write) { nwrites++; return fwrite(buf, 1, 512, img) == 512 ? E_OK : E_IO; }
     nreads++;
     return fread(buf, 1, 512, img) == 512 ? E_OK : E_IO;
@@ -198,6 +199,69 @@ static int random_test(int seed, int count)
     return fails != 0;
 }
 
+/* ---- a big file: written, read back, sought in (positions above 32MB) ------------------ */
+static unsigned char pat(unsigned long long pos) { return (unsigned char)((pos * 2654435761ULL) >> 13) ^ (unsigned char)(pos >> 9); }
+
+static int big_test(long mb)
+{
+    u8 h, st;
+    u16 got, hi, lo;
+    unsigned long long total = (unsigned long long)mb << 20, pos, p;
+    unsigned long i;
+    int fails = 0, k;
+    st = fs_open("/BIG.DAT", FO_WRITE | FO_CREATE | FO_TRUNC, 1, &h);
+    if (st) return die("open BIG.DAT", st);
+    for (pos = 0; pos < total; ) {
+        u16 n = 1 + (u16)(pos / 7 % 4001);
+        if (n > total - pos) n = (u16)(total - pos);
+        for (i = 0; i < n; i++) cbuf[i] = pat(pos + i);
+        st = fs_write(h, 1, n, &got);
+        if (st || got != n) { fprintf(stderr, "write at %llu: %d got %u\n", pos, st, got); return 1; }
+        pos += n;
+    }
+    st = fs_fstat(h, &(u8){0}, &hi, &lo);
+    if (st || (((unsigned long long)hi << 16) | lo) != (total & 0xFFFFFFFFULL)) { fprintf(stderr, "fstat size %u:%u\n", hi, lo); fails++; }
+    fs_close(h);
+    st = fs_open("/BIG.DAT", FO_READ, 1, &h);
+    if (st) return die("reopen", st);
+    for (pos = 0; ; ) {                                 /* all of it */
+        u16 n = 4096 - (u16)(pos / 13 % 1000);
+        st = fs_read(h, 1, n, &got);
+        if (st) { fprintf(stderr, "read at %llu: %d\n", pos, st); return 1; }
+        if (!got) break;
+        for (i = 0; i < got; i++) if (cbuf[i] != pat(pos + i)) { fprintf(stderr, "content differs at %llu\n", pos + i); return 1; }
+        pos += got;
+    }
+    if (pos != total) { fprintf(stderr, "length %llu, expected %llu\n", pos, total); fails++; }
+    srand(7);
+    for (k = 0; k < 400; k++) {                         /* seeks (also over the 32MB and 64MB marks) */
+        p = ((unsigned long long)rand() * 65537ULL + rand()) % total;
+        if (k == 0) p = 33554432ULL % total; else if (k == 1) p = 33554431ULL % total; else if (k == 2) p = total - 1; else if (k == 3) p = 67108864ULL % total;
+        st = fs_seek(h, (u16)(p >> 16), (u16)p, 0, &hi, &lo);
+        if (st || (((unsigned long long)hi << 16) | lo) != p) { fprintf(stderr, "seek %llu: %d %u:%u\n", p, st, hi, lo); fails++; continue; }
+        st = fs_read(h, 1, 700, &got);
+        if (st || (got < 700 && p + got != total)) { fprintf(stderr, "read after seek %llu: %d %u\n", p, st, got); fails++; continue; }
+        for (i = 0; i < got; i++) if (cbuf[i] != pat(p + i)) { fprintf(stderr, "content differs after seek %llu +%lu\n", p, i); fails++; break; }
+    }
+    st = fs_seek(h, 0xFFFF, (u16)-1000, 2, &hi, &lo);   /* from the end */
+    if (st || (((unsigned long long)hi << 16) | lo) != total - 1000) { fprintf(stderr, "seek from end\n"); fails++; }
+    fs_close(h);
+    st = fs_open("/BIG.DAT", FO_WRITE | FO_APPEND, 1, &h);       /* append across a cluster boundary */
+    if (st) return die("append", st);
+    for (i = 0; i < 5000; i++) cbuf[i] = pat(total + i);
+    st = fs_write(h, 1, 5000, &got);
+    if (st || got != 5000) { fprintf(stderr, "append: %d %u\n", st, got); fails++; }
+    fs_close(h);
+    st = fs_open("/BIG.DAT", FO_READ, 1, &h);
+    st |= fs_seek(h, (u16)(total >> 16), (u16)total, 0, &hi, &lo);
+    st |= fs_read(h, 1, 5000, &got);
+    if (st || got != 5000) { fprintf(stderr, "read appended: %d %u\n", st, got); fails++; }
+    else for (i = 0; i < 5000; i++) if (cbuf[i] != pat(total + i)) { fprintf(stderr, "appended data differs at %lu\n", i); fails++; break; }
+    fs_close(h);
+    printf("big test: %ld MB, %d failures, %ld block reads, %ld block writes\n", mb, fails, nreads, nwrites);
+    return fails != 0;
+}
+
 int main(int argc, char **argv)
 {
     u8 st;
@@ -213,6 +277,8 @@ int main(int argc, char **argv)
     else if (!strcmp(argv[2], "rm")) rc = (st = fs_remove(argv[3])) ? die("rm", st) : 0;
     else if (!strcmp(argv[2], "mkdir")) rc = (st = fs_mkdir(argv[3])) ? die("mkdir", st) : 0;
     else if (!strcmp(argv[2], "mv")) rc = (st = fs_rename(argv[3], argv[4])) ? die("mv", st) : 0;
+    else if (!strcmp(argv[2], "big")) rc = big_test(atoi(argv[3]));
+    else if (!strcmp(argv[2], "df")) { u8 spc; u16 cl, fr; fs_statfs(&spc, &cl, &fr); printf("spc %u clusters %u free %u\n", spc, cl, fr); }
     else if (!strcmp(argv[2], "random")) rc = random_test(atoi(argv[3]), atoi(argv[4]));
     else { fprintf(stderr, "unknown operation\n"); rc = 2; }
     fs_sync();

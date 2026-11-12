@@ -9,9 +9,12 @@
  * Long file names are not created; entries of other systems that use them are skipped, their
  * 8.3 alias works.  The current directory is common to all tasks.
  *
- * Volumes have at most 65535 blocks (32MB), so block numbers are 16 bit.  A position in a file
- * is (block, offset in the block); a size likewise.  This keeps the 8 bit CPU away from 32 bit
- * arithmetic, which costs a lot of code with a C compiler.
+ * A volume has at most 65524 clusters of up to 64 blocks (FAT16: 2GB), so a cluster number is 16
+ * bit.  A block of the volume is named by (cluster, block in the cluster); the metadata blocks (boot
+ * sector, FAT, root directory) by (0, number): the 23 bit number of the disk is made only when the
+ * block is read or written (blk_io).  A position in a file is (cluster of the file, byte in the
+ * cluster); a size likewise.  This keeps the 8 bit CPU away from 32 bit arithmetic, which costs a lot
+ * of code with a C compiler.  Only the conversions from and to byte counts (seek, size) shift pairs.
  *
  * Portable C: only the fsx_* services of fs_core.h reach out of this file.
  */
@@ -25,14 +28,14 @@
 #define BLKBITS     9
 
 typedef struct cbuf {
-    u16 blk;                        /* volume relative block number */
+    u16 ca, cb;                     /* the block: (cluster, block in it) or (0, volume relative number) */
     u16 stamp;
     u8  valid;
     u8  data[BLKSIZE];
 } cbuf_t;
 
 typedef struct dloc {               /* where a directory entry lives */
-    u16 blk;
+    u16 ca, cb;                     /* the block, as in cbuf_t */
     u8  idx;
 } dloc_t;
 
@@ -49,13 +52,17 @@ typedef struct fh {
     u8  flags;
     u8  dirty;
     u16 first;                      /* first cluster (0 = empty file) */
-    u16 sblk, soff;                 /* size */
-    u16 pblk, poff;                 /* position */
-    u16 curcl;                      /* cluster that holds file block cblk */
-    u16 cblk;
-    u16 contig;                     /* the first 'contig' blocks lie in consecutive clusters (first, first+1, ..) */
+    u16 scl, soff;                  /* size: clusters, bytes in the last (partly used) one */
+    u16 pcl, poff;                  /* position: cluster of the file, byte in it */
     dloc_t loc;                     /* the directory entry */
-    diter_t it;                     /* directories: iterator */
+    union {
+        diter_t it;                 /* directories: iterator */
+        struct {
+            u16 curcl;              /* files: the cluster of the disk that is the cluster cidx of the file */
+            u16 cidx;
+            u16 contig;             /* the first 'contig' clusters of the file lie in consecutive clusters (first, first+1, ..) */
+        } c;
+    } u;
 } fh_t;
 
 typedef struct res {                /* result of resolving a path */
@@ -83,6 +90,8 @@ static u8  mounted;
 u16 fs_part_hi, fs_part_lo;
 static u8  spc;                     /* blocks per cluster */
 static u8  spcshift;                /* log2(spc) */
+static u8  cshift;                  /* log2 of the bytes of a cluster: 9 + spcshift (9 .. 15) */
+static u16 cmask;                   /* the bytes of a cluster - 1 */
 static u16 rsvd;
 static u8  nfats;
 static u16 fatsz;
@@ -106,13 +115,15 @@ static void wr16(u8 *p, u16 v) { p[0] = (u8)v; p[1] = (u8)(v >> 8); }
 /* block cache                                                         */
 /* ------------------------------------------------------------------ */
 /* mode 0: read the block, 1: the caller overwrites all of it, 2: a block of zeroes */
-static cbuf_t *blk_get(u16 blk, u8 mode)
+static u8 blk_io(u8 write, u16 ca, u16 cb, u8 *buf);
+
+static cbuf_t *blk_get(u16 ca, u16 cb, u8 mode)
 {
     u16 oldest = 0, age;
     cbuf_t *b, *victim = cache;
 
     for (b = cache; b < cache + NBUF; b++) {
-        if (b->valid && b->blk == blk) {
+        if (b->valid && b->ca == ca && b->cb == cb) {
             b->stamp = ++stamp;
             if (mode == 2) memset(b->data, 0, BLKSIZE);
             return b;
@@ -126,29 +137,40 @@ static cbuf_t *blk_get(u16 blk, u8 mode)
     b = victim;
     b->valid = 0;
     if (mode == 0) {
-        if (fsx_disk(0, blk, b->data) != E_OK) return NULL;
+        if (blk_io(0, ca, cb, b->data) != E_OK) return NULL;
     } else if (mode == 2) {
         memset(b->data, 0, BLKSIZE);
     }
-    b->blk = blk;
+    b->ca = ca;
+    b->cb = cb;
     b->valid = 1;
     b->stamp = ++stamp;
     return b;
 }
 
+/* the number of the block on the volume is (hi, lo): 23 bits (the disk server: 4GB) */
+static u8 blk_io(u8 write, u16 ca, u16 cb, u8 *buf)
+{
+    u16 hi = 0, lo = cb, x;
+    if (ca) {
+        x = ca - 2;
+        if (spcshift) hi = x >> (16 - spcshift);
+        lo = x << spcshift;
+        x = data_blk + cb;                          /* (the system area is far below 64K blocks) */
+        lo += x;
+        if (lo < x) hi++;
+    }
+    return fsx_disk(write, hi, lo, buf);
+}
+
 static u8 blk_put(cbuf_t *b)
 {
-    return fsx_disk(1, b->blk, b->data);
+    return blk_io(1, b->ca, b->cb, b->data);
 }
 
 /* ------------------------------------------------------------------ */
 /* FAT                                                                 */
 /* ------------------------------------------------------------------ */
-static u16 clus_blk(u16 cl)
-{
-    return data_blk + ((cl - 2) << spcshift);
-}
-
 static u16 cc_get(u16 first)
 {
     u8 i;
@@ -181,20 +203,20 @@ static u8 cl_ok(u16 cl)
 
 static u16 fat_get(u16 cl)
 {
-    cbuf_t *b = blk_get(fat_blk + (cl >> 8), 0);
+    cbuf_t *b = blk_get(0, fat_blk + (cl >> 8), 0);
     if (!b) return 0xFFF7;
     return rd16(b->data + (cl & 255) * 2);
 }
 
 static u8 fat_set(u16 cl, u16 v)
 {
-    cbuf_t *b = blk_get(fat_blk + (cl >> 8), 0);
+    cbuf_t *b = blk_get(0, fat_blk + (cl >> 8), 0);
     u8 k;
     if (!b) return E_IO;
     wr16(b->data + (cl & 255) * 2, v);
     if (blk_put(b)) return E_IO;
     for (k = 1; k < nfats; k++)
-        if (fsx_disk(1, b->blk + fatsz * k, b->data)) return E_IO;
+        if (blk_io(1, 0, b->cb + fatsz * k, b->data)) return E_IO;
     return E_OK;
 }
 
@@ -241,20 +263,21 @@ static void dir_begin(diter_t *it, u16 dcl)
 /* the next raw entry (also deleted ones); 0 at the end of the directory (or on an error) */
 static u8 dir_next(diter_t *it, u8 *ent, dloc_t *loc)
 {
-    u16 blk;
+    u16 ca = 0, cb;
     cbuf_t *b;
 
     if (it->dcl == 0) {
         if (it->sec >= rootsecs) return 0;
-        blk = root_blk + it->sec;
+        cb = root_blk + it->sec;
     } else {
         if (!cl_ok(it->cl)) return 0;
-        blk = clus_blk(it->cl) + it->sec;
+        ca = it->cl;
+        cb = it->sec;
     }
-    b = blk_get(blk, 0);
+    b = blk_get(ca, cb, 0);
     if (!b) return 0;
     memcpy(ent, b->data + ((u16)it->idx << 5), 32);
-    if (loc) { loc->blk = blk; loc->idx = it->idx; }
+    if (loc) { loc->ca = ca; loc->cb = cb; loc->idx = it->idx; }
     if (++it->idx == 16) {
         it->idx = 0;
         it->sec++;
@@ -268,7 +291,7 @@ static u8 dir_next(diter_t *it, u8 *ent, dloc_t *loc)
 
 static u8 dir_put(const dloc_t *loc, const u8 *ent)
 {
-    cbuf_t *b = blk_get(loc->blk, 0);
+    cbuf_t *b = blk_get(loc->ca, loc->cb, 0);
     if (!b) return E_IO;
     memcpy(b->data + ((u16)loc->idx << 5), ent, 32);
     return blk_put(b);
@@ -277,7 +300,7 @@ static u8 dir_put(const dloc_t *loc, const u8 *ent)
 /* mark the entry at loc deleted */
 static u8 dir_del(const dloc_t *loc)
 {
-    cbuf_t *b = blk_get(loc->blk, 0);
+    cbuf_t *b = blk_get(loc->ca, loc->cb, 0);
     if (!b) return E_IO;
     b->data[((u16)loc->idx << 5)] = 0xE5;
     return blk_put(b);
@@ -322,10 +345,11 @@ static u8 dir_add(u16 dcl, const u8 *ent, dloc_t *loc)
     nc = alloc_cluster(last);
     if (!nc) return E_NOSPC;
     for (i = 0; i < spc; i++) {
-        cbuf_t *b = blk_get(clus_blk(nc) + i, 2);
+        cbuf_t *b = blk_get(nc, i, 2);
         if (!b || blk_put(b)) return E_IO;
     }
-    l.blk = clus_blk(nc);
+    l.ca = nc;
+    l.cb = 0;
     l.idx = 0;
     if (loc) *loc = l;
     return dir_put(&l, ent);
@@ -399,18 +423,31 @@ static void now_fields(u8 *ent)
     wr16(ent + 24, d);
 }
 
-/* the 32 bit size of a directory entry as (blocks, rest) and back */
-static void size_get(const u8 *ent, u16 *blk, u16 *off)
+/* the 32 bit size of a directory entry (hi, lo) as (clusters, rest) and back; the same for a byte count */
+static void pos_split(u16 hi, u16 lo, u16 *cl, u16 *off)
 {
-    u16 hi = rd16(ent + 30), lo = rd16(ent + 28);
-    *blk = (hi << 7) | (lo >> BLKBITS);
-    *off = lo & (BLKSIZE - 1);
+    *cl = (hi << (16 - cshift)) | (lo >> cshift);
+    if (hi >> cshift) *cl = 0xFFFF;                 /* (more than the volume holds) */
+    *off = lo & cmask;
 }
 
-static void size_put(u8 *ent, u16 blk, u16 off)
+static void pos_join(u16 cl, u16 off, u16 *hi, u16 *lo)
 {
-    wr16(ent + 30, blk >> 7);
-    wr16(ent + 28, ((blk & 127) << BLKBITS) | off);
+    *hi = cl >> (16 - cshift);
+    *lo = (cl << cshift) | off;
+}
+
+static void size_get(const u8 *ent, u16 *cl, u16 *off)
+{
+    pos_split(rd16(ent + 30), rd16(ent + 28), cl, off);
+}
+
+static void size_put(u8 *ent, u16 cl, u16 off)
+{
+    u16 hi, lo;
+    pos_join(cl, off, &hi, &lo);
+    wr16(ent + 30, hi);
+    wr16(ent + 28, lo);
 }
 
 /* make a directory object result */
@@ -480,14 +517,14 @@ u8 fs_mount(void)
 {
     cbuf_t *b;
     u8 i;
-    u16 tot;
+    u16 tot, thi = 0;
 
     memset(cache, 0, sizeof(cache));
     memset(fh, 0, sizeof(fh));
     memset(cc_first, 0, sizeof(cc_first));
     mounted = 0;
     fs_part_hi = fs_part_lo = 0;
-    b = blk_get(0, 0);
+    b = blk_get(0, 0, 0);
     if (!b) return E_IO;
     if (rd16(b->data + 510) != 0xAA55) return E_FORMAT;
     if (!(b->data[0] == 0xEB || b->data[0] == 0xE9)) {       /* not a boot sector: partition table */
@@ -502,7 +539,7 @@ u8 fs_mount(void)
         }
         if (i == 4) return E_FORMAT;
         memset(cache, 0, sizeof(cache));
-        b = blk_get(0, 0);
+        b = blk_get(0, 0, 0);
         if (!b) return E_IO;
         if (rd16(b->data + 510) != 0xAA55) return E_FORMAT;
     }
@@ -513,8 +550,8 @@ u8 fs_mount(void)
     tot = rd16(b->data + 17);                               /* root entries */
     rootsecs = (tot + 15) >> 4;
     tot = rd16(b->data + 19);
-    if (tot == 0) {
-        if (rd16(b->data + 34)) return E_FORMAT;            /* more than 32MB */
+    if (tot == 0) {                                         /* the number of blocks as 32 bits (hi, lo) */
+        thi = rd16(b->data + 34);
         tot = rd16(b->data + 32);
     }
     fatsz = rd16(b->data + 22);
@@ -522,12 +559,17 @@ u8 fs_mount(void)
     for (spcshift = 0; (1 << spcshift) < spc; spcshift++)
         ;
     if ((1 << spcshift) != spc) return E_FORMAT;                /* clusters of 2^n blocks */
+    if (spc > 64) return E_FORMAT;                              /* (a cluster is at most 32KB so that a position in it is 16 bit) */
+    cshift = 9 + spcshift;
+    cmask = (1 << cshift) - 1;
     fat_blk = rsvd;
     root_blk = fat_blk + fatsz * nfats;
     data_blk = root_blk + rootsecs;
-    if (tot <= data_blk) return E_FORMAT;
-    tot = (tot - data_blk) / spc;
-    if (tot < 4085 || tot >= 65525) return E_FORMAT;         /* not FAT16 */
+    if (thi == 0 && tot <= data_blk) return E_FORMAT;
+    thi -= tot < data_blk;                                      /* the blocks of the data, (thi, tot), in clusters */
+    tot -= data_blk;
+    for (i = 0; i < spcshift; i++) { tot = (tot >> 1) | (thi << 15); thi >>= 1; }
+    if (thi || tot < 4085 || tot >= 65525) return E_FORMAT;     /* not FAT16 */
     nclusters = tot;
     free_hint = 2;
     cwd_cl = 0;
@@ -554,11 +596,11 @@ static u8 flush_fh(fh_t *f)
     cbuf_t *b;
     u8 *e;
     if (!f->dirty) return E_OK;
-    b = blk_get(f->loc.blk, 0);
+    b = blk_get(f->loc.ca, f->loc.cb, 0);
     if (!b) return E_IO;
     e = b->data + ((u16)f->loc.idx << 5);
     wr16(e + 26, f->first);
-    size_put(e, f->sblk, f->soff);
+    size_put(e, f->scl, f->soff);
     now_fields(e);
     e[11] |= FA_ARCHIVE;
     f->dirty = 0;
@@ -584,7 +626,7 @@ u8 fs_open(const char *path, u8 flags, u8 owner, u8 *h)
     if (r.isdirobj || (r.found && (r.ent[11] & FA_DIR))) {
         if (!(flags & FO_DIR) || (flags & (FO_WRITE | FO_CREATE | FO_TRUNC))) return E_ISDIR;
         f->used = 2;
-        dir_begin(&f->it, ent_cluster(r.ent));
+        dir_begin(&f->u.it, ent_cluster(r.ent));
         *h = i;
         return E_OK;
     }
@@ -605,18 +647,18 @@ u8 fs_open(const char *path, u8 flags, u8 owner, u8 *h)
         if ((flags & (FO_WRITE | FO_TRUNC)) && (r.ent[11] & FA_RDONLY)) return E_RO;
         f->loc = r.loc;
         f->first = ent_cluster(r.ent);
-        f->contig = cc_get(f->first);
-        size_get(r.ent, &f->sblk, &f->soff);
+        f->u.c.contig = cc_get(f->first);
+        size_get(r.ent, &f->scl, &f->soff);
         if (flags & FO_TRUNC) {
             if (f->first) free_chain(f->first);
             f->first = 0;
-            f->sblk = f->soff = 0;
+            f->scl = f->soff = 0;
             f->dirty = 1;
         }
     }
     f->used = 1;
     if (f->dirty) flush_fh(f);
-    if (flags & FO_APPEND) { f->pblk = f->sblk; f->poff = f->soff; }
+    if (flags & FO_APPEND) { f->pcl = f->scl; f->poff = f->soff; }
     *h = i;
     return E_OK;
 }
@@ -654,8 +696,8 @@ u8 fs_sync(void)
     return st;
 }
 
-/* make f->curcl the cluster that holds the block f->pblk; grow = allocate clusters at the end.
- * Files made by mkdisk.py and by this server lie in consecutive clusters: f->contig remembers how far
+/* make f->u.c.curcl the cluster that holds the cluster f->pcl of the file; grow = allocate clusters at the end.
+ * Files made by mkdisk.py and by this server lie in consecutive clusters: f->u.c.contig remembers how far
  * that is known, and a position inside it is found without walking the FAT chain. */
 static u8 seek_cluster(fh_t *f, u8 grow)
 {
@@ -667,63 +709,66 @@ static u8 seek_cluster(fh_t *f, u8 grow)
         if (!nx) return E_NOSPC;
         f->first = nx;
         f->dirty = 1;
-        f->curcl = 0;
-        f->contig = 0;
+        f->u.c.curcl = 0;
+        f->u.c.contig = 0;
     }
-    if (f->pblk < f->contig) {
-        f->curcl = f->first + (f->pblk >> spcshift);
-        f->cblk = (f->pblk >> spcshift) << spcshift;
+    if (f->pcl < f->u.c.contig) {
+        f->u.c.curcl = f->first + f->pcl;
+        f->u.c.cidx = f->pcl;
         return E_OK;
     }
-    if (f->curcl == 0 || f->pblk < f->cblk) {
-        f->curcl = f->first;
-        f->cblk = 0;
-        if (f->contig == 0) f->contig = spc;
+    if (f->u.c.curcl == 0 || f->pcl < f->u.c.cidx) {
+        f->u.c.curcl = f->first;
+        f->u.c.cidx = 0;
+        if (f->u.c.contig == 0) f->u.c.contig = 1;
     }
-    while ((u16)(f->pblk - f->cblk) >= spc) {
-        nx = fat_get(f->curcl);
+    while (f->u.c.cidx < f->pcl) {
+        nx = fat_get(f->u.c.curcl);
         if (!cl_ok(nx)) {
             if (!grow) return E_EOF;
-            nx = alloc_cluster(f->curcl);
+            nx = alloc_cluster(f->u.c.curcl);
             if (!nx) return E_NOSPC;
         }
-        if (nx == f->curcl + 1 && f->cblk + spc == f->contig) {
-            f->contig += spc;
-            cc_put(f->first, f->contig);
+        if (nx == f->u.c.curcl + 1 && f->u.c.cidx + 1 == f->u.c.contig) {
+            f->u.c.contig++;
+            cc_put(f->first, f->u.c.contig);
         }
-        f->curcl = nx;
-        f->cblk += spc;
+        f->u.c.curcl = nx;
+        f->u.c.cidx++;
     }
     return E_OK;
+}
+
+/* the position is advanced by n bytes inside the block */
+static void advance(fh_t *f, u16 n)
+{
+    f->poff += n;
+    if (f->poff > cmask) { f->poff &= cmask; f->pcl++; }
 }
 
 u8 fs_read(u8 h, u8 client, u16 n, u16 *got)
 {
     fh_t *f = hget(h, 1);
-    u16 done = 0, chunk, left;
+    u16 done = 0, chunk, bo;
     u8 st = E_OK;
     cbuf_t *b;
 
     *got = 0;
     if (!f) return E_BADF;
-    if (f->pblk > f->sblk || (f->pblk == f->sblk && f->poff >= f->soff)) return E_OK;
-    left = f->sblk - f->pblk;                   /* bytes left, if less than 64K */
-    if (left < 128) {
-        left = (left << BLKBITS) + f->soff - f->poff;
-        if (left < n) n = left;
-    }
     while (done < n) {
+        if (f->pcl > f->scl || (f->pcl == f->scl && f->poff >= f->soff)) break;     /* the end of the file */
         st = seek_cluster(f, 0);
         if (st) break;
-        b = blk_get(clus_blk(f->curcl) + (f->pblk - f->cblk), 0);
+        b = blk_get(f->u.c.curcl, f->poff >> BLKBITS, 0);
         if (!b) { st = E_IO; break; }
-        chunk = BLKSIZE - f->poff;
+        bo = f->poff & (BLKSIZE - 1);
+        chunk = BLKSIZE - bo;
         if (chunk > n - done) chunk = n - done;
-        st = fsx_put(client, done, b->data + f->poff, chunk);
+        if (f->pcl == f->scl && chunk > f->soff - f->poff) chunk = f->soff - f->poff;
+        st = fsx_put(client, done, b->data + bo, chunk);
         if (st) break;
         done += chunk;
-        f->poff += chunk;
-        if (f->poff >= BLKSIZE) { f->poff -= BLKSIZE; f->pblk++; }
+        advance(f, chunk);
     }
     *got = done;
     return done ? E_OK : st;
@@ -732,32 +777,34 @@ u8 fs_read(u8 h, u8 client, u16 n, u16 *got)
 u8 fs_write(u8 h, u8 client, u16 n, u16 *got)
 {
     fh_t *f = hget(h, 1);
-    u16 done = 0, chunk;
+    u16 done = 0, chunk, sb, pb, bo;
     u8 st = E_OK, mode;
     cbuf_t *b;
 
     *got = 0;
     if (!f) return E_BADF;
     if (!(f->flags & FO_WRITE)) return E_RO;
-    if (f->flags & FO_APPEND) { f->pblk = f->sblk; f->poff = f->soff; }
+    if (f->flags & FO_APPEND) { f->pcl = f->scl; f->poff = f->soff; }
     while (done < n) {
         st = seek_cluster(f, 1);
         if (st) break;
-        chunk = BLKSIZE - f->poff;
+        pb = f->poff >> BLKBITS;
+        sb = f->soff >> BLKBITS;
+        bo = f->poff & (BLKSIZE - 1);
+        chunk = BLKSIZE - bo;
         if (chunk > n - done) chunk = n - done;
         mode = 0;
         if (chunk == BLKSIZE) mode = 1;
-        else if (f->pblk > f->sblk || (f->pblk == f->sblk && f->soff == 0)) mode = 2;   /* beyond the end: stale data in the cluster */
-        b = blk_get(clus_blk(f->curcl) + (f->pblk - f->cblk), mode);
+        else if (f->pcl > f->scl || (f->pcl == f->scl && (pb > sb || (pb == sb && (f->soff & (BLKSIZE - 1)) == 0)))) mode = 2;   /* beyond the end: stale data in the cluster */
+        b = blk_get(f->u.c.curcl, pb, mode);
         if (!b) { st = E_IO; break; }
-        st = fsx_get(client, done, b->data + f->poff, chunk);
+        st = fsx_get(client, done, b->data + bo, chunk);
         if (st) break;
         if (blk_put(b)) { st = E_IO; break; }
         done += chunk;
-        f->poff += chunk;
-        if (f->poff >= BLKSIZE) { f->poff -= BLKSIZE; f->pblk++; }
-        if (f->pblk > f->sblk || (f->pblk == f->sblk && f->poff > f->soff)) {
-            f->sblk = f->pblk;
+        advance(f, chunk);
+        if (f->pcl > f->scl || (f->pcl == f->scl && f->poff > f->soff)) {
+            f->scl = f->pcl;
             f->soff = f->poff;
             f->dirty = 1;
         }
@@ -766,38 +813,34 @@ u8 fs_write(u8 h, u8 client, u16 n, u16 *got)
     return done ? E_OK : st;
 }
 
-/* (hi, lo) as byte count <-> (block, offset) */
+/* (hi, lo) as byte count <-> (cluster, offset) */
 u8 fs_seek(u8 h, u16 hi, u16 lo, u8 whence, u16 *rhi, u16 *rlo)
 {
     fh_t *f = hget(h, 1);
     u16 bhi, blo, nhi, nlo;
-    u16 blk, off;
+    u16 cl, off;
 
     if (!f) return E_BADF;
     if (whence == 0) {
         bhi = blo = 0;
     } else if (whence == 1) {
-        bhi = f->pblk >> 7;
-        blo = ((f->pblk & 127) << BLKBITS) | f->poff;
+        pos_join(f->pcl, f->poff, &bhi, &blo);
     } else if (whence == 2) {
-        bhi = f->sblk >> 7;
-        blo = ((f->sblk & 127) << BLKBITS) | f->soff;
+        pos_join(f->scl, f->soff, &bhi, &blo);
     } else {
         return E_INVAL;
     }
     nlo = blo + lo;
     nhi = bhi + hi + (nlo < lo);
     if (nhi & 0x8000) return E_INVAL;                       /* before the start */
-    blk = (nhi << 7) | (nlo >> BLKBITS);
-    off = nlo & (BLKSIZE - 1);
-    if (nhi > 0x1FF || blk > f->sblk || (blk == f->sblk && off > f->soff)) {
-        blk = f->sblk;                                      /* no holes: stop at the end */
+    pos_split(nhi, nlo, &cl, &off);
+    if ((nhi >> cshift) || cl > f->scl || (cl == f->scl && off > f->soff)) {
+        cl = f->scl;                                        /* no holes: stop at the end */
         off = f->soff;
     }
-    f->pblk = blk;
+    f->pcl = cl;
     f->poff = off;
-    *rhi = blk >> 7;
-    *rlo = ((blk & 127) << BLKBITS) | off;
+    pos_join(cl, off, rhi, rlo);
     return E_OK;
 }
 
@@ -811,8 +854,7 @@ u8 fs_fstat(u8 h, u8 *attr, u16 *shi, u16 *slo)
     if (f->used == 2) {
         *attr = FA_DIR;
     } else {
-        *shi = f->sblk >> 7;
-        *slo = ((f->sblk & 127) << BLKBITS) | f->soff;
+        pos_join(f->scl, f->soff, shi, slo);
     }
     return E_OK;
 }
@@ -840,7 +882,7 @@ u8 fs_readdir(u8 h, dirent_t *d)
     fh_t *f = hget(h, 2);
     u8 e[32];
     if (!f) return E_BADF;
-    while (dir_next(&f->it, e, NULL)) {
+    while (dir_next(&f->u.it, e, NULL)) {
         if (e[0] == 0) return E_EOF;
         if (!is_real(e)) continue;
         from_name11(e, d->name);
@@ -872,7 +914,7 @@ u8 fs_mkdir(const char *path)
     cl = alloc_cluster(0);
     if (!cl) return E_NOSPC;
     for (i = 0; i < spc; i++) {
-        b = blk_get(clus_blk(cl) + i, 2);
+        b = blk_get(cl, i, 2);
         if (!b) return E_IO;
         if (i == 0) {
             memset(e, 0, 32);
@@ -911,7 +953,7 @@ u8 fs_remove(const char *path)
     if (r.ent[11] & FA_RDONLY) return E_RO;
     if ((r.ent[11] & FA_DIR) && !dir_is_empty(ent_cluster(r.ent))) return E_NOTEMPTY;
     for (i = 0; i < NHANDLE; i++)                   /* open handles of the file */
-        if (fh[i].used == 1 && fh[i].loc.blk == r.loc.blk && fh[i].loc.idx == r.loc.idx)
+        if (fh[i].used == 1 && fh[i].loc.ca == r.loc.ca && fh[i].loc.cb == r.loc.cb && fh[i].loc.idx == r.loc.idx)
             fh[i].used = 0;
     st = dir_del(&r.loc);
     if (st) return st;
@@ -956,7 +998,7 @@ u8 fs_rename(const char *from, const char *to)
     st = dir_del(&a.loc);
     if (st) return st;
     if ((a.ent[11] & FA_DIR) && c.dcl != a.dcl) {   /* '..' of the moved directory */
-        b = blk_get(clus_blk(ent_cluster(a.ent)), 0);
+        b = blk_get(ent_cluster(a.ent), 0, 0);
         if (!b) return E_IO;
         wr16(b->data + 32 + 26, c.dcl);
         if (blk_put(b)) return E_IO;
@@ -1037,7 +1079,7 @@ u8 fs_statfs(u8 *spcp, u16 *clusters, u16 *freec)
     cbuf_t *b;
     NEED_MOUNT;
     for (blk = 0; blk < fatsz && (u16)(blk << 8) < last; blk++) {
-        b = blk_get(fat_blk + blk, 0);
+        b = blk_get(0, fat_blk + blk, 0);
         if (!b) return E_IO;
         for (i = 0; i < 256; i++) {
             cl = (blk << 8) + i;

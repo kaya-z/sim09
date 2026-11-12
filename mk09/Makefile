@@ -238,7 +238,10 @@ $(B)/fs_host: tests/fs_host.c servers/fs_core.c servers/fs_core.h
 fstest: $(B)/fs_host $(B)/mk09.img
 	for seed in 1 2 3; do cp $(B)/mk09.img $(B)/fs_t.img; $(B)/fs_host $(B)/fs_t.img random $$seed 500 || exit 1; \
 	  dd if=$(B)/fs_t.img of=$(B)/fs_v.img bs=512 skip=2048 2>/dev/null; fsck.fat -n $(B)/fs_v.img >/dev/null || exit 1; done; \
-	rm -f $(B)/fs_t.img $(B)/fs_v.img; echo "fstest: ok"
+	rm -f $(B)/fs_t.img $(B)/fs_v.img; \
+	for cfg in "1 30000 0" "16 300000 40" "64 600000 80"; do set -- $$cfg; rm -f $(B)/fs_b.img; mkfs.fat -F 16 -S 512 -s $$1 -C $(B)/fs_b.img $$2 >/dev/null || exit 1; \
+	  $(B)/fs_host $(B)/fs_b.img random 4 400 || exit 1; [ $$3 = 0 ] || $(B)/fs_host $(B)/fs_b.img big $$3 || exit 1; fsck.fat -n $(B)/fs_b.img >/dev/null || exit 1; done; \
+	rm -f $(B)/fs_b.img; echo "fstest: ok"
 
 test: all charsets fstest
 	sh tests/portcheck.sh

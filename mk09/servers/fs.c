@@ -13,13 +13,15 @@
 #include "fs_core.h"
 #include "mkstr.h"
 
-u8 fsx_disk(u8 write, u16 blk, u8 *buf)
+u8 fsx_disk(u8 write, u16 bhi, u16 blo, u8 *buf)
 {
     msg_t m;
-    u16 lo = fs_part_lo + blk;
+    u16 lo = fs_part_lo + blo;
+    u16 hi = fs_part_hi + bhi + (lo < blo);
+    if (fs_part_hi > 0x7F || bhi > 0x7F || hi > 0x7F) return E_IO;      /* beyond the block numbers of the disk server (23 bits: 4GB) */
     m.op = write ? DISK_WRITE : DISK_READ;
     m.a = lo;
-    m.d = (fs_part_hi + (lo < blk)) & 0xFF;     /* drive 0 */
+    m.d = hi;                                   /* drive 0 */
     m.b = (u16)buf;
     m.c = BLKSIZE;
     if (mk_callg(TID_DISK, &m, write ? GR_READ : GR_WRITE)) return E_IO;

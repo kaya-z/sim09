@@ -6,8 +6,9 @@
  * fs_core.c does not know about messages: it needs four services from its environment
  * (the glue fs.c on MK09, or the test program tests/fs_host.c on the host).
  *
- * Limits (they keep the code small on an 8 bit CPU): the volume has at most 65535 blocks of
- * 512 bytes (32MB) so that block numbers are 16 bit; sizes and positions are 32 bit values
+ * Limits (they keep the code small on an 8 bit CPU): FAT16 with clusters of up to 64 blocks of
+ * 512 bytes (32KB), so a volume and a file have up to 2GB; the volume starts at a block below
+ * 2^23 (the disk server takes block numbers of 23 bits: 4GB).  Sizes and positions are 32 bit values
  * passed as (hi, lo) 16 bit pairs.
  */
 #ifndef FS_CORE_H
@@ -16,9 +17,9 @@
 #include "types.h"
 #include "proto.h"
 
-/* read (write = 0) or write one 512 byte block (blk is relative to the start of the
+/* read (write = 0) or write one 512 byte block (the number bhi:blo is relative to the start of the
  * volume: add fs_part_hi:fs_part_lo); returns E_OK or E_IO */
-u8   fsx_disk(u8 write, u16 blk, u8 *buf);
+u8   fsx_disk(u8 write, u16 bhi, u16 blo, u8 *buf);
 /* data of the client's granted buffer (offset from its start) */
 u8   fsx_get(u8 client, u16 off, void *dst, u16 n);
 u8   fsx_put(u8 client, u16 off, const void *src, u16 n);

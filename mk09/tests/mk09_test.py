@@ -50,11 +50,11 @@ except (OSError, AttributeError):
 work = tempfile.mkdtemp(prefix='mk09t_')
 
 
-def run(disk, steps, extra=(), timeout=600, rom=ROM):
+def run(disk, steps, extra=(), timeout=600, rom=ROM, stimeout=120000):
     """steps: script lines; returns (output, return code)"""
     script = os.path.join(work, 's.txt')
     with open(script, 'w', encoding='utf-8') as f:
-        f.write('timeout 120000\n')
+        f.write('timeout %d\n' % stimeout)
         for s in steps:
             f.write(s + '\n')
     cmd = [SIM, '-max', '-rom', rom, '-0', disk] + list(extra) + ['-script', script]
@@ -135,11 +135,11 @@ check(re.search(r'^\s*5 receive\s+1\s+[0-9a-f]{4}-[0-9a-f]{4}', out, re.M) is no
 out, rc = run(disk, BOOT + sh('stk', prompt=P) + OFF)
 rows = re.findall(r'^\s*([1-5]) [0-9a-f]{4}-[0-9a-f]{4}\s+(\d+) \(the run ends', out, re.M)
 check(len(rows) == 5 and all(int(r[1]) >= 10 for r in rows), 'stk: the five servers (TTY DISK FS PM MM) have some unused stack left', out[-600:])
-check('MK09 1.32: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
+check('MK09 1.33: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
 
 # ---- reboot: the files are written, the system starts again (the banner twice), the file is there
 out, rc = run(disk, BOOT + sh('cp /ETC/RC.SH /RB.TXT', 'reboot', 'cat /RB.TXT', 'rm /RB.TXT', prompt=P) + OFF)
-check(out.count('MK09 1.32: kernel TTY DISK FS PM MM') == 2 and 'stty utf8' in out.split('type help')[-1], 'reboot writes the files and starts the system again', out[-700:])
+check(out.count('MK09 1.33: kernel TTY DISK FS PM MM') == 2 and 'stty utf8' in out.split('type help')[-1], 'reboot writes the files and starts the system again', out[-700:])
 
 # ---- -v: the version and the copyright of the compilers and the assembler
 tools = ('as', 'cpp', 'cc1', 'cg', 'cc', 'pas0', 'pas1', 'pc')
@@ -279,6 +279,27 @@ vol = os.path.join(work, 'vol2.img')
 vol2.write_volume(vol)
 fs = subprocess.run(['fsck.fat', '-n', vol], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=dict(os.environ, LC_ALL='C'))
 check(fs.returncode == 0, 'fsck.fat finds the second volume consistent', fs.stdout.decode('latin-1'))
+
+# ---- a volume of 128MB with a file of 36MB (copied: 72MB) (the limits were 32MB for both: block numbers of 16 bit)
+bigdata = random.Random(6).randbytes(36 * 1024 * 1024 + 777)
+tree = os.path.join(work, 'tree3')
+shutil.copytree(os.path.join(BUILD, 'tree'), tree, ignore=shutil.ignore_patterns('skk'))
+open(os.path.join(tree, 'huge.bin'), 'wb').write(bigdata)
+disk4 = os.path.join(work, 'disk4.img')
+subprocess.run([sys.executable, '-X', 'utf8', os.path.join(MK, 'tools', 'mkdisk.py'), '-o', disk4, '--boot', os.path.join(BUILD, 'boot.img'),
+                '--size-mb', '128', tree], check=True, stdout=subprocess.DEVNULL)
+shutil.rmtree(tree)
+out, rc = run(disk4, BOOT + sh('cp /huge.bin /huge2.bin', 'ls -l /', 'df', prompt='/> ') + OFF, timeout=1800, stimeout=2000000000)
+check(re.search(r'HUGE2\.BIN\s+%d ' % len(bigdata), out) is not None and re.search(r'cluster 4096 bytes, \d+ clusters, \d+ free \(\d+ [KM]B free of 12\d MB\)', out) is not None,
+      'a volume of 128MB: ls shows the size of a 36MB file, df the size of the volume', out[-700:])
+vol4 = fatlib.Volume(disk4)
+check(vol4.read('/HUGE.BIN') == bigdata and vol4.read('/HUGE2.BIN') == bigdata, 'cp copies a file of 36MB (more than 32MB) intact on a volume of 128MB')
+vol = os.path.join(work, 'vol4.img')
+vol4.write_volume(vol)
+fs = subprocess.run(['fsck.fat', '-n', vol], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=dict(os.environ, LC_ALL='C'))
+check(fs.returncode == 0, 'fsck.fat finds the volume of 128MB consistent', fs.stdout.decode('latin-1'))
+os.remove(disk4)
+os.remove(vol)
 
 # ---- Japanese file names (the bytes of the console's character set are kept in the 8.3 name) and text
 jdisk = os.path.join(work, 'jdisk.img')

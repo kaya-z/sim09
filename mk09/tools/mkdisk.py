@@ -3,14 +3,15 @@
 # Copyright (c) 2026 YUKARI Semiconductor Devices
 """mkdisk.py - make an MK09 disk image (the content of the SD card).
 
-    mkdisk.py -o disk.img [--boot boot.img] [--size-mb 16] [--spc 4] [--label MK09] TREE
+    mkdisk.py -o disk.img [--boot boot.img] [--size-mb 16] [--spc N] [--label MK09] TREE
 
 Layout (512 byte blocks):
     block 0          MBR with one partition (type 06, FAT16) that starts at block 2048 (1MB)
     block 1 ...      the boot image (sectors of 256 bytes from sector 2 on, see mkimage.py)
     block 2048 ...   the FAT16 volume with the files of the directory tree TREE
 
-The volume has at most 65535 blocks (the MK09 file system uses 16 bit block numbers).  The
+The volume has up to 2GB (FAT16: at most 65524 clusters of up to 64 blocks; --spc is chosen so that the
+clusters are not too many: 4 blocks as long as that fits).  The image is built in memory.  The
 files are written one after the other, so every file occupies consecutive clusters (the FS
 server finds the position in such a file without walking the FAT).  Names are converted to
 8.3 (upper case); host names that do not fit are an error."""
@@ -129,7 +130,8 @@ class Fat16:
         b[0:3] = b'\xEB\x3C\x90'
         b[3:11] = b'MK09    '
         struct.pack_into('<HBHBHHBHHHII', b, 11, BLK, self.spc, self.rsvd, self.nfats, self.rootents,
-                         self.blocks, 0xF8, self.fatsz, 32, 64, PART_START, 0)
+                         self.blocks if self.blocks < 65536 else 0, 0xF8, self.fatsz, 32, 64, PART_START,
+                         self.blocks if self.blocks >= 65536 else 0)
         b[36] = 0x80
         b[38] = 0x29
         b[39:43] = struct.pack('<I', 0x4D4B0900)
@@ -154,12 +156,15 @@ def main():
     ap.add_argument('-o', '--output', required=True)
     ap.add_argument('--boot')
     ap.add_argument('--size-mb', type=float, default=16)
-    ap.add_argument('--spc', type=int, default=4)
+    ap.add_argument('--spc', type=int, default=0, help='blocks per cluster (a power of 2 up to 64); 0: the smallest of 4, 8, ... 64 that makes the clusters fewer than 65525')
     ap.add_argument('--label', default='MK09')
     ap.add_argument('tree')
     a = ap.parse_args()
-    vblocks = min(int(a.size_mb * 1024 * 1024) // BLK, 65535)
-    fs = Fat16(vblocks, a.spc, a.label)
+    vblocks = min(int(a.size_mb * 1024 * 1024) // BLK, 65524 * 64 + 600)
+    spc = a.spc or 4
+    while not a.spc and spc < 64 and vblocks // spc >= 65500:
+        spc *= 2
+    fs = Fat16(vblocks, spc, a.label)
     vol = fs.finish(a.tree)
     disk = bytearray((PART_START + vblocks) * BLK)
     # MBR: partition 1
