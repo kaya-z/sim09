@@ -25,7 +25,7 @@ K_CSZ      = 0C00
 TTY_CSZ    = 0B80
 DISK_CSZ   = 0A00
 FS_CSZ     = 2CA0
-MM_CSZ     = 0340
+MM_CSZ     = 0360
 PM_CSZ     = 0BE0
 
 K_DSZ      = 0700

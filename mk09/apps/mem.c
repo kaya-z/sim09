@@ -31,8 +31,30 @@ int main(int argc, char **argv)
         printf("  system (kernel, servers, vectors)  %2u pages  %3u KB\n", 32 - 3 - pp, (32 - 3 - pp) * 4);
         printf("  track buffer of format             %2u pages  %3u KB\n", 3, 12);
         printf("  programs (MM)                      %2u pages  %3u KB\n", pp, pp * 4);
-        printf("    used by %u program%s             %2u pages  %3u KB\n", procs, procs == 1 ? " " : "s", pp - pf, (pp - pf) * 4);
+        printf("    used                             %2u pages  %3u KB  (%u program%s)\n", pp - pf, (pp - pf) * 4, procs, procs == 1 ? "" : "s");
         printf("    free                             %2u pages  %3u KB\n", pf, pf * 4);
+    }
+    {   /* which page is what: K kernel, S servers, F format buffer, P a program, . free, - not used, H hardware (the I/O area is in the page 15) */
+        msg_t m;
+        u16 pool[2], fr[2];
+        u8 p, row, ch;
+        pool[0] = MM_POOL0;
+        pool[1] = MM_POOL1;
+        m.op = MM_MAP;
+        fr[0] = fr[1] = 0;
+        if (!mk_call(TID_MM, &m) && !m.op) { fr[0] = m.a; fr[1] = m.b; }
+        puts("  physical pages of 4KB (K kernel, S servers, F format, P programs, . free):");
+        for (row = 0; row < 2; row++) {
+            printf("    %02u-%02u  ", row * 16, row * 16 + 15);
+            for (p = row * 16; p < row * 16 + 16; p++) {
+                if (pool[p >> 4] & (1u << (p & 15))) ch = (fr[p >> 4] & (1u << (p & 15))) ? '.' : 'P';
+                else if (p >= BOUNCE && p < BOUNCE + 3) ch = 'F';
+                else if (p < 16) ch = (p <= ((K_DATA + K_DSZ - 1) >> 12)) ? 'K' : 'S';
+                else ch = '-';
+                putchar(ch);
+            }
+            putchar('\n');
+        }
     }
     puts("logical map of the system (the servers see the first 64KB as it is):");
     line("vectors, boot buffer (the boot buffer is free)", 0x0000, SYS_BASE - 1);

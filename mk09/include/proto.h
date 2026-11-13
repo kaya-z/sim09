@@ -113,6 +113,7 @@ typedef struct dirent {
                                -> a = the first page (MM_ADDR(page) = TPA_BASE + page * 256), or E_NOMEM */
 #define MM_FREE     2       /* a = first page, b = n pages; PM only */
 #define MM_INFO     3       /* -> a = pages of the transient area, b = free pages, c = the biggest piece of free pages; anybody may ask */
+#define MM_MAP     4        /* Level 2 (FM-11, MMU): anybody may ask -> a = the free physical pages 0-15 (bit n = page n of 4KB), b = the free pages 16-31 */
 
 #define ARGMAX      128     /* bytes of the argument block */
 

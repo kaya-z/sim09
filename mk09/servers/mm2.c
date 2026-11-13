@@ -64,6 +64,11 @@ int main(void)
             for (i = 0; i < n; i++)
                 if (list[i] < 32) freem[list[i] >> 4] |= 1u << (list[i] & 15);
             break;
+        case MM_MAP:
+            r.op = E_OK;
+            r.a = freem[0];
+            r.b = freem[1];
+            break;
         case MM_INFO:
             r.op = E_OK;
             r.a = (u16)total << 4;

@@ -280,7 +280,7 @@ $(B)/clib.s: lib/cc/clib.c $(B)/host_cpp $(B)/host_cc1 $(B)/host_cg
 	cd $(B) && ./host_cpp ../lib/cc/clib.c -o clib.i && ./host_cc1 clib.i -o clib.ir && ./host_cg -pl clib.ir -o clib.s
 
 TREE := $(B)/tree
-$(B)/tree.stamp: $(foreach a,$(APPS),$(B)/$(a).mx) $(wildcard disk/etc/* disk/doc/* disk/bas/* disk/asm/* disk/inc/* disk/pas/*) $(if $(HAVE_SKK),$(B)/skk_$(CHARSET).dic) $(B)/clib.obj $(B)/rt.obj $(B)/cc1.msg $(B)/pas1.msg lib/cc/start.s Makefile
+$(B)/tree.stamp: $(foreach a,$(APPS),$(B)/$(a).mx) $(wildcard disk/etc/* disk/doc/* disk/bas/* disk/asm/* disk/inc/* disk/pas/* disk/c/*) $(if $(HAVE_SKK),$(B)/skk_$(CHARSET).dic) $(B)/clib.obj $(B)/rt.obj $(B)/cc1.msg $(B)/pas1.msg lib/cc/start.s Makefile
 	rm -rf $(TREE); mkdir -p $(TREE)/bin $(TREE)/etc $(TREE)/doc $(TREE)/bas $(TREE)/asm $(TREE)/inc $(TREE)/pas $(TREE)/lib $(TREE)/skk
 	cp lib/cc/start.s $(TREE)/lib/start.s; cp $(B)/cc1.msg $(TREE)/lib/cc1.msg; cp $(B)/pas1.msg $(TREE)/lib/pas1.msg; cp $(B)/clib.obj $(B)/clib.idx $(B)/rt.obj $(B)/rt.idx $(TREE)/lib/
 ifeq ($(BOARD),fm11)
@@ -288,6 +288,7 @@ ifeq ($(BOARD),fm11)
 	for a in $$($(PYTHON) tools/fitapps.py $(USERPAGES) $(foreach a,$(APPS),$(B)/$(a).mx)); do cp $(B)/$$a.mx $(TREE)/bin/$$a.mx; done
 	if [ ! -f $(TREE)/bin/cc1.mx ] || [ ! -f $(TREE)/bin/cg.mx ]; then rm -f $(TREE)/lib/clib.obj $(TREE)/lib/clib.idx $(TREE)/lib/rt.obj $(TREE)/lib/rt.idx $(TREE)/lib/cc1.msg $(TREE)/lib/start.s; fi
 	if [ ! -f $(TREE)/bin/pas1.mx ]; then rm -f $(TREE)/lib/pas1.msg; fi
+	if [ -f $(TREE)/bin/cc1.mx ] && [ -f $(TREE)/bin/cg.mx ]; then mkdir -p $(TREE)/c; cp disk/c/* $(TREE)/c/; fi
 else
 	for a in $(APPS); do cp $(B)/$$a.mx $(TREE)/bin/$$a.mx; done
 endif

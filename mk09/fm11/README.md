@@ -104,6 +104,19 @@ FS サーバは複数のボリュームを持てるようになりました (`se
 制限: カレントディレクトリはドライブ 0 のものだけ (`cd 1:/X` は不可、`1:` の名前は常にルートからの絶対パス)。`mv` / `cp` の一部として別ドライブへ移すのは `cp` で (`mv` は同じドライブの中だけ)。
 プログラムの起動は `/bin` (ドライブ 0) から。FM-11 の FS 要求 `FS_MOUNT` (`include/proto.h`) と `FS_STATFS` の drive 引数を追加。
 
+## C のサンプル (`/C`、Level 2 のイメージ)
+
+`cc` が動くイメージ (Level 2、sbc09 ではなく FM-11 の HDD 版・2HD 版) には、ディレクトリ `/C` に C のサンプルが入っています (Level 1 は `cc` が動かないので入れていません)。
+`cc /C/HELLO.C -o /HELLO.MX` で作って `/HELLO.MX` で走らせます。
+
+`hello` (引数)、`fib` (再帰・ループ・long)、`primes` (ふるい)、`wc` (ファイル: fopen / fgets)、`fcopy` (fread / fwrite)、`strings` (文字列関数・ctype・sprintf)、
+`list` (struct・malloc・連結リスト)、`sort` (関数ポインタ・qsort・rand)、`float` (浮動小数点: sqrt・pi・`%f %e %g`)、`README.TXT`。ソースは `disk/c/`、`fm11/test_csamples.sh` が 9 本すべてをシミュレータの中でコンパイルして走らせ、出力を確かめます。
+
+## `mem` (Level 2)
+
+物理メモリ (128KB = 4KB のページ 32 枚) の内訳 (システム / `format` のバッファ / プログラム: 使用中と空き)、物理ページの地図 (`K` カーネル、`S` サーバ、`F` format、`P` プログラム、`.` 空き: MM の `MM_MAP` で空きを取る)、
+サーバの論理マップ、プログラムの論理マップを出します。
+
 ## 検証したこと / していないこと
 
 エミュレータ `emulator/Fm11gtk` (6809 モード) でのみ確認しました。実機、Windows 版エミュレータ、SD ストレージボード (RTL) では**未確認**です。
