@@ -31,7 +31,8 @@ for L in $LEVELS; do
     check "stty sjis" "L$L 2HD: a file is copied and read back"
     check "47[46] clusters" "L$L 2HD: df sees the volume"
     run $HD -h0 0x7F 11000 "reboot|${SP}mem|"
-    check "pages of 256 bytes" "L$L hard disk: reboot comes back, the shell answers"
+    if [ $L = 1 ]; then check "pages of 256 bytes" "L$L hard disk: reboot comes back, the shell answers"
+    else check "physical memory" "L$L hard disk: reboot comes back, the shell answers (mem shows the physical memory)"; fi
     run $HD -h0 0x7F 7000 "basic|PRINT 6*7|"
     check " 42" "L$L basic runs"
     if [ $L = 1 ]; then
