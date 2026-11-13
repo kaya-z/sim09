@@ -135,11 +135,11 @@ check(re.search(r'^\s*5 receive\s+1\s+[0-9a-f]{4}-[0-9a-f]{4}', out, re.M) is no
 out, rc = run(disk, BOOT + sh('stk', prompt=P) + OFF)
 rows = re.findall(r'^\s*([1-5]) [0-9a-f]{4}-[0-9a-f]{4}\s+(\d+) \(the run ends', out, re.M)
 check(len(rows) == 5 and all(int(r[1]) >= 10 for r in rows), 'stk: the five servers (TTY DISK FS PM MM) have some unused stack left', out[-600:])
-check('MK09 1.33: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
+check('MK09 1.34: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
 
 # ---- reboot: the files are written, the system starts again (the banner twice), the file is there
 out, rc = run(disk, BOOT + sh('cp /ETC/RC.SH /RB.TXT', 'reboot', 'cat /RB.TXT', 'rm /RB.TXT', prompt=P) + OFF)
-check(out.count('MK09 1.33: kernel TTY DISK FS PM MM') == 2 and 'stty utf8' in out.split('type help')[-1], 'reboot writes the files and starts the system again', out[-700:])
+check(out.count('MK09 1.34: kernel TTY DISK FS PM MM') == 2 and 'stty utf8' in out.split('type help')[-1], 'reboot writes the files and starts the system again', out[-700:])
 
 # ---- -v: the version and the copyright of the compilers and the assembler
 tools = ('as', 'cpp', 'cc1', 'cg', 'cc', 'pas0', 'pas1', 'pc')
@@ -151,8 +151,8 @@ check(all(('\n%s %s\n(c) 2026 YUKARI Semiconductor Devices\n' % (t, tool_version
 # ---- several programs at the same time (relocatable programs, the memory manager, & kill mem)
 out, rc = run(disk, BOOT + sh('mem', 'spin &', 'spin &', 'spin &', 'echo hello', 'mem', 'ps', 'kill 7', 'kill 99', 'ps',
                               'kill 8', 'kill 9', 'mem', prompt=P) + OFF)
-m0 = re.search(r'mem\n(\d+) pages of 256 bytes: (\d+) free .*; (\d+) programs', out)
-check(m0 is not None and m0.group(3) == '1', 'mem: the programs that run (only mem itself) and the pages', out[-2500:])
+m0 = re.search(r'mem\nmemory map[^\n]*\n(?:  \$[^\n]*\n)+programs:\n  total [^\n]*\n  used [^\n]*, (\d+) programs? running\n  free [^\n]*\((\d+) pages', out)
+check(m0 is not None and m0.group(1) == '1', 'mem: the programs that run (only mem itself) and the pages', out[-2500:])
 check(re.search(r'spin &\n(spinning[^\n]*\n)?\[7\]', out) is not None and re.search(r'spin &\n(spinning[^\n]*\n)?\[8\]', out) is not None and re.search(r'spin &\n(spinning[^\n]*\n)?\[9\]', out) is not None,
       '& starts programs in the background and prints their task ids')
 check(re.search(r'echo hello\nhello\n', out) is not None, 'a foreground program runs and exits while others run in the background')
@@ -160,7 +160,7 @@ ps1 = out.split('/> ps')[1].split('/> ')[0]
 regs = re.findall(r'^\s*([7-9]|10) (?:ready|running|receive|sleep)\s+4\s+([0-9a-f]{4})-([0-9a-f]{4})', ps1, re.M)
 check(len(regs) >= 4, 'ps lists the programs that run together', out[-1800:])
 check(len({r[1] for r in regs}) == len(regs), 'the programs are loaded at different addresses (relocation)', str(regs))
-m1 = re.findall(r'(\d+) pages of 256 bytes: (\d+) free [^;]*; (\d+) programs', out)
+m1 = [(0, f, n) for n, f in re.findall(r'used [^\n]*, (\d+) programs? running\n  free [^\n]*\((\d+) pages', out)]   # (-, free pages, programs)
 check(len(m1) >= 3 and int(m1[1][2]) >= 4 and int(m1[1][1]) < int(m1[0][1]) - 10, 'mem: programs running and fewer free pages while they run', str(m1))
 check('kill: 99: ' in out, 'kill of a task that is not a program is refused')
 check(len(m1) >= 3 and m1[2][2] == '1' and int(m1[2][1]) == int(m1[0][1]), 'kill gives the memory back (all pages free again)', str(m1))

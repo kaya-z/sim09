@@ -66,6 +66,7 @@
  *   1.23 2026-10-29  reboot (a program); PM loads a program with ONE request: FS_READTL, FS reads the file into the memory of the new task itself (FS is privileged for
  *                    tload); the code slots of TTY and FS were adjusted (cwidth is shorter).  hello.pas: 19M cycles.
  *   1.24 2026-10-29  -v prints the version and the copyright (as cpp cc1 cg cc pas0 pas1 pc); cc and pc print the command lines with -V now.
+ *   1.34 2026-11-13  `mem` shows the memory map of the machine (the slots of the system code, the transient area, the I/O page, the high memory) and the memory of the programs in KB: total, used, free (mem 1.1).  No system change (TPA_BASE stays $3C00).
  *   1.33 2026-11-12  the file system up to 2GB (FAT16): a volume and a file are no longer limited to 32MB.  fs_core.c names a block by (cluster, block in it) and makes the 23 bit disk number only in blk_io;
  *                    a position and a size are (cluster of the file, byte in it); the directory cursor and the file cursor share their place in the handle (the FS data slot stays).  FS_CSZ +157 bytes (TPA_BASE stays $3C00).
  *                    df shows MB; tools/mkdisk.py makes volumes up to 2GB (the clusters get bigger: --spc); tests: fs_host big (files over 32MB), fstest on volumes of 30MB .. 600MB, mk09_test a volume of 128MB.
@@ -89,7 +90,7 @@
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.33"
+#define MK09_VERSION    "1.34"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif
