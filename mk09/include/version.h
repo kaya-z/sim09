@@ -66,29 +66,29 @@
  *   1.23 2026-10-29  reboot (a program); PM loads a program with ONE request: FS_READTL, FS reads the file into the memory of the new task itself (FS is privileged for
  *                    tload); the code slots of TTY and FS were adjusted (cwidth is shorter).  hello.pas: 19M cycles.
  *   1.24 2026-10-29  -v prints the version and the copyright (as cpp cc1 cg cc pas0 pas1 pc); cc and pc print the command lines with -V now.
- *   1.37 2026-11-14  more 1.1: `more` alone (the standard input is the console) prints the usage and ends; it used to read the keys as the text and there was no way back to the shell.
- *   1.36 2026-11-14  the shell: ^C drops the rest of a script (source) and of a pipeline, not only the program that runs (the status 130 of a program that PM stopped).
- *   1.35 2026-11-13  the FM-11 port (BOARD=fm11, bsp/fm11, fm11/, memmap_fm11.mk; 2HD floppy and hard disk boot) and its commands `format` (low level format of a 2HD floppy: DISK_FORMAT) and `mount` / `umount` (the floppy disks 1-4 as "N:/path": FS_MOUNT, FS_STATFS with a drive, df N).  Backported from the port; the code for several volumes is compiled only for BOARD_FM11 (the FS slot of the sbc09 is full: TPA_BASE stays $3C00).
- *   1.34 2026-11-13  `mem` shows the memory map of the machine (the slots of the system code, the transient area, the I/O page, the high memory) and the memory of the programs in KB: total, used, free (mem 1.1).  No system change (TPA_BASE stays $3C00).
- *   1.33 2026-11-12  the file system up to 2GB (FAT16): a volume and a file are no longer limited to 32MB.  fs_core.c names a block by (cluster, block in it) and makes the 23 bit disk number only in blk_io;
- *                    a position and a size are (cluster of the file, byte in it); the directory cursor and the file cursor share their place in the handle (the FS data slot stays).  FS_CSZ +157 bytes (TPA_BASE stays $3C00).
- *                    df shows MB; tools/mkdisk.py makes volumes up to 2GB (the clusters get bigger: --spc); tests: fs_host big (files over 32MB), fstest on volumes of 30MB .. 600MB, mk09_test a volume of 128MB.
- *   1.32 2026-11-07  the disk server uses the asynchronous mode of the disk port ($E049): the command returns at once, the kernel IRQ turns the interrupt off and notifies
- *                    the disk server (NFY_DISK), which waits in mk_recv, so the other tasks run while the SD card works.  The boot ROM and the C kernel were adapted; the boot code
- *                    of the kernel (section start) is loaded into the transient area (it runs once), which gave back 185 bytes of the slot of the kernel.
- *   1.31 2026-11-06  shutdown and halt print "CPU halted." (PM, after the sync, before the power register is written).
- *   1.30 2026-11-06  BASIC 1.3: Break.  While a program runs the console is raw without echo and without the ^C of the shell, and execute() looks at the keys every 16 statements; a ^C stops the program with
- *                    "?Break in n" and basic goes on at Ok (INPUT and the prompt use the console as before).  Program area 2200 bytes (was 2400).
+ *   1.25 2026-10-29  -v prints the version of the PROGRAM (TOOL_VERSION at the top of its source, one step per change of that program: as 1.10, cpp 1.4, cc1 1.6, cg 1.11, cc 1.1, pas0 1.4, pas1 1.8, pc 1.3): change it when you change that program, so that a
+ *                    change of one tool can be followed without a new version of the system.
+ *   1.26 2026-11-04  cc1 1.7: one walker for the initializers (global and local), loop_body; cc1 has 1062 bytes of the transient area left (was 322).
+ *   1.27 2026-11-04  YSD Pascal (the name of the Pascal compiler): variant records (case in a record) and range checks ({$R+}: array indexes and subrange assignments, __prchk); pas0 1.5, pas1 1.9.
+ *   1.28 2026-11-05  the console receive interrupt: the kernel (IRQ) puts the characters of the ACIA into the ring of the console server (SYS_RXREG, NFY_RX); the server no longer polls the ACIA.
+ *                    The board has a FIFO of 256 characters for the time that the CPU is held (a write to the card); a character that finds the ring (128) full is lost.  TPA_BASE stays $3C00 (K_CSZ, TTY_CSZ, FS_CSZ resized).
  *   1.29 2026-11-06  BASIC 1.2, taken over from the YSD9000 port (its MK09 1.15): FOR / NEXT with a step of 1 or -1 on whole numbers add to the bits of the variable and compare the words, NEXT returns to the statement
  *                    after the colon, an IF finds its ELSE once, GOTO / GOSUB / THEN n remember the line, "variable <op> variable or number" is one operation; run() keeps pc and sp in registers
  *                    (run_cold, run_cmp); disk/bas/tfor.bas, tif.bas and the loop benchmarks bfor bif bmix bnop.  The code of basic is 1.8 KB bigger (cmoc), so the program area is 2400 bytes (was 3800)
  *                    and the arrays 220 elements (was 300); cmoc miscompiles a ?: of longs, which the YSD9000 sources use (f_cmp, run_cmp, NEXT): if / else there.
- *   1.28 2026-11-05  the console receive interrupt: the kernel (IRQ) puts the characters of the ACIA into the ring of the console server (SYS_RXREG, NFY_RX); the server no longer polls the ACIA.
- *                    The board has a FIFO of 256 characters for the time that the CPU is held (a write to the card); a character that finds the ring (128) full is lost.  TPA_BASE stays $3C00 (K_CSZ, TTY_CSZ, FS_CSZ resized).
- *   1.27 2026-11-04  YSD Pascal (the name of the Pascal compiler): variant records (case in a record) and range checks ({$R+}: array indexes and subrange assignments, __prchk); pas0 1.5, pas1 1.9.
- *   1.26 2026-11-04  cc1 1.7: one walker for the initializers (global and local), loop_body; cc1 has 1062 bytes of the transient area left (was 322).
- *   1.25 2026-10-29  -v prints the version of the PROGRAM (TOOL_VERSION at the top of its source, one step per change of that program: as 1.10, cpp 1.4, cc1 1.6, cg 1.11, cc 1.1, pas0 1.4, pas1 1.8, pc 1.3): change it when you change that program, so that a
- *                    change of one tool can be followed without a new version of the system.
+ *   1.30 2026-11-06  BASIC 1.3: Break.  While a program runs the console is raw without echo and without the ^C of the shell, and execute() looks at the keys every 16 statements; a ^C stops the program with
+ *                    "?Break in n" and basic goes on at Ok (INPUT and the prompt use the console as before).  Program area 2200 bytes (was 2400).
+ *   1.31 2026-11-06  shutdown and halt print "CPU halted." (PM, after the sync, before the power register is written).
+ *   1.32 2026-11-07  the disk server uses the asynchronous mode of the disk port ($E049): the command returns at once, the kernel IRQ turns the interrupt off and notifies
+ *                    the disk server (NFY_DISK), which waits in mk_recv, so the other tasks run while the SD card works.  The boot ROM and the C kernel were adapted; the boot code
+ *                    of the kernel (section start) is loaded into the transient area (it runs once), which gave back 185 bytes of the slot of the kernel.
+ *   1.33 2026-11-12  the file system up to 2GB (FAT16): a volume and a file are no longer limited to 32MB.  fs_core.c names a block by (cluster, block in it) and makes the 23 bit disk number only in blk_io;
+ *                    a position and a size are (cluster of the file, byte in it); the directory cursor and the file cursor share their place in the handle (the FS data slot stays).  FS_CSZ +157 bytes (TPA_BASE stays $3C00).
+ *                    df shows MB; tools/mkdisk.py makes volumes up to 2GB (the clusters get bigger: --spc); tests: fs_host big (files over 32MB), fstest on volumes of 30MB .. 600MB, mk09_test a volume of 128MB.
+ *   1.34 2026-11-13  `mem` shows the memory map of the machine (the slots of the system code, the transient area, the I/O page, the high memory) and the memory of the programs in KB: total, used, free (mem 1.1).  No system change (TPA_BASE stays $3C00).
+ *   1.35 2026-11-13  the FM-11 port (BOARD=fm11, bsp/fm11, fm11/, memmap_fm11.mk; 2HD floppy and hard disk boot) and its commands `format` (low level format of a 2HD floppy: DISK_FORMAT) and `mount` / `umount` (the floppy disks 1-4 as "N:/path": FS_MOUNT, FS_STATFS with a drive, df N).  Backported from the port; the code for several volumes is compiled only for BOARD_FM11 (the FS slot of the sbc09 is full: TPA_BASE stays $3C00).
+ *   1.36 2026-11-14  the shell: ^C drops the rest of a script (source) and of a pipeline, not only the program that runs (the status 130 of a program that PM stopped).
+ *   1.37 2026-11-14  more 1.1: `more` alone (the standard input is the console) prints the usage and ends; it used to read the keys as the text and there was no way back to the shell.
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
