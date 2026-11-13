@@ -12,16 +12,22 @@ extern u8 mk_in_h, mk_out_h;
 int mk_rpc(u8 dst, msg_t *m, u8 gfl);
 int mk_rpc_path(u8 op, const char *path, u16 a, msg_t *m);
 
-int statfs(u8 *spc, u16 *clusters, u16 *freec)
+int statfs_drv(u8 drive, u8 *spc, u16 *clusters, u16 *freec)
 {
     msg_t m;
     int r;
     m.op = FS_STATFS;
+    m.a = drive;
     r = mk_rpc(TID_FS, &m, 0);
     if (r) return r;
     *spc = (u8)m.a;
     *clusters = m.b;
     *freec = m.c;
     return 0;
+}
+
+int statfs(u8 *spc, u16 *clusters, u16 *freec)
+{
+    return statfs_drv(0, spc, clusters, freec);
 }
 

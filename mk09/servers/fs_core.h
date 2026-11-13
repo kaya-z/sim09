@@ -48,6 +48,15 @@ u8   fs_getcwd(char *buf, u16 n);
 u8   fs_sync(void);
 void fs_closeall(u8 owner);
 u8   fs_chown(u8 h, u8 owner);
+#ifdef BOARD_FM11                  /* more than one volume: the floppy disks 1-4 */
+u8   fs_statfs(u8 drive, u8 *spc, u16 *clusters, u16 *freec);
+u8   fs_mount_drive(u8 d);         /* mount the volume of the drive d (0-4) */
+u8   fs_umount(u8 d);              /* drives 1-4; E_BUSY while a file of it is open */
+u8   fs_mounted(u8 d);
+u8   fs_select(u8 d);              /* make the volume of the drive d the current one (0: the system drive) */
+extern u8 fs_drive;                /* the drive of the volume that the cache holds */
+#else
 u8   fs_statfs(u8 *spc, u16 *clusters, u16 *freec);
+#endif
 
 #endif

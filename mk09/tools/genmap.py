@@ -53,8 +53,9 @@ for m in high:                          # these modules' code goes behind the da
     pd += v[m + '_CSZ']
 if ld > v['SYS_BASE']:
     sys.exit('genmap: the data slots of LOWDATA do not fit below $%04X (end %04X)' % (v['SYS_BASE'], ld))
-if pd > 0xFF00:
-    sys.exit('genmap: data and high code do not fit below $FF00 (end %04X)' % pd)
+top = v.get('TOP', 0xFF00)                   # the end of the RAM that the system may use ($FC00 on the FM-11: the I/O area is there)
+if pd > top:
+    sys.exit('genmap: data and high code do not fit below $%04X (end %04X)' % (top, pd))
 for m in ('K', 'TTY', 'DISK', 'FS', 'PM', 'MM'):
     res += [(m + '_CODE', code[m]), (m + '_CSZ', v[m + '_CSZ']), (m + '_DATA', data[m]), (m + '_DSZ', v[m + '_DSZ'])]
 tpa = (pc + 0xFF) & ~0xFF

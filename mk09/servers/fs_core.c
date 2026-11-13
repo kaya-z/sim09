@@ -49,6 +49,9 @@ typedef struct diter {
 typedef struct fh {
     u8  used;                       /* 0 free, 1 file, 2 directory */
     u8  owner;
+#ifdef BOARD_FM11
+    u8  drv;                        /* the drive of the volume (0 = the system drive) */
+#endif
     u8  flags;
     u8  dirty;
     u16 first;                      /* first cluster (0 = empty file) */
@@ -99,6 +102,70 @@ static u16 fat_blk, root_blk, data_blk;
 static u16 rootsecs;
 static u16 nclusters;               /* data clusters; cluster numbers are 2 .. nclusters+1 */
 static u16 free_hint;
+
+#ifdef BOARD_FM11
+/* more than one volume (the FM-11: drive 0 and the floppy disks 1-4): the variables above describe the volume of the drive fs_drive, the
+ * others are kept in vsave and swapped in by fs_select().  The cache has no dirty blocks (every change is written at once), so it is only
+ * emptied at a switch.  Paths of drive 0 are relative to the current directory; "N:/path" names the root of the drive N (N = 1..4). */
+#define NDRV        5
+typedef struct vol {
+    u8  mounted, spc, spcshift, cshift, nfats;
+    u16 ph, pl, cmask, rsvd, fatsz, fat_blk, root_blk, data_blk, rootsecs, nclusters, free_hint;
+} vol_t;
+static vol_t vsave[NDRV];
+u8 fs_drive;
+
+u8 fs_select(u8 d)
+{
+    vol_t *v;
+    cbuf_t *b;
+    u8 i;
+
+    if (d >= NDRV) return E_INVAL;
+    if (d == fs_drive) return E_OK;
+    v = &vsave[fs_drive];
+    v->mounted = mounted; v->spc = spc; v->spcshift = spcshift; v->cshift = cshift; v->nfats = nfats;
+    v->ph = fs_part_hi; v->pl = fs_part_lo; v->cmask = cmask; v->rsvd = rsvd; v->fatsz = fatsz; v->fat_blk = fat_blk;
+    v->root_blk = root_blk; v->data_blk = data_blk; v->rootsecs = rootsecs; v->nclusters = nclusters; v->free_hint = free_hint;
+    v = &vsave[d];
+    mounted = v->mounted; spc = v->spc; spcshift = v->spcshift; cshift = v->cshift; nfats = v->nfats;
+    fs_part_hi = v->ph; fs_part_lo = v->pl; cmask = v->cmask; rsvd = v->rsvd; fatsz = v->fatsz; fat_blk = v->fat_blk;
+    root_blk = v->root_blk; data_blk = v->data_blk; rootsecs = v->rootsecs; nclusters = v->nclusters; free_hint = v->free_hint;
+    for (b = cache; b < cache + NBUF; b++) b->valid = 0;
+    for (i = 0; i < NCC; i++) cc_first[i] = 0;
+    fs_drive = d;
+    return E_OK;
+}
+
+static char pbuf[MAXPATH + 2], pbuf2[MAXPATH + 2];
+
+/* select the drive of a path ("N:..."), return the rest as an absolute path (drives 1-4) */
+static const char *pathdrv(const char *p, char *buf, u8 *st)
+{
+    u8 d = 0;
+    if (p[0] >= '0' && p[0] <= '4' && p[1] == ':') { d = (u8)(p[0] - '0'); p += 2; }
+    *st = fs_select(d);
+    if (d && *p != '/') {
+        if (strlen(p) > MAXPATH) { *st = E_NAME; return p; }
+        buf[0] = '/';
+        strcpy(buf + 1, p);
+        return buf;
+    }
+    return p;
+}
+
+#define PATHDRV(p, buf) { (p) = pathdrv((p), (buf), &st); if (st) return st; }     /* (st: the local of the caller) */
+#define DRVOF(f)        ((f)->drv)
+#define SETDRV(f)       ((f)->drv = fs_drive)
+#define SAMEDRV(f)      ((f)->drv == fs_drive) &&
+#else
+/* one volume (the sbc09 board): no drive numbers, no code for them (the slot of the FS server is full) */
+#define fs_select(d)            ((void)0)
+#define PATHDRV(p, buf)
+#define DRVOF(f)                0
+#define SETDRV(f)
+#define SAMEDRV(f)
+#endif
 
 /* the current directory */
 static u16  cwd_cl;
@@ -513,7 +580,11 @@ static u8 resolve(const char *path, res_t *r)
 /* ------------------------------------------------------------------ */
 /* mount                                                               */
 /* ------------------------------------------------------------------ */
+#ifdef BOARD_FM11
+static u8 mount_cur(void)
+#else
 u8 fs_mount(void)
+#endif
 {
     cbuf_t *b;
     u8 i;
@@ -569,7 +640,11 @@ u8 fs_mount(void)
     thi -= tot < data_blk;                                      /* the blocks of the data, (thi, tot), in clusters */
     tot -= data_blk;
     for (i = 0; i < spcshift; i++) { tot = (tot >> 1) | (thi << 15); thi >>= 1; }
+#ifdef BOARD_FM11
+    if (thi || tot < 16 || tot >= 65525) return E_FORMAT;       /* (the 2HD floppy: a FAT16 layout with fewer than 4085 clusters, readable by MK09 only) */
+#else
     if (thi || tot < 4085 || tot >= 65525) return E_FORMAT;     /* not FAT16 */
+#endif
     nclusters = tot;
     free_hint = 2;
     cwd_cl = 0;
@@ -579,6 +654,35 @@ u8 fs_mount(void)
     return E_OK;
 }
 
+#ifdef BOARD_FM11
+u8 fs_mount_drive(u8 d)
+{
+    u8 st = fs_select(d);
+    if (st) return st;
+    return mount_cur();
+}
+
+u8 fs_mount(void) { return fs_mount_drive(0); }
+
+/* 0 = not mounted, 1 = mounted */
+u8 fs_mounted(u8 d)
+{
+    if (d >= NDRV) return 0;
+    return d == fs_drive ? mounted : vsave[d].mounted;
+}
+
+u8 fs_umount(u8 d)
+{
+    u8 i;
+    if (d == 0 || d >= NDRV) return E_PERM;
+    for (i = 0; i < NHANDLE; i++)
+        if (fh[i].used && fh[i].drv == d) return E_BUSY;
+    fs_select(d);
+    mounted = 0;
+    return fs_select(0);
+}
+#endif
+
 #define NEED_MOUNT  if (!mounted) return E_FORMAT
 
 /* ------------------------------------------------------------------ */
@@ -587,6 +691,7 @@ u8 fs_mount(void)
 static fh_t *hget(u8 h, u8 kind)
 {
     if (h >= NHANDLE || fh[h].used != kind) return NULL;
+    fs_select(DRVOF(&fh[h]));
     return &fh[h];
 }
 
@@ -614,6 +719,7 @@ u8 fs_open(const char *path, u8 flags, u8 owner, u8 *h)
     u8 i, st;
     u8 e[32];
 
+    PATHDRV(path, pbuf);
     NEED_MOUNT;
     for (i = 0; i < NHANDLE; i++)
         if (!fh[i].used) { f = &fh[i]; break; }
@@ -622,6 +728,7 @@ u8 fs_open(const char *path, u8 flags, u8 owner, u8 *h)
     if (st) return st;
     memset(f, 0, sizeof(fh_t));
     f->owner = owner;
+    SETDRV(f);
     f->flags = flags;
     if (r.isdirobj || (r.found && (r.ent[11] & FA_DIR))) {
         if (!(flags & FO_DIR) || (flags & (FO_WRITE | FO_CREATE | FO_TRUNC))) return E_ISDIR;
@@ -669,6 +776,7 @@ u8 fs_close(u8 h)
     u8 st = E_OK;
     if (h >= NHANDLE || !fh[h].used) return E_BADF;
     f = &fh[h];
+    fs_select(DRVOF(f));
     if (f->used == 1) st = flush_fh(f);
     f->used = 0;
     return st;
@@ -692,7 +800,8 @@ u8 fs_sync(void)
 {
     u8 i, st = E_OK;
     for (i = 0; i < NHANDLE; i++)
-        if (fh[i].used == 1 && flush_fh(&fh[i])) st = E_IO;
+        if (fh[i].used == 1 && (fs_select(DRVOF(&fh[i])), flush_fh(&fh[i]))) st = E_IO;
+    fs_select(0);
     return st;
 }
 
@@ -849,6 +958,7 @@ u8 fs_fstat(u8 h, u8 *attr, u16 *shi, u16 *slo)
     fh_t *f;
     if (h >= NHANDLE || !fh[h].used) return E_BADF;
     f = &fh[h];
+    fs_select(DRVOF(f));
     *attr = FA_ARCHIVE;
     *shi = *slo = 0;
     if (f->used == 2) {
@@ -863,6 +973,7 @@ u8 fs_stat(const char *path, u8 *attr, u16 *shi, u16 *slo, u16 *date)
 {
     res_t r;
     u8 st;
+    PATHDRV(path, pbuf);
     NEED_MOUNT;
     st = resolve(path, &r);
     if (st) return st;
@@ -907,6 +1018,7 @@ u8 fs_mkdir(const char *path)
     u8 st, i;
     cbuf_t *b;
 
+    PATHDRV(path, pbuf);
     NEED_MOUNT;
     st = resolve(path, &r);
     if (st) return st;
@@ -945,6 +1057,7 @@ u8 fs_remove(const char *path)
     res_t r;
     u8 st, i;
 
+    PATHDRV(path, pbuf);
     NEED_MOUNT;
     st = resolve(path, &r);
     if (st) return st;
@@ -953,7 +1066,7 @@ u8 fs_remove(const char *path)
     if (r.ent[11] & FA_RDONLY) return E_RO;
     if ((r.ent[11] & FA_DIR) && !dir_is_empty(ent_cluster(r.ent))) return E_NOTEMPTY;
     for (i = 0; i < NHANDLE; i++)                   /* open handles of the file */
-        if (fh[i].used == 1 && fh[i].loc.ca == r.loc.ca && fh[i].loc.cb == r.loc.cb && fh[i].loc.idx == r.loc.idx)
+        if (fh[i].used == 1 && SAMEDRV(&fh[i]) fh[i].loc.ca == r.loc.ca && fh[i].loc.cb == r.loc.cb && fh[i].loc.idx == r.loc.idx)
             fh[i].used = 0;
     st = dir_del(&r.loc);
     if (st) return st;
@@ -981,7 +1094,15 @@ u8 fs_rename(const char *from, const char *to)
     res_t a, c;
     u8 st, e[32];
     cbuf_t *b;
+#ifdef BOARD_FM11
+    u8 d2 = (to[0] >= '0' && to[0] <= '4' && to[1] == ':') ? (u8)(to[0] - '0') : 0;
 
+    from = pathdrv(from, pbuf, &st);
+    if (st) return st;
+    if (d2 != fs_drive) return E_INVAL;                 /* not from one drive to another */
+    to = pathdrv(to, pbuf2, &st);
+    if (st) return st;
+#endif
     NEED_MOUNT;
     st = resolve(from, &a);
     if (st) return st;
@@ -1053,6 +1174,10 @@ u8 fs_chdir(const char *path)
     res_t r;
     char np[MAXPATH];
     u8 st;
+#ifdef BOARD_FM11
+    if (path[0] >= '0' && path[0] <= '4' && path[1] == ':') return E_NOSYS;     /* (the current directory is the one of drive 0) */
+    fs_select(0);
+#endif
     NEED_MOUNT;
     st = resolve(path, &r);
     if (st) return st;
@@ -1068,15 +1193,27 @@ u8 fs_chdir(const char *path)
 u8 fs_getcwd(char *buf, u16 n)
 {
     u16 l = (u16)strlen(cwd_path) + 1;
+#ifdef BOARD_FM11
+    fs_select(0);
+#endif
     if (l > n) return E_INVAL;
     memcpy(buf, cwd_path, l);
     return E_OK;
 }
 
+#ifdef BOARD_FM11
+u8 fs_statfs(u8 drive, u8 *spcp, u16 *clusters, u16 *freec)
+#else
 u8 fs_statfs(u8 *spcp, u16 *clusters, u16 *freec)
+#endif
 {
-    u16 cl, n = 0, blk, i, last = nclusters + 2;
+    u16 cl, n = 0, blk, i, last;
     cbuf_t *b;
+#ifdef BOARD_FM11
+    u8 st = fs_select(drive);
+    if (st) return st;
+#endif
+    last = nclusters + 2;
     NEED_MOUNT;
     for (blk = 0; blk < fatsz && (u16)(blk << 8) < last; blk++) {
         b = blk_get(0, fat_blk + blk, 0);

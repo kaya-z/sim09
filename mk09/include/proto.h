@@ -42,6 +42,8 @@
 #define DISK_READ   1       /* a = block lo, d = drive << 8 | block hi, b = buf, c = 512 (GR_WRITE) */
 #define DISK_WRITE  2       /* same (GR_READ) */
 #define DISK_SIZE   3       /* d = drive -> a = 1 if present */
+#define DISK_FORMAT 4       /* FM-11 floppy: low level format of one track side.  d = drive << 8, a = track * 2 + side, b = the track image, c = its length
+                               (GR_READ; the controller reads the image of the client directly by DMA, there is no MMU) */
 #define BLKSIZE     512
 
 /* ---- FS: FAT16 file system on partition 1 of drive 0 ----------------------- */
@@ -59,10 +61,11 @@
 #define FS_GETCWD   12      /* b = buf, c = len (GR_WRITE) */
 #define FS_SYNC     13
 #define FS_CLOSEALL 14      /* a = tid: close the handles of an exited task (PM) */
-#define FS_STATFS   15      /* -> a = sectors per cluster, b = clusters, c = free clusters (low 16 bits) */
+#define FS_STATFS   15      /* a = drive (0: the system drive) -> a = sectors per cluster, b = clusters, c = free clusters (low 16 bits) */
 #define FS_FSTAT    16      /* a = handle -> c:b = size, a = attr */
 #define FS_CHOWN    17      /* a = handle, b = new owner tid (PM) */
 #define FS_TIME     18      /* -> a = date, b = time (FAT format) */
+#define FS_MOUNT    20      /* FM-11: a = drive (1-4), b = 0 mount the volume (then "N:/path" names its files), 1 unmount, 2 ask -> a = 1 if mounted */
 #define FS_READTL   19      /* like FS_READ, but b = an address in the memory of the new task d (PM, loading a program): no grant, no copy through PM */
 
 #define FO_READ     0x01

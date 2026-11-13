@@ -43,6 +43,10 @@ typedef struct mkstat {
 int  stat(const char *path, mkstat_t *st);
 int  fstat(int fd, mkstat_t *st);
 int  statfs(u8 *spc, u16 *clusters, u16 *freec);
+int  statfs_drv(u8 drive, u8 *spc, u16 *clusters, u16 *freec);   /* drive 0-4 (the FM-11: "N:/path" names the files of the drive N) */
+int  fsmount(u8 drive);                             /* FM-11: mount the volume of the drive 1-4 */
+int  fsumount(u8 drive);
+int  fsmounted(u8 drive);                           /* 1 = mounted, 0 = not */
 int  sync(void);
 
 /* console */
