@@ -13,6 +13,9 @@
 #include "types.h"
 #include "mklib.h"
 #include "mkstr.h"
+#define TOOL_VERSION "1.1"
+
+extern u8 mk_in_h;                               /* the handle of the redirected standard input (0xFF: the console) */
 
 #define OBUF 128
 
@@ -132,6 +135,10 @@ int main(int argc, char **argv)
 {
     u8 mode;
     int i, fd;
+    if (argc < 2 && mk_in_h == 0xFF) {           /* the standard input is the console: nothing to show, and the keys would be the text itself (no way out) */
+        puts("usage: more file...     or     command | more");
+        return 1;
+    }
     tty_getmode(&mode, &cs, &cols, &rows);
     if (!cols) cols = 80;
     if (!rows) rows = 24;
