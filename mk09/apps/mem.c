@@ -25,13 +25,24 @@ int main(int argc, char **argv)
     (void)argc; (void)argv;
     if (meminfo(&total, &freep, &big, &procs) < 0) { puts("mem: no answer"); return 1; }
 #ifdef FM11_MMU
-    puts("memory map of the system (RAM 128KB, MMU: the servers see the first 64KB as it is):");
+    {   /* Level 2: the machine has 128KB = 32 physical pages of 4KB; MM hands out the pages that the system does not use, to the programs */
+        u16 pp = total >> 4, pf = freep >> 4;
+        printf("physical memory (RAM 128KB = 32 pages of 4KB):\n");
+        printf("  system (kernel, servers, vectors)  %2u pages  %3u KB\n", 32 - 3 - pp, (32 - 3 - pp) * 4);
+        printf("  track buffer of format             %2u pages  %3u KB\n", 3, 12);
+        printf("  programs (MM)                      %2u pages  %3u KB\n", pp, pp * 4);
+        printf("    used by %u program%s             %2u pages  %3u KB\n", procs, procs == 1 ? " " : "s", pp - pf, (pp - pf) * 4);
+        printf("    free                             %2u pages  %3u KB\n", pf, pf * 4);
+    }
+    puts("logical map of the system (the servers see the first 64KB as it is):");
     line("vectors, boot buffer (the boot buffer is free)", 0x0000, SYS_BASE - 1);
     line("kernel (code, data, the ring of the console)", K_CODE, K_DATA + K_DSZ - 1);
     line("system code (TTY, DISK, FS)", K_DATA + K_DSZ, TPA_BASE - 1);
     line("system data, stacks, code of PM/MM (high)", DATA_BASE, 0xFBFF);
-    puts("every program has its own address space (the pages 0 and 1 are the kernel):");
-    line("program area of each program", 0x2000, 0xEFFF);
+    puts("logical map of a program (every program has its own):");
+    line("kernel (the same in every map)", 0x0000, 0x1FFF);
+    line("program area (code, data, stack: up to 52KB)", 0x2000, 0xEFFF);
+    return 0;
 #else
     puts("memory map (RAM 64KB):");
     line("vectors, boot buffer (the boot buffer is free)", 0x0000, SYS_BASE - 1);
