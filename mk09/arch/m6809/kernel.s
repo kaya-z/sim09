@@ -101,6 +101,16 @@ TIMER	equ	$E030
 ACIA	equ	$E000			the console: status / control, data at +1
 RXQ	equ	128			the size of the ring of the console server (servers/tty.c, RX_RING)
 POWER	equ	$E00F
+* FM-11 (FM11=1): no ACIA / timer / disk port of the sbc09 board; the console input is the key code of the keyboard
+* ($FD00/$FD01, interrupt flag $FD03 bit 6), the tick is the timer 2 of the MC6840 PTM ($FD38-$FD3F), the console
+* output and the disk are done by the servers (bsp/fm11)
+FM_KEYH	equ	$FD00
+FM_KEYL	equ	$FD01
+FM_IMSK	equ	$FD02
+FM_IFLG	equ	$FD03
+FM_PTMC2 equ	$FD39			PTM control register 2 (write) / status (read)
+FM_PTMC13 equ	$FD38			PTM control register 1 or 3
+FM_PTM2H equ	$FD3C			timer 2: latch / counter
 
 * ================================================================================ variables
 	section	bss
@@ -159,6 +169,15 @@ _start	orcc	#$50
 	std	,x++
 	cmpy	#vectab+12
 	bne	@vec
+	ifdef	FM11
+* the hardware vectors are RAM on the FM-11 ($FFF2-$FFFD): point them to the jump table
+	ldx	#$FFF2
+	ldy	#fmvecs
+@fv	ldd	,y++
+	std	,x++
+	cmpx	#$FFFE
+	bne	@fv
+	endc
 * the idle task and the system tasks
 	ldy	#boottab
 @bt	ldb	,y
@@ -186,8 +205,23 @@ _start	orcc	#$50
 	leay	9,y
 	bra	@bt
 @btdone
+	ifdef	FM11
+* PTM: reset, timer 2 = 16 bit, continuous, internal clock (E = 2 MHz), interrupt on, 40000 counts = 50 Hz
+	lda	#$01
+	sta	FM_PTMC2		CR2 bit 0 = 1: $FD38 is CR1
+	sta	FM_PTMC13		CR1 bit 0 = 1: reset the timers
+	sta	FM_PTMC2		(the reset cleared CR2: select CR1 again)
+	clr	FM_PTMC13		CR1 = 0: all timers run
+	lda	#$42			CR2: interrupt enable, 16 bit, continuous, E clock, $FD38 = CR3
+	sta	FM_PTMC2
+	ldd	#40000
+	std	FM_PTM2H		starts the timer
+	lda	#$90			interrupt mask: keyboard and PTM
+	sta	FM_IMSK
+	else
 	lda	#$8F			the timer
 	sta	TIMER
+	endc
 	clr	<cur
 	ldx	#tasks
 	stx	<curp
@@ -200,6 +234,9 @@ vectab	fdb	trap_ret		SWI3
 	fdb	trap_ret		NMI
 	fdb	irq_entry		IRQ: the timer
 	fdb	trap_ret		FIRQ
+	ifdef	FM11
+fmvecs	fdb	VEC_BASE+0,VEC_BASE+3,VEC_BASE+15,VEC_BASE+12,VEC_BASE+6,VEC_BASE+9	SWI3 SWI2 FIRQ IRQ SWI NMI
+	endc
 
 * tid, prio, priv, entry, lo, hi
 boottab	fcb	0,PRIO_IDLE,0
@@ -290,6 +327,7 @@ irq_entry
 	ldy	<curp
 	stu	T_SP,y
 	lbsr	rxdrain			the console (the IRQ line is shared with the timer)
+	ifndef	FM11
 	lda	DCTL			the disk: a command has finished and the interrupt is on?
 	anda	#$C0
 	cmpa	#$C0
@@ -303,13 +341,21 @@ irq_entry
 @nd	lda	TIMER
 	anda	#$10
 	bne	@tick
+	else
+	lda	FM_PTMC2		PTM status: bit 7 = a timer interrupt is pending
+	bmi	@tick
+	endc
 	tst	<rxgot			(not the timer) characters have arrived: tell the console server
 	beq	@out
 	ldx	#NFY_RX
 	bra	@ntf
 @tick
+	ifdef	FM11
+	lda	FM_PTM2H		reading the counter after the status clears the flag
+	else
 	lda	#$8F
 	sta	TIMER
+	endc
 	ldd	<ticks
 	addd	#1
 	std	<ticks
@@ -484,6 +530,32 @@ uok	pshs	d
 * rxdrain: move the characters of the console ACIA into the ring of the console server (rxp: the bytes; the head is at rxp-2, the tail at rxp-1), rxgot not 0 if there were any.
 * A character that finds the ring full is lost (the server empties it at once; the board has a FIFO of 256 characters for the time that the CPU is held).
 * Clobbers A, B, X, U.
+	ifdef	FM11
+rxdrain	clr	<rxgot
+	ldu	<rxp
+	beq	@x
+@rx	lda	FM_IFLG
+	bita	#$40			a key code?
+	beq	@x
+	ldb	FM_KEYH
+	lda	FM_KEYL			(reading it takes the code)
+	tstb
+	beq	@asc
+	cmpb	#2			$0201 = BREAK: ^C
+	bne	@rx			function keys, cursor keys: not used
+	lda	#3
+@asc	ldb	-2,u			the head
+	leax	b,u
+	incb
+	andb	#RXQ-1
+	cmpb	-1,u			the tail
+	beq	@rx
+	sta	,x
+	stb	-2,u
+	inc	<rxgot
+	bra	@rx
+@x	rts
+	else
 rxdrain	clr	<rxgot
 	ldu	<rxp
 	beq	@x
@@ -502,6 +574,7 @@ rxdrain	clr	<rxgot
 	inc	<rxgot
 	bra	@rx
 @x	rts
+	endc
 
 * copymsg: a message (MSGSZ = 10 bytes) from X to U; D is clobbered
 copymsg	ldd	,x++
@@ -1041,8 +1114,10 @@ sc_rxreg
 	ldu	<frm
 	ldx	F_X,u
 	stx	<rxp
+	ifndef	FM11
 	lda	#$95			8N1 with the receive interrupt
 	sta	ACIA
+	endc
 	lbra	okret
 
 sc_hook	ldu	<frm
@@ -1239,8 +1314,10 @@ sc_treap
 	rts
 
 sc_power
+	ifndef	FM11
 	lda	#$A5
 	sta	POWER
+	endc
 	bra	*
 
 	endsection

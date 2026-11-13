@@ -26,6 +26,11 @@ static u8 sector_io(u8 drive, u16 lba_lo, u8 lba_hi, u8 half, u8 *p, u8 cmd)
     u8 lo = (u8)(lba_lo << 1) | half;
     u8 hi = (u8)(lba_hi << 1) | (u8)(lba_lo >> 15);
 
+#ifdef BOARD_FM11
+    (void)m;
+    (void)st;
+    return bsp_sector_io(drive, hi, (u8)((lba_lo >> 7) & 0xFF), lo, p, cmd == DISK_WRITE_CMD) ? E_IO : E_OK;
+#else
     DISK_DRIVE = drive;
     DISK_LSN_HI = hi;
     DISK_LSN_MID = (u8)((lba_lo >> 7) & 0xFF);
@@ -36,6 +41,7 @@ static u8 sector_io(u8 drive, u16 lba_lo, u8 lba_hi, u8 half, u8 *p, u8 cmd)
     while ((st = DISK_CMD) == DISK_BUSY)
         mk_recv(TID_ANY, &m);           /* (only the notification of the kernel comes: the only client waits for our reply) */
     return st == 0 ? E_OK : E_IO;
+#endif
 }
 
 /* one half (sector) of a block between the card and the client's buffer */
@@ -57,6 +63,9 @@ int main(void)
     msg_t m, r;
     u8 st;
 
+#ifdef BOARD_FM11
+    bsp_disk_init();
+#endif
     for (;;) {
         if (mk_recv(TID_ANY, &m)) continue;
         if (m.src == TID_HW) continue;
@@ -75,6 +84,12 @@ int main(void)
             if (st == E_OK) st = half_io(m.src, (u8)(m.d >> 8), m.a, (u8)m.d, 1, 1);
             r.op = st;
             break;
+#ifdef BOARD_FM11
+        case DISK_FORMAT:
+            if (m.b < 0x0600 || m.c == 0 || (u16)(m.b + m.c) > 0xFB00 || (m.a >> 1) > 76) { r.op = E_INVAL; break; }
+            r.op = bsp_track_format((u8)(m.d >> 8), (u8)(m.a >> 1), (u8)(m.a & 1), (u8 *)m.b, m.c) ? E_IO : E_OK;
+            break;
+#endif
         case DISK_SIZE:
             r.op = E_OK;
             r.a = 1;

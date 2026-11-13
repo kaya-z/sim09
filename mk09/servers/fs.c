@@ -21,7 +21,7 @@ u8 fsx_disk(u8 write, u16 bhi, u16 blo, u8 *buf)
     if (fs_part_hi > 0x7F || bhi > 0x7F || hi > 0x7F) return E_IO;      /* beyond the block numbers of the disk server (23 bits: 4GB) */
     m.op = write ? DISK_WRITE : DISK_READ;
     m.a = lo;
-    m.d = hi;                                   /* drive 0 */
+    m.d = hi | ((u16)fs_drive << 8);
     m.b = (u16)buf;
     m.c = BLKSIZE;
     if (mk_callg(TID_DISK, &m, write ? GR_READ : GR_WRITE)) return E_IO;
@@ -163,8 +163,14 @@ int main(void)
             fs_closeall((u8)m.a);
             r.op = E_OK;
             break;
+        case FS_MOUNT:                                      /* a = drive, b = 0 mount, 1 umount, 2 is it mounted? */
+            if (m.b == 0) r.op = m.a ? fs_mount_drive((u8)m.a) : E_OK;
+            else if (m.b == 1) r.op = fs_umount((u8)m.a);
+            else { r.op = E_OK; r.a = (m.a == 0) || fs_mounted((u8)m.a); }
+            fs_select(0);
+            break;
         case FS_STATFS:
-            r.op = fs_statfs(&spc, &clusters, &freec);
+            r.op = fs_statfs((u8)m.a, &spc, &clusters, &freec);
             r.a = spc;
             r.b = clusters;
             r.c = freec;

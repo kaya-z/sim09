@@ -18,7 +18,8 @@ server finds the position in such a file without walking the FAT).  Names are co
 import argparse, os, struct, sys, time
 
 BLK = 512
-PART_START = 2048
+PART_START = 2048          # (--part-start)
+SMALL = False              # (--small: fewer than 4085 clusters allowed, for the 2HD floppy of the FM-11)
 
 
 def name83(name):
@@ -56,7 +57,7 @@ class Fat16:
             fatsz = need
         self.fatsz = fatsz
         self.ncl = ncl
-        if not (4085 <= ncl < 65525):
+        if not (SMALL and 16 <= ncl < 65525) and not (4085 <= ncl < 65525):
             sys.exit('mkdisk: %d clusters is not FAT16 (change --spc or --size-mb)' % ncl)
         self.fat_blk = self.rsvd
         self.root_blk = self.fat_blk + self.nfats * fatsz
@@ -155,12 +156,21 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('-o', '--output', required=True)
     ap.add_argument('--boot')
+    ap.add_argument('--ipl', help='code for the start of the MBR (FM-11: the boot ROM loads the first 512 bytes of the disk to $0400 and runs them; at most 446 bytes)')
     ap.add_argument('--size-mb', type=float, default=16)
     ap.add_argument('--spc', type=int, default=0, help='blocks per cluster (a power of 2 up to 64); 0: the smallest of 4, 8, ... 64 that makes the clusters fewer than 65525')
     ap.add_argument('--label', default='MK09')
+    ap.add_argument('--part-start', type=int, default=2048, help='first block of the volume (the boot image is in front of it)')
+    ap.add_argument('--total-blocks', type=int, default=0, help='the size of the whole disk in blocks (instead of --size-mb)')
+    ap.add_argument('--small', action='store_true', help='allow a volume with fewer than 4085 clusters (FAT16 layout, MK09 only)')
     ap.add_argument('tree')
     a = ap.parse_args()
+    global PART_START, SMALL
+    PART_START = a.part_start
+    SMALL = a.small
     vblocks = min(int(a.size_mb * 1024 * 1024) // BLK, 65524 * 64 + 600)
+    if a.total_blocks:
+        vblocks = a.total_blocks - PART_START
     spc = a.spc or 4
     while not a.spc and spc < 64 and vblocks // spc >= 65500:
         spc *= 2
@@ -170,6 +180,11 @@ def main():
     # MBR: partition 1
     mbr = bytearray(BLK)
     pe = struct.pack('<B3sB3sII', 0x80, b'\x00\x01\x01', 0x06, b'\xFE\xFF\xFF', PART_START, vblocks)
+    if a.ipl:
+        ipl = open(a.ipl, 'rb').read()
+        if len(ipl) > 0x1BE:
+            sys.exit('mkdisk: the IPL code does not fit before the partition table')
+        mbr[0:len(ipl)] = ipl
     mbr[0x1BE:0x1BE + 16] = pe
     mbr[510:512] = b'\x55\xAA'
     disk[0:BLK] = mbr

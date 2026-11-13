@@ -33,7 +33,11 @@ static struct { u8 h, t; u8 b[INQ]; } rxr;
 #define qt  rxr.t
 #define inq rxr.b
 static u8 mode = TM_DEFAULT;
+#ifdef BOARD_FM11
+static u8 charset = CS_SJIS;        /* the console of the FM-11 takes Shift_JIS */
+#else
 static u8 charset = CS_UTF8;
+#endif
 static u8 cols = 80, rows = 24;
 
 static u8 line[LINEMAX];            /* the line being edited / read */
@@ -49,9 +53,13 @@ static u16 rd_len;
 /* ------------------------------------------------------------------ */
 static void out(u8 c)
 {
+#ifdef BOARD_FM11
+    bsp_con_put(c);                     /* collected, sent to the display sub system by bsp_con_flush() before the server waits */
+#else
     while (!(ACIA_STATUS & ACIA_TDRE))
         ;
     ACIA_DATA = c;
+#endif
 }
 
 static void outc(u8 c)
@@ -319,9 +327,15 @@ int main(void)
     msg_t m;
     taskinfo_t ti;
 
+#ifdef BOARD_FM11
+    bsp_con_init();
+#endif
     mk_hook(NFY_TICK);          /* the tick, and NFY_RX of the receive interrupt (the kernel notifies the hook task) */
     mk_rxreg(rxr.b);            /* tell the kernel the ring: the receive interrupt is on from here */
     for (;;) {
+#ifdef BOARD_FM11
+        bsp_con_flush();
+#endif
         if (mk_recv(TID_ANY, &m)) continue;
         if (m.src == TID_HW) {
             pump();

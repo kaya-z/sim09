@@ -13,28 +13,49 @@ LWASM  := $(if $(CMOC_BIN),$(CMOC_BIN)/,)lwasm
 LWLINK := $(if $(CMOC_BIN),$(CMOC_BIN)/,)lwlink
 LWAR   := $(if $(CMOC_BIN),$(CMOC_BIN)/,)lwar
 PYTHON ?= python3 -X utf8
-B      ?= build
+# BOARD=sbc09 (default: sim09 / Tang Nano 9K) or BOARD=fm11 (FUJITSU FM-11, see fm11/README.md); the FM-11 is built in build-fm11
+BOARD  ?= sbc09
+# BOOTDEV=hd (default, the full system on the hard disk, 16MB) or 2hd (BOARD=fm11 only: a reduced system on the 2HD floppy disk, 1MB)
+BOOTDEV ?= hd
+B      ?= build$(if $(filter fm11,$(BOARD)),-fm11$(if $(filter 2hd,$(BOOTDEV)),-2hd))
+BSPDIR := bsp/$(BOARD)
+MEMMAP := $(if $(filter fm11,$(BOARD)),memmap_fm11.mk,memmap.mk)
 SIM    ?= ../sim09
 
 CMOCLIB := $(shell dirname "$$(command -v $(CMOC) 2>/dev/null)" 2>/dev/null)/../share/cmoc/lib
-INCS    := -Itests -Iinclude -Iarch/m6809 -Ibsp/sbc09 -Iapps/basic -I$(B)
+INCS    := -Itests -Iinclude -Iarch/m6809 -I$(BSPDIR) -Iapps/basic -I$(B)
 CFLAGS  := --lwasm=$(LWASM) --void-target --no-relocate -O2 -fomit-frame-pointer -Dmain=mk_main $(INCS)
 ASFLAGS := -fobj -I$(B) -Iinclude
+ifeq ($(BOARD),fm11)
+CFLAGS  += -DBOARD_FM11=1
+ASFLAGS += -DFM11=1
+ifeq ($(BOOTDEV),2hd)
+CFLAGS  += -DFM11_2HD=1
+endif
+endif
 
-vpath %.c kernel arch/m6809 bsp/sbc09 servers lib apps apps/jwp apps/basic
+vpath %.c kernel arch/m6809 $(BSPDIR) servers lib apps apps/jwp apps/basic
 vpath %.s arch/m6809 lib apps/basic servers
 
 # the addresses of the memory map (computed from the slot sizes in memmap.mk)
 -include $(B)/memmap.gen.mk
-HDRS := $(wildcard include/*.h arch/m6809/*.h bsp/sbc09/*.h) $(B)/memmap.h $(B)/memmap.inc $(B)/sysnum.inc $(B)/version.inc
+HDRS := $(wildcard include/*.h arch/m6809/*.h $(BSPDIR)/*.h) $(B)/memmap.h $(B)/memmap.inc $(B)/sysnum.inc $(B)/version.inc
 
+ifeq ($(BOARD),fm11)
+ifeq ($(BOOTDEV),2hd)
+all: $(B)/boot.img $(B)/ipl_2hd.bin $(B)/mk09_2hd.img
+else
+all: $(B)/boot.img $(B)/ipl_hdd.bin $(B)/mk09.img
+endif
+else
 all: $(B)/boot.img $(B)/bootrom.bin $(B)/mk09.img
+endif
 
 $(B):
 	mkdir -p $(B)
 
-$(B)/memmap.h $(B)/memmap.inc $(B)/memmap.gen.mk: memmap.mk tools/genmap.py | $(B)
-	$(PYTHON) tools/genmap.py memmap.mk $(B) $(MAPOVER)
+$(B)/memmap.h $(B)/memmap.inc $(B)/memmap.gen.mk: $(MEMMAP) tools/genmap.py | $(B)
+	$(PYTHON) tools/genmap.py $(MEMMAP) $(B) $(MAPOVER)
 
 $(B)/version.inc: include/version.h | $(B)
 	sed -n 's/^\#define \(MX_VERSION\)[ \t]*\([0-9]*\).*/\1\tequ\t\2/p' $< > $@
@@ -44,6 +65,11 @@ $(B)/sysnum.inc: include/sysnum.h | $(B)
 
 $(B)/%.o: %.c $(HDRS) $(wildcard apps/basic/*.h)
 	$(CMOC) -c $(CFLAGS) -o $@ $<
+
+# the FM-11 has 38KB for the programs (the I/O area $FC00-$FFFF is in the way): BASIC does not fit with its math functions, so it is built without them
+ifeq ($(BOARD),fm11)
+$(B)/basic.o: CFLAGS += -DNOMATH
+endif
 
 # BASIC without SIN COS TAN ATN EXP LOG SQR and non-integer powers (about 3.5 KB of code): room for a bigger program and bigger arrays
 #   make BASIC_NOMATH=1
@@ -56,6 +82,14 @@ $(B)/%.o: %.s $(HDRS)
 
 $(B)/bootrom.bin: boot/bootrom.s | $(B)
 	$(LWASM) --format=raw -o $@ $<
+
+# FM-11: the boot ROM of the machine loads 512 bytes from the hard disk (cylinder 0, head 0, sectors 0 and 1) to $0400 and jumps there
+$(B)/ipl_hdd.bin: boot/ipl_fm11_hdd.s $(B)/memmap.inc | $(B)
+	$(LWASM) --format=raw -I$(B) -o $@ $<
+
+# FM-11 2HD: the boot ROM reads the sectors 1-4 of track 0 side 0 (128 bytes each) to $0400 and jumps there
+$(B)/ipl_2hd.bin: boot/ipl_fm11_2hd.s | $(B)
+	$(LWASM) --format=raw -I$(B) -o $@ $<
 
 # ---- the library for the servers and programs ----
 SYSSTUBS := mk_send mk_recv mk_call mk_reply mk_notify mk_tinfo mk_tkill mk_callg mk_copyfrom mk_copyto mk_tload \
@@ -86,6 +120,13 @@ KERNEL_OBJS := $(B)/entry.o $(B)/arch.o $(B)/kernel.o $(B)/bsp.o
 endif
 TTY_OBJS    := $(B)/crt0.o $(B)/tty.o
 DISK_OBJS   := $(B)/crt0.o $(B)/disk.o
+ifeq ($(BOARD),fm11)
+TTY_OBJS    += $(B)/console.o
+DISK_OBJS   += $(B)/bsp_disk.o $(B)/fdc.o
+ifneq ($(BOOTDEV),2hd)
+DISK_OBJS   += $(B)/mdc.o
+endif
+endif
 FS_OBJS     := $(B)/crt0.o $(B)/fs.o $(B)/fs_core.o $(B)/rtc.o
 PM_OBJS     := $(B)/crt0.o $(B)/pm.o
 MM_OBJS     := $(B)/mm.o
@@ -93,7 +134,7 @@ MM_OBJS     := $(B)/mm.o
 LINK = $(LWLINK) --format=srec --script=$(B)/$(1).link --map=$(B)/$(1).map -o $$@ $$($(2)_OBJS) -L$(B) -lmk -L$(CMOCLIB) -lcmoc-crt-void -lcmoc-std-void
 
 define SYSMOD
-$(B)/$(1).link: memmap.mk tools/mklink.py | $(B)
+$(B)/$(1).link: $(MEMMAP) tools/mklink.py | $(B)
 	$(PYTHON) tools/mklink.py $$($(2)_CODE) $$($(2)_DATA) $$($(2)_START) > $$@
 $(B)/$(1).s19: $$($(2)_OBJS) $(B)/libmk.a $(B)/$(1).link tools/chkmap.py
 	$(call LINK,$(1),$(2))
@@ -121,6 +162,14 @@ SYSMODS := kernel tty disk fs pm mm
 
 # ---- programs (MX executables): apps/NAME.c -> build/NAME.mx ----
 APPS      := sh as cpp cc1 cg cc pas0 pas1 pmsg pc ls cat echo stty cp mv rm mkdir date df ps hd wc spin stk fstest faults ipcbench dhry more grep life basic kill mem reboot sfptest jwp
+# the 2HD floppy disk of the FM-11 (1MB): the programs that fit, without jwp (and its dictionary) and the test programs
+ifeq ($(BOARD),fm11)
+APPS      += format mount umount
+endif
+ifeq ($(BOOTDEV),2hd)
+APPS      := sh as cpp cc1 cg cc pas0 pas1 pmsg pc ls cat echo stty cp mv rm mkdir date df ps hd wc more grep kill mem reboot basic format mount umount
+SKKJISYO  :=
+endif
 STACK_sh  := 640
 STACK_jwp := 1200
 STACK_basic := 1500
@@ -138,8 +187,9 @@ OBJS_sfptest := $(B)/sfpa.o
 
 # jwp: the character set of the console and of the dictionary (utf8, euc or sjis) and the size
 # of the text buffer
-CHARSET   ?= utf8
-JWP_BUF   ?= 11500
+CHARSET   ?= $(if $(filter fm11,$(BOARD)),sjis,utf8)
+# (the FM-11 has 156 pages for programs, 8 fewer than the sbc09: a smaller text buffer)
+JWP_BUF   ?= $(if $(filter fm11,$(BOARD)),7500,11500)
 JWP_OPT   ?= -fomit-frame-pointer
 APPBASE    = $(or $(BASE_$(1)),$(TPA_BASE))
 APPSTACK   = $(or $(STACK_$(1)),512)
@@ -148,9 +198,9 @@ APPLIBS   := -L$(B) -lmk -L$(CMOCLIB) -lcmoc-crt-void -lcmoc-std-void
 define APP
 $(B)/crt0app_$(1).o: crt0app.s $(HDRS)
 	$(LWASM) $(ASFLAGS) -DSTACKSZ=$(call APPSTACK,$(1)) -DMXFLAGS=$(or $(FLAGS_$(1)),0) -o $$@ $$<
-$(B)/$(1).link: memmap.mk tools/mklink.py | $(B)
+$(B)/$(1).link: $(MEMMAP) tools/mklink.py | $(B)
 	$(PYTHON) tools/mklink.py $(TPA_BASE) > $$@
-$(B)/$(1).link2: memmap.mk tools/mklink.py | $(B)
+$(B)/$(1).link2: $(MEMMAP) tools/mklink.py | $(B)
 	$(PYTHON) tools/mklink.py $$$$(printf '%X' $$$$((0x$(TPA_BASE) + 256))) > $$@
 # the program is linked twice, 256 bytes apart; tools/mkmx.py makes the relocation table from the difference
 $(B)/$(1).mx: $(B)/crt0app_$(1).o $(B)/$(1).o $(OBJS_$(1)) $(B)/libmk.a $(B)/$(1).link $(B)/$(1).link2 tools/mkmx.py
@@ -215,8 +265,15 @@ $(B)/tree.stamp: $(foreach a,$(APPS),$(B)/$(a).mx) $(wildcard disk/etc/* disk/do
 	iconv -f UTF-8 -t $(ICONV_$(CHARSET)) disk/doc/guide.txt > $(TREE)/doc/guide.txt
 	touch $@
 
-$(B)/mk09.img: $(B)/boot.img $(B)/tree.stamp tools/mkdisk.py
-	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img --size-mb $(DISK_MB) $(TREE)
+$(B)/mk09.img: $(B)/boot.img $(B)/tree.stamp tools/mkdisk.py $(if $(filter fm11,$(BOARD)),$(B)/ipl_hdd.bin)
+	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img $(if $(filter fm11,$(BOARD)),--ipl $(B)/ipl_hdd.bin) --size-mb $(DISK_MB) $(TREE)
+
+# the 2HD floppy disk image of the FM-11 (1021696 bytes, FDD_2HD_256 of the simulator): track 0 side 0 (26 sectors of 128 bytes) holds the
+# IPL, the 3978 sectors of 256 bytes behind it are the MK09 disk: MBR, boot image, a small FAT16 volume
+$(B)/mk09_disk2hd.img: $(B)/boot.img $(B)/tree.stamp tools/mkdisk.py
+	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img --part-start 48 --total-blocks 1989 --spc 4 --small $(TREE)
+$(B)/mk09_2hd.img: $(B)/mk09_disk2hd.img $(B)/ipl_2hd.bin tools/mk2hd.py
+	$(PYTHON) tools/mk2hd.py -o $@ --ipl $(B)/ipl_2hd.bin $(B)/mk09_disk2hd.img
 
 DISK_MB ?= 16
 
