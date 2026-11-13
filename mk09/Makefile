@@ -70,6 +70,7 @@ $(B)/%.o: %.c $(HDRS) $(wildcard apps/basic/*.h)
 # functions, with a smaller program (1200 bytes) and fewer array elements (120), and a smaller stack
 ifeq ($(BOARD),fm11)
 $(B)/basic.o: CFLAGS += -DNOMATH -DPGM=1200 -DAPOOL=120
+$(B)/basic.o $(B)/jwp.o: Makefile      # (the sizes are in the flags: build again when they change)
 STACK_basic = 1100
 endif
 
