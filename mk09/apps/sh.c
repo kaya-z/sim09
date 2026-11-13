@@ -149,6 +149,8 @@ static int run(int n, char **args, char *in, char *out, u8 append)
     return r;
 }
 
+#define INTR 130                                    /* the status of a program that ^C stopped (PM): the rest of a pipeline or of a script is dropped */
+
 static int execute(char *s);
 
 /* a | b | c: every stage runs to its end, the next one reads what it wrote (two files in turn).  (The pipes of the YSD9000 port of MK09.) */
@@ -192,7 +194,7 @@ static int pipeline(char *s)
             append = 0;
         }
         r = run(n, args, in, out, append);
-        if (r == 126 || r == 127) break;            /* (the program did not start) */
+        if (r == 126 || r == 127 || r == INTR) break;   /* (the program did not start, or ^C stopped it: the other stages do not run) */
     }
     unlink(pipef[0]);
     unlink(pipef[1]);
@@ -201,7 +203,7 @@ static int pipeline(char *s)
 
 static int do_source(const char *file)
 {
-    int fd = open(file, FO_READ), r, i, k = 0;
+    int fd = open(file, FO_READ), r, i, k = 0, x = 0;
     char buf[64];
     char ln[LINEMAX];
     u8 c;
@@ -212,18 +214,20 @@ static int do_source(const char *file)
     for (;;) {
         r = read(fd, buf, sizeof(buf));
         if (r <= 0) break;
-        for (i = 0; i < r; i++) {
+        for (i = 0; i < r && x != INTR; i++) {
             c = (u8)buf[i];
             if (c == '\n' || c == '\r') {
-                if (k) { ln[k] = 0; k = 0; execute(ln); }
+                if (k) { ln[k] = 0; k = 0; x = execute(ln); }
             } else if (k < LINEMAX - 2) {
                 ln[k++] = c;
             }
         }
+        if (x == INTR) break;
     }
-    if (k) { ln[k] = 0; execute(ln); }
+    if (k && x != INTR) { ln[k] = 0; x = execute(ln); }
     close(fd);
     depth--;
+    if (x == INTR) return INTR;                     /* (not ?: here: CMOC makes 130 a signed byte) */
     return 0;
 }
 
@@ -266,7 +270,8 @@ static int execute(char *s)
         if (n < 2) { puts("usage: source file"); return 1; }
         r = do_source(args[1]);
         if (r < 0) err(args[1], r);
-        return r < 0;
+        if (r < 0) return 1;
+        return r;                                   /* (INTR: ^C ends the nested scripts too) */
     case 7:                                         /* shutdown */
     case 8:
         shutdown();
