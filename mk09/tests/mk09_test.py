@@ -135,11 +135,11 @@ check(re.search(r'^\s*5 receive\s+1\s+[0-9a-f]{4}-[0-9a-f]{4}', out, re.M) is no
 out, rc = run(disk, BOOT + sh('stk', prompt=P) + OFF)
 rows = re.findall(r'^\s*([1-5]) [0-9a-f]{4}-[0-9a-f]{4}\s+(\d+) \(the run ends', out, re.M)
 check(len(rows) == 5 and all(int(r[1]) >= 10 for r in rows), 'stk: the five servers (TTY DISK FS PM MM) have some unused stack left', out[-600:])
-check('MK09 1.36: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
+check('MK09 1.37: kernel TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
 
 # ---- reboot: the files are written, the system starts again (the banner twice), the file is there
 out, rc = run(disk, BOOT + sh('cp /ETC/RC.SH /RB.TXT', 'reboot', 'cat /RB.TXT', 'rm /RB.TXT', prompt=P) + OFF)
-check(out.count('MK09 1.36: kernel TTY DISK FS PM MM') == 2 and 'stty utf8' in out.split('type help')[-1], 'reboot writes the files and starts the system again', out[-700:])
+check(out.count('MK09 1.37: kernel TTY DISK FS PM MM') == 2 and 'stty utf8' in out.split('type help')[-1], 'reboot writes the files and starts the system again', out[-700:])
 
 # ---- -v: the version and the copyright of the compilers and the assembler
 tools = ('as', 'cpp', 'cc1', 'cg', 'cc', 'pas0', 'pas1', 'pc')
@@ -172,6 +172,10 @@ ps2 = out.split('/> ps')[1].split('/> ')[0]
 check(re.search(r'^\s*7 ready\s+4\s', ps2, re.M) is not None and re.search(r'^\s*8 running\s+4\s', ps2, re.M) is not None and re.search(r'^\s*9 ', ps2, re.M) is None,
       '^C stops the foreground program only; the background one goes on', ps2)
 check(out.count('typed') >= 2 and 'cat:' not in out, 'a background program cannot read the console (the shell keeps the keyboard)', out[-500:])
+
+# ---- more without a file and without a pipe: usage, and the shell is back
+out, rc = run(disk, BOOT + sh('more', 'echo back-again', prompt=P) + OFF)
+check('usage: more' in out and 'back-again' in out.split('usage: more')[1], 'more alone prints the usage and the shell is back (it did not wait for keys)', out[-400:])
 
 # ---- ^C also drops the rest of a script and of a pipeline
 steps = BOOT + ['send "echo spin > S.SH\\r"', 'expect "%s"' % P, 'send "echo echo after-script >> S.SH\\r"', 'expect "%s"' % P,

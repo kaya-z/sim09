@@ -66,6 +66,7 @@
  *   1.23 2026-10-29  reboot (a program); PM loads a program with ONE request: FS_READTL, FS reads the file into the memory of the new task itself (FS is privileged for
  *                    tload); the code slots of TTY and FS were adjusted (cwidth is shorter).  hello.pas: 19M cycles.
  *   1.24 2026-10-29  -v prints the version and the copyright (as cpp cc1 cg cc pas0 pas1 pc); cc and pc print the command lines with -V now.
+ *   1.37 2026-11-14  more 1.1: `more` alone (the standard input is the console) prints the usage and ends; it used to read the keys as the text and there was no way back to the shell.
  *   1.36 2026-11-14  the shell: ^C drops the rest of a script (source) and of a pipeline, not only the program that runs (the status 130 of a program that PM stopped).
  *   1.35 2026-11-13  the FM-11 port (BOARD=fm11, bsp/fm11, fm11/, memmap_fm11.mk; 2HD floppy and hard disk boot) and its commands `format` (low level format of a 2HD floppy: DISK_FORMAT) and `mount` / `umount` (the floppy disks 1-4 as "N:/path": FS_MOUNT, FS_STATFS with a drive, df N).  Backported from the port; the code for several volumes is compiled only for BOARD_FM11 (the FS slot of the sbc09 is full: TPA_BASE stays $3C00).
  *   1.34 2026-11-13  `mem` shows the memory map of the machine (the slots of the system code, the transient area, the I/O page, the high memory) and the memory of the programs in KB: total, used, free (mem 1.1).  No system change (TPA_BASE stays $3C00).
@@ -92,7 +93,7 @@
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.36"
+#define MK09_VERSION    "1.37"
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif
