@@ -33,6 +33,7 @@
 #define DMA_CFG     (*(u8 *)0xFD56)
 #define DMA_CLR     (*(u8 *)0xFD57)
 
+static u8 dmabank;                      /* the physical address bits 19-16 of the DMA (0: the memory is below 64KB) */
 static u8 curtrk[4];                    /* the track of each unit's head (the controller has one track register) */
 static u8 curunit = 0xFF;
 
@@ -97,7 +98,7 @@ static void dma(u16 a, u16 n, u8 mode)
     DMA_ADR_L = (u8)a;
     DMA_CNT_H = (u8)(n >> 8);
     DMA_CNT_L = (u8)n;
-    DMA_BANK = 0;
+    DMA_BANK = dmabank;
     DMA_MODE = mode;
 }
 
@@ -133,7 +134,7 @@ u8 fdc_sector_io(u8 unit, u8 hi, u8 mid, u8 lo, u8 *buf, u8 write)
 }
 
 /* write one track side: the track image (gaps, address marks, data) goes to the controller by DMA */
-u8 fdc_format_track(u8 unit, u8 track, u8 side, u8 *buf, u16 len)
+u8 fdc_format_track(u8 unit, u8 track, u8 side, u16 addr, u8 bank, u16 len)
 {
     u8 tries, st;
 
@@ -146,7 +147,9 @@ u8 fdc_format_track(u8 unit, u8 track, u8 side, u8 *buf, u16 len)
         if (curtrk[unit] != track && seek(unit, track))
             continue;
         FDC_SIDE = side;                /* (bit 4 and bit 6 = 0: MFM) */
-        dma((u16)buf, len, 0x05);
+        dmabank = bank;
+        dma(addr, len, 0x05);
+        dmabank = 0;
         FDC_CMD = 0xF0;                 /* write track */
         if (done())
             continue;

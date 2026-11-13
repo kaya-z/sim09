@@ -17,9 +17,14 @@ PYTHON ?= python3 -X utf8
 BOARD  ?= sbc09
 # BOOTDEV=hd (default, the full system on the hard disk, 16MB) or 2hd (BOARD=fm11 only: a reduced system on the 2HD floppy disk, 1MB)
 BOOTDEV ?= hd
-B      ?= build$(if $(filter fm11,$(BOARD)),-fm11$(if $(filter 2hd,$(BOOTDEV)),-2hd))
+# LEVEL=2 (default; BOARD=fm11 only): the MMU extension of the FM-11, every program has its own address space (kernel/arch, docs in fm11/README.md);
+# LEVEL=1: no MMU, one flat 64KB.  Programs that do not fit into the memory of the level are left out of the disk image (tools/fitapps.py).
+ifeq ($(BOARD),fm11)
+LEVEL  ?= 2
+endif
+B      ?= build$(if $(filter fm11,$(BOARD)),-fm11-l$(LEVEL)$(if $(filter 2hd,$(BOOTDEV)),-2hd))
 BSPDIR := bsp/$(BOARD)
-MEMMAP := $(if $(filter fm11,$(BOARD)),memmap_fm11.mk,memmap.mk)
+MEMMAP := $(if $(filter fm11,$(BOARD)),$(if $(filter 2,$(LEVEL)),memmap_fm11_l2.mk,memmap_fm11.mk),memmap.mk)
 SIM    ?= ../sim09
 
 CMOCLIB := $(shell dirname "$$(command -v $(CMOC) 2>/dev/null)" 2>/dev/null)/../share/cmoc/lib
@@ -32,11 +37,19 @@ ASFLAGS += -DFM11=1
 ifeq ($(BOOTDEV),2hd)
 CFLAGS  += -DFM11_2HD=1
 endif
+ifeq ($(LEVEL),2)
+CFLAGS  += -DFM11_MMU=1
+ASFLAGS += -DMMU=1
+endif
 endif
 
 vpath %.c kernel arch/m6809 $(BSPDIR) servers lib apps apps/jwp apps/basic
 vpath %.s arch/m6809 lib apps/basic servers
 
+# the memory of the programs, in pages of 256 bytes: Level 1: the transient area TPA_BASE .. TPA_END; Level 2: the user area of 13 pages of 4KB ($2000-$EFFF)
+# the address that the programs are linked at (they are relocatable: Level 2 loads every one at $2000 of its own address space)
+APPLINK = $(if $(filter 2,$(LEVEL)),2000,$(TPA_BASE))
+USERPAGES = $(if $(filter 2,$(LEVEL)),208,$(shell printf '%d' $$(( (0x$(TPA_END) - 0x$(TPA_BASE)) / 256 ))))
 # the addresses of the memory map (computed from the slot sizes in memmap.mk)
 -include $(B)/memmap.gen.mk
 HDRS := $(wildcard include/*.h arch/m6809/*.h $(BSPDIR)/*.h) $(B)/memmap.h $(B)/memmap.inc $(B)/sysnum.inc $(B)/version.inc
@@ -66,12 +79,14 @@ $(B)/sysnum.inc: include/sysnum.h | $(B)
 $(B)/%.o: %.c $(HDRS) $(wildcard apps/basic/*.h)
 	$(CMOC) -c $(CFLAGS) -o $@ $<
 
-# the FM-11 has 37KB (145 pages) for the programs (the I/O area $FC00-$FFFF is in the way, the servers are bigger): BASIC is built without its math
-# functions, with a smaller program (1200 bytes) and fewer array elements (120), and a smaller stack
+# FM-11 Level 1 has 37KB (145 pages) for the programs (the I/O area $FC00-$FFFF is in the way, the servers are bigger): BASIC is built without its math
+# functions, with a smaller program (1200 bytes) and fewer array elements (120), and a smaller stack.  (Level 2: the programs have 52KB: the full BASIC and jwp)
 ifeq ($(BOARD),fm11)
-$(B)/basic.o: CFLAGS += -DNOMATH -DPGM=1200 -DAPOOL=120
 $(B)/basic.o $(B)/jwp.o: Makefile      # (the sizes are in the flags: build again when they change)
+ifeq ($(LEVEL),1)
+$(B)/basic.o: CFLAGS += -DNOMATH -DPGM=1200 -DAPOOL=120
 STACK_basic = 1100
+endif
 endif
 
 # BASIC without SIN COS TAN ATN EXP LOG SQR and non-integer powers (about 3.5 KB of code): room for a bigger program and bigger arrays
@@ -126,13 +141,20 @@ DISK_OBJS   := $(B)/crt0.o $(B)/disk.o
 ifeq ($(BOARD),fm11)
 TTY_OBJS    += $(B)/console.o
 DISK_OBJS   += $(B)/bsp_disk.o $(B)/fdc.o
+ifeq ($(LEVEL),2)
+DISK_OBJS   += $(B)/fmtimg.o
+endif
 ifneq ($(BOOTDEV),2hd)
 DISK_OBJS   += $(B)/mdc.o
 endif
 endif
 FS_OBJS     := $(B)/crt0.o $(B)/fs.o $(B)/fs_core.o $(B)/rtc.o
 PM_OBJS     := $(B)/crt0.o $(B)/pm.o
+ifeq ($(LEVEL),2)
+MM_OBJS     := $(B)/crt0.o $(B)/mm2.o
+else
 MM_OBJS     := $(B)/mm.o
+endif
 
 LINK = $(LWLINK) --format=srec --script=$(B)/$(1).link --map=$(B)/$(1).map -o $$@ $$($(2)_OBJS) -L$(B) -lmk -L$(CMOCLIB) -lcmoc-crt-void -lcmoc-std-void
 
@@ -154,12 +176,12 @@ KERNEL_DSZ  := $(K_DSZ)
 ifeq ($(KERNEL),asm)
 KERNEL_START := $(TPA_BASE)
 endif
-$(eval $(call SYSMOD,kernel,KERNEL,0))
+$(eval $(call SYSMOD,kernel,KERNEL,$(if $(filter 2,$(LEVEL)),90,0)))
 $(eval $(call SYSMOD,tty,TTY,B4))
 $(eval $(call SYSMOD,disk,DISK,82))
 $(eval $(call SYSMOD,fs,FS,140))
 $(eval $(call SYSMOD,pm,PM,C8))
-$(eval $(call SYSMOD,mm,MM,30))
+$(eval $(call SYSMOD,mm,MM,$(if $(filter 2,$(LEVEL)),B4,30)))
 
 SYSMODS := kernel tty disk fs pm mm
 
@@ -192,7 +214,7 @@ OBJS_sfptest := $(B)/sfpa.o
 # of the text buffer
 CHARSET   ?= $(if $(filter fm11,$(BOARD)),sjis,utf8)
 # (the FM-11 has 156 pages for programs, 8 fewer than the sbc09: a smaller text buffer)
-JWP_BUF   ?= $(if $(filter fm11,$(BOARD)),7500,11500)
+JWP_BUF   ?= $(if $(filter fm11,$(BOARD)),$(if $(filter 1,$(LEVEL)),7500,11500),11500)
 JWP_OPT   ?= -fomit-frame-pointer
 APPBASE    = $(or $(BASE_$(1)),$(TPA_BASE))
 APPSTACK   = $(or $(STACK_$(1)),512)
@@ -202,9 +224,9 @@ define APP
 $(B)/crt0app_$(1).o: crt0app.s $(HDRS)
 	$(LWASM) $(ASFLAGS) -DSTACKSZ=$(call APPSTACK,$(1)) -DMXFLAGS=$(or $(FLAGS_$(1)),0) -o $$@ $$<
 $(B)/$(1).link: $(MEMMAP) tools/mklink.py | $(B)
-	$(PYTHON) tools/mklink.py $(TPA_BASE) > $$@
+	$(PYTHON) tools/mklink.py $(APPLINK) > $$@
 $(B)/$(1).link2: $(MEMMAP) tools/mklink.py | $(B)
-	$(PYTHON) tools/mklink.py $$$$(printf '%X' $$$$((0x$(TPA_BASE) + 256))) > $$@
+	$(PYTHON) tools/mklink.py $$$$(printf '%X' $$$$((0x$(APPLINK) + 256))) > $$@
 # the program is linked twice, 256 bytes apart; tools/mkmx.py makes the relocation table from the difference
 $(B)/$(1).mx: $(B)/crt0app_$(1).o $(B)/$(1).o $(OBJS_$(1)) $(B)/libmk.a $(B)/$(1).link $(B)/$(1).link2 tools/mkmx.py
 	$(LWLINK) --format=raw --script=$(B)/$(1).link --map=$(B)/$(1).map -o $(B)/$(1).raw1 $(B)/crt0app_$(1).o $(B)/$(1).o $(OBJS_$(1)) $(APPLIBS)
@@ -261,7 +283,14 @@ TREE := $(B)/tree
 $(B)/tree.stamp: $(foreach a,$(APPS),$(B)/$(a).mx) $(wildcard disk/etc/* disk/doc/* disk/bas/* disk/asm/* disk/inc/* disk/pas/*) $(if $(HAVE_SKK),$(B)/skk_$(CHARSET).dic) $(B)/clib.obj $(B)/rt.obj $(B)/cc1.msg $(B)/pas1.msg lib/cc/start.s Makefile
 	rm -rf $(TREE); mkdir -p $(TREE)/bin $(TREE)/etc $(TREE)/doc $(TREE)/bas $(TREE)/asm $(TREE)/inc $(TREE)/pas $(TREE)/lib $(TREE)/skk
 	cp lib/cc/start.s $(TREE)/lib/start.s; cp $(B)/cc1.msg $(TREE)/lib/cc1.msg; cp $(B)/pas1.msg $(TREE)/lib/pas1.msg; cp $(B)/clib.obj $(B)/clib.idx $(B)/rt.obj $(B)/rt.idx $(TREE)/lib/
+ifeq ($(BOARD),fm11)
+	# the programs that fit the memory of this level (tools/fitapps.py); the files of the C compiler and of Pascal only with their programs
+	for a in $$($(PYTHON) tools/fitapps.py $(USERPAGES) $(foreach a,$(APPS),$(B)/$(a).mx)); do cp $(B)/$$a.mx $(TREE)/bin/$$a.mx; done
+	if [ ! -f $(TREE)/bin/cc1.mx ] || [ ! -f $(TREE)/bin/cg.mx ]; then rm -f $(TREE)/lib/clib.obj $(TREE)/lib/clib.idx $(TREE)/lib/rt.obj $(TREE)/lib/rt.idx $(TREE)/lib/cc1.msg $(TREE)/lib/start.s; fi
+	if [ ! -f $(TREE)/bin/pas1.mx ]; then rm -f $(TREE)/lib/pas1.msg; fi
+else
 	for a in $(APPS); do cp $(B)/$$a.mx $(TREE)/bin/$$a.mx; done
+endif
 	for d in etc doc bas asm inc pas; do if [ -d disk/$$d ] && [ -n "$$(ls disk/$$d)" ]; then cp disk/$$d/* $(TREE)/$$d/; fi; done
 	printf '# /ETC/RC.SH - run by the shell when the system starts\nstty $(CHARSET)\n' > $(TREE)/etc/rc.sh
 	if [ -n "$(HAVE_SKK)" ]; then cp $(B)/skk_$(CHARSET).dic $(TREE)/skk/skk.dic; fi
@@ -274,7 +303,7 @@ $(B)/mk09.img: $(B)/boot.img $(B)/tree.stamp tools/mkdisk.py $(if $(filter fm11,
 # the 2HD floppy disk image of the FM-11 (1021696 bytes, FDD_2HD_256 of the simulator): track 0 side 0 (26 sectors of 128 bytes) holds the
 # IPL, the 3978 sectors of 256 bytes behind it are the MK09 disk: MBR, boot image, a small FAT16 volume
 $(B)/mk09_disk2hd.img: $(B)/boot.img $(B)/tree.stamp tools/mkdisk.py
-	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img --part-start 48 --total-blocks 1989 --spc 4 --small $(TREE)
+	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img --part-start $(if $(filter 2,$(LEVEL)),56,48) --total-blocks 1989 --spc 4 --small $(TREE)
 $(B)/mk09_2hd.img: $(B)/mk09_disk2hd.img $(B)/ipl_2hd.bin tools/mk2hd.py
 	$(PYTHON) tools/mk2hd.py -o $@ --ipl $(B)/ipl_2hd.bin $(B)/mk09_disk2hd.img
 

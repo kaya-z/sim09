@@ -26,7 +26,11 @@
 KDP	equ	K_DATA/256
 
 NTASK	equ	11
+	ifdef	MMU
+TSZ	equ	75
+	else
 TSZ	equ	36
+	endc
 FRAME	equ	12
 QUANTUM	equ	2
 PRIO_IDLE equ	7
@@ -83,6 +87,21 @@ T_GPTR	equ	20
 T_GLEN	equ	22
 T_CPU	equ	24
 T_MSG	equ	26
+	ifdef	MMU
+* Level 2 (the MMU of the FM-11): the frame of a task that has trapped is kept in its table entry (T_FRM; the task's stack is in its own
+* address space and cannot be reached from another one), a message for a task that waits for it is kept in T_RMSG (T_PEND = 1) until the task runs
+* again, and T_MAP is the physical page of each of its 16 logical pages of 4KB (the map set of the task is the one with its number)
+T_FRM	equ	36
+T_RMSG	equ	48
+T_PEND	equ	58
+T_MAP	equ	59
+FM_TASK	equ	$FD90			the map set in use (0-15)
+FM_MMR	equ	$FD80			its 16 registers: the physical page of the logical page 0-15
+FM_MCFG	equ	$FD93			bit 7 MMU on, bit 6 the window at $7C00-$7FFF, bit 0 boot ROM off
+FM_WIN1	equ	$FD91			the window: physical address bits 19-16
+FM_WIN2	equ	$FD92			and bits 15-8 (the window shows the address (FM_WIN2 * 256 + $7C00 + n))
+WINLOG	equ	$7C00
+	endc
 M_SRC	equ	0
 M_B	equ	4
 M_C	equ	6
@@ -137,13 +156,25 @@ ubuf	rmb	2
 tmpw	rmb	2
 tmpw2	rmb	2
 kmsg	rmb	MSGSZ			a message being built (also the taskinfo)
+	ifdef	MMU
+tcb	rmb	27			the block of a task creation (+ the 16 physical pages of its map)
+	else
 tcb	rmb	11			the block of a task creation
+	endc
 kernel_dp_end equ *
 tasks	rmb	NTASK*TSZ
 rrlast	rmb	2			the server / the program that ran last (round robin)
 idlestk	rmb	64
 kstack	rmb	96
 kstk_top equ	*
+	ifdef	MMU
+xp	rmb	2			xcopy: the table entry of the other task
+xa	rmb	2			its address
+xc	rmb	2			the address of the caller's memory
+xn	rmb	2			the bytes to go
+xm	rmb	1			GR_READ: from the other task, GR_WRITE: to it
+xbuf	rmb	256			(the window and the caller's memory are not in sight together)
+	endc
 	endsection
 
 * ================================================================================ start
@@ -205,6 +236,9 @@ _start	orcc	#$50
 	leay	9,y
 	bra	@bt
 @btdone
+	ifdef	MMU
+	lbsr	mmuinit
+	endc
 	ifdef	FM11
 * PTM: reset, timer 2 = 16 bit, continuous, internal clock (E = 2 MHz), interrupt on, 40000 counts = 50 Hz
 	lda	#$01
@@ -263,7 +297,11 @@ boottab	fcb	0,PRIO_IDLE,0
 mkframe	pshs	d,x,y,u
 	subd	#FRAME
 	std	T_SP,x
+	ifdef	MMU
+	leax	T_FRM,x			(the frame is written to the stack when the task runs: dispatch)
+	else
 	tfr	d,x
+	endc
 	lda	#$80			CC: E flag, interrupts enabled
 	sta	F_CC,x
 	clr	F_A,x
@@ -293,6 +331,10 @@ swi_entry
 	stu	T_SP,y
 	lbsr	chkstack
 	lbcs	sched
+	ifdef	MMU
+	lbsr	getframe
+	stu	<frm
+	endc
 	ldb	F_A,u			the number of the call
 	cmpb	#16
 	blo	@ok
@@ -326,6 +368,10 @@ irq_entry
 	stu	<frm
 	ldy	<curp
 	stu	T_SP,y
+	ifdef	MMU
+	lbsr	getframe
+	stu	<frm
+	endc
 	lbsr	rxdrain			the console (the IRQ line is shared with the timer)
 	ifndef	FM11
 	lda	DCTL			the disk: a command has finished and the interrupt is on?
@@ -392,7 +438,11 @@ irq_entry
 	beq	@out
 	lbsr	notify
 @out	ldy	<curp
+	ifdef	MMU
+	ldu	T_SP,y
+	else
 	ldu	<frm
+	endc
 	bsr	chkstack
 
 * sched: run the best task: S := its frame, RTI
@@ -418,6 +468,9 @@ sched	tst	<resched
 	addd	#tasks
 	std	<curp
 @go	ldy	<curp
+	ifdef	MMU
+	lbsr	dispatch
+	endc
 	ldd	T_SP,y
 	tfr	d,s
 trap_ret
@@ -510,6 +563,181 @@ scan	std	<tmpw			A = the last task of the class, B = the first
 	puls	b,pc
 
 * ------------------------------------------------------------------------ helpers
+	ifdef	MMU
+* getframe: Y = the task, U = its frame on its stack: the frame is copied to the table entry; U = the copy
+getframe
+	ldd	0,u
+	std	T_FRM,y
+	ldd	2,u
+	std	T_FRM+2,y
+	ldd	4,u
+	std	T_FRM+4,y
+	ldd	6,u
+	std	T_FRM+6,y
+	ldd	8,u
+	std	T_FRM+8,y
+	ldd	10,u
+	std	T_FRM+10,y
+	leau	T_FRM,y
+	rts
+
+* dispatch: Y = the task that runs now: select its map set, put its frame on its stack, give it a message that waited for it
+dispatch
+	lda	<cur
+	sta	FM_TASK
+	ldu	T_SP,y
+	ldd	T_FRM,y
+	std	0,u
+	ldd	T_FRM+2,y
+	std	2,u
+	ldd	T_FRM+4,y
+	std	4,u
+	ldd	T_FRM+6,y
+	std	6,u
+	ldd	T_FRM+8,y
+	std	8,u
+	ldd	T_FRM+10,y
+	std	10,u
+	tst	T_PEND,y
+	beq	@r
+	clr	T_PEND,y
+	ldu	T_UBUF,y
+	leax	T_RMSG,y
+	lbsr	copymsg
+@r	rts
+
+* mmuinit: the map sets of the idle task and of the servers (tasks 0-5) are the identity: the flat memory of Level 1.  Then the MMU is switched on.
+* (the set of the disk server also has the 3 pages of its track buffer: logical $9000-$BFFF = the physical pages BOUNCE..)
+mmuinit	clrb				every set maps the pages 0 and 1 (the kernel) as they are
+@all	stb	FM_TASK
+	clr	FM_MMR
+	lda	#1
+	sta	FM_MMR+1
+	incb
+	cmpb	#16
+	blo	@all
+	clrb
+@set	stb	FM_TASK
+	pshs	b
+	lda	#TSZ
+	mul
+	addd	#tasks+T_MAP
+	tfr	d,u
+	ldx	#FM_MMR
+	clra
+@pg	sta	,x+
+	sta	,u+
+	inca
+	cmpa	#16
+	bne	@pg
+	puls	b
+	cmpb	#TID_DISK
+	bne	@nd
+	lda	#BOUNCE
+	sta	FM_MMR+9
+	inca
+	sta	FM_MMR+10
+	inca
+	sta	FM_MMR+11
+@nd	incb
+	cmpb	#TID_MM+1
+	blo	@set
+	clr	FM_TASK
+	lda	#$81
+	sta	FM_MCFG
+	rts
+
+* xcopy: copy xn bytes between the caller's memory (xc) and the memory of the task xp (xa, a logical address in its map): xm = GR_READ: from the
+* other task, GR_WRITE: to it.  The other memory is reached through the window at $7C00 (a physical address chosen with FM_WIN1 / FM_WIN2),
+* 256 bytes at most at a time (never across a page of the other map), through xbuf.
+xcopy	ldd	xn
+	lbeq	@done
+	lda	xa			the logical page of the other task's address
+	lsra
+	lsra
+	lsra
+	lsra
+	ldx	xp
+	leax	T_MAP,x
+	lda	a,x			A = its physical page
+	tfr	a,b
+	lsra
+	lsra
+	lsra
+	lsra
+	sta	FM_WIN1			physical address bits 19-16
+	andb	#$0F
+	aslb
+	aslb
+	aslb
+	aslb				B = (page & 15) << 4
+	lda	xa
+	anda	#$0F
+	pshs	a
+	orb	,s+			B = bits 15-8 of the physical address
+	subb	#WINLOG/256		the window shows FM_WIN2 * 256 + $7C00 + n
+	stb	FM_WIN2
+	ldb	xa+1			B = the offset in the 256 byte block
+	clra
+	pshs	d			(offset)
+	negb
+	bne	@nz			256 - offset
+	ldd	#256
+	bra	@l1
+@nz	clra
+@l1	cmpd	xn
+	bls	@ok
+	ldd	xn
+@ok	pshs	d			(count, offset below)
+	lda	xm
+	cmpa	#GR_WRITE
+	beq	@wr
+* from the other task: the window to xbuf, then xbuf to the caller's memory
+	lda	#$C1
+	sta	FM_MCFG			window on
+	ldd	2,s
+	addd	#WINLOG
+	tfr	d,x
+	ldu	#xbuf
+	ldd	,s
+	lbsr	copy
+	lda	#$81
+	sta	FM_MCFG			window off
+	ldx	#xbuf
+	ldu	xc
+	ldd	,s
+	lbsr	copy
+	bra	@adv
+* to the other task: the caller's memory to xbuf, then xbuf to the window
+@wr	ldx	xc
+	ldu	#xbuf
+	ldd	,s
+	lbsr	copy
+	lda	#$C1
+	sta	FM_MCFG			window on
+	ldd	2,s
+	addd	#WINLOG
+	tfr	d,u
+	ldx	#xbuf
+	ldd	,s
+	lbsr	copy
+	lda	#$81
+	sta	FM_MCFG			window off
+@adv	puls	d			count
+	leas	2,s
+	pshs	d
+	addd	xa
+	std	xa
+	ldd	,s
+	addd	xc
+	std	xc
+	ldd	xn
+	subd	,s++
+	std	xn
+	lbra	xcopy
+@done	rts
+	endc
+
 * uok: D = address, X = length, Y = a task.  Carry clear if [D, D+X) is inside the task's region.
 uok	pshs	d
 	pshs	x
@@ -618,7 +846,12 @@ tp	lda	#TSZ
 	rts
 
 * wake: X = task, B = status, Y = value: complete its blocked system call
-wake	ldu	T_SP,x
+wake
+	ifdef	MMU
+	leau	T_FRM,x
+	else
+	ldu	T_SP,x
+	endc
 	stb	F_B,u
 	sty	F_X,u
 	lda	#TS_READY
@@ -630,7 +863,13 @@ wake	ldu	T_SP,x
 
 * deliver: X = a task that waits in a receive, Y = a message: copy it to its buffer and wake it
 deliver	pshs	x,y
+	ifdef	MMU
+	leau	T_RMSG,x		(copied to the buffer of the task when it runs again)
+	lda	#1
+	sta	T_PEND,x
+	else
 	ldu	T_UBUF,x
+	endc
 	tfr	y,x
 	bsr	copymsg
 	ldx	,s
@@ -1018,7 +1257,21 @@ grant	sta	<mode
 @to	ldx	F_Y,u			copyto: the caller's memory -> client
 	ldu	<tmpw
 @do	puls	d
+	ifdef	MMU
+	std	xn
+	ldd	<tmpw
+	std	xa
+	lda	<mode
+	sta	xm
+	ldx	<dstp
+	stx	xp
+	ldu	<frm
+	ldd	F_Y,u
+	std	xc
+	lbsr	xcopy
+	else
 	lbsr	copy
+	endc
 	lbra	okret
 @notask	ldb	#E_NOTASK
 	lbra	errret
@@ -1133,12 +1386,20 @@ sc_tcreate
 	ldd	F_X,u
 	std	<ubuf
 	ldy	<curp
+	ifdef	MMU
+	ldx	#27
+	else
 	ldx	#11
+	endc
 	lbsr	uok
 	lbcs	@fault
 	ldx	<ubuf
 	ldu	#tcb
+	ifdef	MMU
+	ldd	#27
+	else
 	ldd	#11
+	endc
 	lbsr	copy
 	ldd	<tcb+2			lo < hi
 	cmpd	<tcb+4
@@ -1151,12 +1412,27 @@ sc_tcreate
 	lbhi	@inval
 	ldd	<tcb			lo <= entry < hi
 	cmpd	<tcb+2
+	ifdef	MMU
+	lblo	@inval
+	else
 	blo	@inval
+	endc
 	cmpd	<tcb+4
+	ifdef	MMU
+	lbhs	@inval
+	else
 	bhs	@inval
+	endc
 	lda	<tcb+10			prio < PRIO_IDLE
 	cmpa	#PRIO_IDLE
+	ifdef	MMU
+	lbhs	@inval
+	else
 	bhs	@inval
+	endc
+	ifdef	MMU
+	bra	@free			(every task has its own address space)
+	endc
 	ldx	#tasks+TSZ		the region must be free
 	lda	#NTASK-1
 	sta	<cnt
@@ -1169,11 +1445,15 @@ sc_tcreate
 	cmpd	T_HI,x
 	bhs	@nx
 	ldb	#E_NOMEM
+	ifdef	MMU
+	lbra	@err
+	else
 	bra	@err
+	endc
 @nx	leax	TSZ,x
 	dec	<cnt
 	bne	@ov
-	ldx	#tasks+TID_USER0*TSZ	a free slot
+@free	ldx	#tasks+TID_USER0*TSZ	a free slot
 	ldb	#TID_USER0
 @sl	lda	T_STATE,x
 	beq	@found
@@ -1199,6 +1479,31 @@ sc_tcreate
 	std	T_LO,x
 	ldd	<tcb+4
 	std	T_HI,x
+	ifdef	MMU
+	pshs	x
+	clr	tcb+11			(the pages 0 and 1 are the kernel in every map)
+	lda	#1
+	sta	tcb+12
+	leau	T_MAP,x			the map of the task (tcb+11 ..): physical pages
+	ldy	#tcb+11
+	ldb	#16
+@mp	lda	,y+
+	sta	,u+
+	decb
+	bne	@mp
+	ldb	<dstid			and into the registers of its map set
+	stb	FM_TASK
+	ldx	#FM_MMR
+	ldy	#tcb+11
+	ldb	#16
+@mr	lda	,y+
+	sta	,x+
+	decb
+	bne	@mr
+	lda	<cur
+	sta	FM_TASK
+	puls	x
+	endc
 	ldd	<tcb+6			top
 	ldy	<tcb			entry
 	ldu	<tcb+8			argument
@@ -1275,12 +1580,27 @@ sc_tload
 	ldx	F_U,u
 	lbsr	uok
 	bcs	@fault
+	ifdef	MMU
+	ldd	F_U,u
+	std	xn
+	ldd	F_X,u
+	std	xa
+	lda	#GR_WRITE
+	sta	xm
+	ldd	F_Y,u
+	std	xc
+	ldb	F_B,u
+	lbsr	tp
+	stx	xp
+	lbsr	xcopy
+	else
 	ldx	F_Y,u
 	ldd	F_U,u
 	pshs	d
 	ldu	F_X,u
 	puls	d
 	lbsr	copy
+	endc
 	lbra	okret
 @notask	ldb	#E_NOTASK
 	lbra	errret

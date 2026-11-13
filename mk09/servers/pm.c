@@ -34,7 +34,13 @@
 #define HDRSIZE     16
 #define IOBUF       128             /* (the start-up block, ARGMAX = 128, is in the first part of it; the bigger the chunk, the fewer reads when a program is loaded) */
 #define NOH         0xFF
+#ifdef FM11_MMU
+#define UBASE       0x2000          /* Level 2: every program has its own address space, the program area is $2000-$EFFF of it */
+#define UEND        0xF000
+#define TPA_SIZE    (UEND - UBASE)
+#else
 #define TPA_SIZE    (TPA_END - TPA_BASE)
+#endif
 
 static u8 iobuf[IOBUF];                 /* the start-up block of the program being started in the first ARGMAX bytes,
                                            then the chunks of the file while it is loaded */
@@ -67,6 +73,33 @@ static void mm_free(u8 first, u8 n)
     m.b = n;
     mk_call(TID_MM, &m);
 }
+
+#ifdef FM11_MMU
+/* Level 2: MM hands out physical pages of 4KB (a list of n page numbers, written to our buffer) */
+static u8 pmap[NTASK][13];              /* the physical pages of a program (the logical pages 2 .. 14) */
+static u8 pmn[NTASK];
+
+static int mm_alloc4(u8 n, u8 *list)    /* 0 = good, -1 = no memory */
+{
+    msg_t m;
+    m.op = MM_ALLOC;
+    m.a = n;
+    m.b = (u16)list;
+    m.c = n;
+    if (mk_callg(TID_MM, &m, GR_WRITE) || m.op) return -1;
+    return 0;
+}
+
+static void mm_free4(u8 *list, u8 n)
+{
+    msg_t m;
+    m.op = MM_FREE;
+    m.a = n;
+    m.b = (u16)list;
+    m.c = n;
+    mk_callg(TID_MM, &m, GR_READ);
+}
+#endif
 
 static msg_t rm;                        /* the answer of the last call to FS */
 
@@ -137,6 +170,9 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
     u16 size, body, extra, n, off, base, hi, v[3], rem;
     int pg;
     u8 st, h, hin, hout, pages, i, tid = 0, created = 0;
+#ifdef FM11_MMU
+    u8 n4, pl[13];
+#endif
 
     rm.op = FS_OPEN;                                /* (the path is in the start-up block) */
     rm.a = FO_READ;
@@ -168,6 +204,22 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
     }
     pages = (u8)((TPA_SIZE - rem + 255) >> 8);
 
+#ifdef FM11_MMU
+    n4 = (u8)((pages + 15) >> 4);
+    pg = mm_alloc4(n4, pl);
+    if (pg < 0 && !is_shell && shell_tid && who == shell_tid) {     /* the shell steps aside */
+        mk_tkill(shell_tid, 0);
+        collect();
+        respawn = 1;
+        who = 0;
+        pg = mm_alloc4(n4, pl);
+    }
+    if (pg < 0) { st = E_NOMEM; goto out; }
+    base = UBASE;
+    for (i = 0; i < 16; i++) tc.map[i] = 0;
+    tc.map[1] = 1;
+    for (i = 0; i < n4; i++) tc.map[2 + i] = pl[i];
+#else
     pg = mm_alloc(pages, is_shell);
     if (pg < 0 && !is_shell && shell_tid && who == shell_tid) {     /* the shell steps aside */
         mk_tkill(shell_tid, 0);
@@ -178,6 +230,7 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
     }
     if (pg < 0) { st = E_NOMEM; goto out; }
     base = MM_ADDR(pg);
+#endif
     hi = base + ((u16)pages << 8);
     tc.entry = base + (HW(6) - HW(4));
     tc.lo = base;
@@ -186,10 +239,18 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
     tc.arg = hi - ARGMAX;
     tc.prio = PRIO_USER;
     st = mk_tcreate(&tc, &tid);
+#ifdef FM11_MMU
+    if (st) { mm_free4(pl, n4); goto out; }
+    created = 1;
+    for (i = 0; i < n4; i++) pmap[tid][i] = pl[i];
+    pmn[tid] = n4;
+    regn[tid] = n4;
+#else
     if (st) { mm_free((u8)pg, pages); goto out; }
     created = 1;
     regp[tid] = (u8)pg;
     regn[tid] = pages;
+#endif
     st = mk_tload(tid, hi - ARGMAX, sb, ARGMAX);    /* (the buffer is the start-up block until now) */
     if (!st) st = mk_tload(tid, base, hdr, HDRSIZE);
     if (!st) {                                      /* the rest of the file goes straight from FS to the memory of the program (FS_READTL) */
@@ -211,7 +272,11 @@ out:
     if (st) {
         if (created) {
             mk_tkill(tid, 255);
+#ifdef FM11_MMU
+            mm_free4(pmap[tid], pmn[tid]);
+#else
             mm_free(regp[tid], regn[tid]);
+#endif
             regn[tid] = 0;
         }
         return st;
@@ -258,7 +323,11 @@ static void collect(void)
     u8 t, c, w;
     while (!mk_treap(&t, &c)) {
         fsc(FS_CLOSEALL, t, 0);
+#ifdef FM11_MMU
+        if (regn[t]) { mm_free4(pmap[t], pmn[t]); regn[t] = 0; }
+#else
         if (regn[t]) { mm_free(regp[t], regn[t]); regn[t] = 0; }
+#endif
         w = waiter[t];
         waiter[t] = 0;
         if (t == shell_tid) {
@@ -327,7 +396,7 @@ int main(void)
     msg_t m;
     u8 c;
 
-    say("MK09 " MK09_VERSION ": kernel TTY DISK FS PM MM\r\n");
+    say("MK09 " MK09_VERSION MK09_FOR ": kernel TTY DISK FS PM MM\r\n");
     if (fsc(FS_SYNC, 0, 0)) say("MK09: no FAT16 volume\r\n");        /* the first FS call mounts the volume */
     start_shell();
     for (;;) {

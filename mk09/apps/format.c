@@ -14,6 +14,8 @@
  */
 #include "types.h"
 #include "mklib.h"
+#include "mkstr.h"
+#include "version.h"
 #define TOOL_VERSION "1.0"
 
 #define NSEC        26
@@ -26,7 +28,9 @@
 #define ROOTENT     512
 #define ROOTBLK     (ROOTENT * 32 / 512)
 
-static u8 trk[TRACKLEN];
+#ifndef FM11_MMU
+static u8 trk[TRACKLEN];                /* (Level 2: the disk server builds the track image itself) */
+#endif
 static u8 blk[BLKSIZE];
 
 static u16 fill(u8 *p, u8 v, u16 n)
@@ -36,6 +40,7 @@ static u16 fill(u8 *p, u8 v, u16 n)
     return n;
 }
 
+#ifndef FM11_MMU
 /* the image of one track: the standard IBM MFM format, 26 sectors of 256 bytes, interleave 1.  The positions of the C and H bytes
  * of the 26 address marks are kept for the next tracks */
 static u16 idpos[NSEC];
@@ -71,6 +76,8 @@ static void build_track(void)
     fill(p, 0x4E, (u16)(TRACKLEN - (u16)(p - trk)));
 }
 
+#endif
+
 static int call(u8 op, u8 drive, u16 a, u8 *buf, u16 len, u8 gfl)
 {
     msg_t m;
@@ -98,6 +105,7 @@ int main(int argc, char **argv)
     const char *label = "MK09";
     char ans[8];
 
+    if (argc > 1 && !strcmp(argv[1], "-v")) { puts("format " TOOL_VERSION MK09_FOR); return 0; }
     if (argc > 1 && argv[1][0] == '-' && argv[1][1] == 'y') { yes = 1; ai = 2; }
     if (argc <= ai || argc > ai + 2) { puts("usage: format [-y] drive [label]     (drive 1-4: the floppy disk; drive 0 is the system disk)"); return 1; }
     drive = (u8)atoi_(argv[ai]);
@@ -109,11 +117,17 @@ int main(int argc, char **argv)
         if (gets_(ans, sizeof(ans)) < 0 || (ans[0] != 'y' && ans[0] != 'Y')) { puts("format: cancelled"); return 1; }
     }
 
+#ifndef FM11_MMU
     build_track();
+#endif
     for (t = 0; t < 77; t++) {
         for (sd = 0; sd < 2; sd++) {
+#ifdef FM11_MMU
+            r = call(DISK_FORMAT, drive, (u16)t * 2 + sd, 0, 0, 0);       /* (the disk server builds the track image: no buffer, no grant) */
+#else
             for (i = 0; i < NSEC; i++) { trk[idpos[i]] = t; trk[idpos[i] + 1] = sd; }
             r = call(DISK_FORMAT, drive, (u16)t * 2 + sd, trk, TRACKLEN, GR_READ);
+#endif
             if (r < 0) { printf("format: track %u side %u: %s\n", t, sd, strerr_(r)); return 1; }
         }
         if (t % 10 == 0) { printf("\rformatting: track %u of 77 ", t); fflush(); }

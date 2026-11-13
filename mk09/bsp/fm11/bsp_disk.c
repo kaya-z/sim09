@@ -2,12 +2,16 @@
 /* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /* bsp_disk.c - FM-11: which drive is which (see bsp.h): the hard disk (mdc.c) and the 2HD floppy units (fdc.c) */
 #include "bsp.h"
+#ifdef FM11_MMU
+#include "memmap.h"
+u16 fmt_build(u8 *trk, u8 track, u8 side);
+#endif
 
 void mdc_init(void);
 u8   mdc_sector_io(u8 drive, u8 hi, u8 mid, u8 lo, u8 *buf, u8 write);
 void fdc_init(void);
 u8   fdc_sector_io(u8 unit, u8 hi, u8 mid, u8 lo, u8 *buf, u8 write);
-u8   fdc_format_track(u8 unit, u8 track, u8 side, u8 *buf, u16 len);
+u8   fdc_format_track(u8 unit, u8 track, u8 side, u16 addr, u8 bank, u16 len);
 
 #ifdef FM11_2HD
 #define FIRSTFD 0
@@ -53,5 +57,12 @@ u8 bsp_track_format(u8 drive, u8 track, u8 side, u8 *buf, u16 len)
     if (drive == 0 || drive >= FIRSTFD + 4)       /* never the system drive */
         return 1;
     fd_up();
-    return fdc_format_track(drive - FIRSTFD, track, side, buf, len);
+#ifdef FM11_MMU
+    /* Level 2: the image is built here, in the track buffer of this server (logical $9000 = the physical pages BOUNCE..: 12KB), and read by DMA from there */
+    len = fmt_build((u8 *)0x9000, track, side);
+    (void)buf;
+    return fdc_format_track(drive - FIRSTFD, track, side, (u16)(BOUNCE & 15) << 12, (u8)(BOUNCE >> 4), len);
+#else
+    return fdc_format_track(drive - FIRSTFD, track, side, (u16)buf, 0, len);
+#endif
 }
