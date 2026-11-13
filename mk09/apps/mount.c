@@ -11,6 +11,7 @@
  */
 #include "types.h"
 #include "mklib.h"
+#define TOOL_VERSION "1.0"
 
 static int show(u8 d)
 {

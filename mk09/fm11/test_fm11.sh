@@ -14,11 +14,11 @@ run() {   # image, drive option, dipsw, frames, keys
     "$FM11" --headless "$4" $W/s.ppm $2 $W/d.img --dipsw "$3" --keyat 3000 --keygap 14 --keys "$5" --text $W/t.txt --mute 2>/dev/null
 }
 run build-fm11/mk09.img -h0 0x7F 6500 "cp ETC/RC.SH T.TXT|cat T.TXT|df|"
-check "MK09 1.33" "hard disk: MK09 boots"
+check "MK09 1.35" "hard disk: MK09 boots"
 check "stty sjis" "hard disk: a file is copied and read back"
 check "8167 clusters" "hard disk: df sees the volume"
 run build-fm11-2hd/mk09_2hd.img -f0 0xBF 6500 "cp ETC/RC.SH T.TXT|cat T.TXT|df|"
-check "MK09 1.33" "2HD: MK09 boots"
+check "MK09 1.35" "2HD: MK09 boots"
 check "stty sjis" "2HD: a file is copied and read back"
 check "476 clusters" "2HD: df sees the volume"
 run build-fm11/mk09.img -h0 0x7F 11000 "reboot|${SP}mem|"

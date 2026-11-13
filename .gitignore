@@ -1,6 +1,7 @@
 non_dist_docs/
 build/
 build_*/
+build-*/
 __pycache__/
 *.pyc
 

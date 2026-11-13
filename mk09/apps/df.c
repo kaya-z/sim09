@@ -16,10 +16,15 @@ int main(int argc, char **argv)
     u8 spc;
     u16 total, freec, f, t;
     const char *fu, *tu;
-    u8 drive = 0;
     int r;
+#ifdef BOARD_FM11
+    u8 drive = 0;
     if (argc > 1 && argv[1][0] >= '0' && argv[1][0] <= '4') drive = (u8)(argv[1][0] - '0');      /* df 1: the floppy disk (FM-11) */
     r = statfs_drv(drive, &spc, &total, &freec);
+#else
+    (void)argc; (void)argv;
+    r = statfs(&spc, &total, &freec);
+#endif
     if (r < 0) { printf("df: %s\n", strerr_(r)); return 1; }
     f = amount(((unsigned long)freec * spc) / 2, &fu);
     t = amount(((unsigned long)total * spc) / 2, &tu);

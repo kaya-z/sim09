@@ -14,6 +14,7 @@
  */
 #include "types.h"
 #include "mklib.h"
+#define TOOL_VERSION "1.0"
 
 #define NSEC        26
 #define TRACKLEN    10416

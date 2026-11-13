@@ -1,7 +1,7 @@
 # MK09 for the FM-11 (BOARD=fm11)
 
 MK09 (MC6809 マイクロカーネル + TTY/DISK/FS/PM/MM サーバ) を富士通 FM-11 (6809 モード) へ移植したものです。
-元: <https://github.com/kaya-z/sim09/tree/master/mk09> (v1.33)。sbc09 ボード向けのビルドは変更なし (`BOARD` 省略時は従来どおり、`build/` が同一バイト列になることを確認済み)。
+元: <https://github.com/kaya-z/sim09/tree/master/mk09> (v1.35 に取り込み済み)。sbc09 ボード向けのビルドは変更なし (`BOARD` 省略時は従来どおり、`build/` が同一バイト列になることを確認済み)。
 
 ## ビルドと実行
 
