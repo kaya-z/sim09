@@ -66,9 +66,11 @@ $(B)/sysnum.inc: include/sysnum.h | $(B)
 $(B)/%.o: %.c $(HDRS) $(wildcard apps/basic/*.h)
 	$(CMOC) -c $(CFLAGS) -o $@ $<
 
-# the FM-11 has 38KB for the programs (the I/O area $FC00-$FFFF is in the way): BASIC does not fit with its math functions, so it is built without them
+# the FM-11 has 37KB (145 pages) for the programs (the I/O area $FC00-$FFFF is in the way, the servers are bigger): BASIC is built without its math
+# functions, with a smaller program (1200 bytes) and fewer array elements (120), and a smaller stack
 ifeq ($(BOARD),fm11)
-$(B)/basic.o: CFLAGS += -DNOMATH
+$(B)/basic.o: CFLAGS += -DNOMATH -DPGM=1200 -DAPOOL=120
+STACK_basic = 1100
 endif
 
 # BASIC without SIN COS TAN ATN EXP LOG SQR and non-integer powers (about 3.5 KB of code): room for a bigger program and bigger arrays
@@ -172,7 +174,7 @@ SKKJISYO  :=
 endif
 STACK_sh  := 640
 STACK_jwp := 1200
-STACK_basic := 1500
+STACK_basic ?= 1500
 STACK_as := 700
 STACK_cpp := 4000
 STACK_cc1 := 2100
