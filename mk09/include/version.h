@@ -1,10 +1,16 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /*
- * version.h - the version of MK09 (shown at boot and by `ver`; the documents carry the same number)
+ * version.h - the versions of MK09 (shown at boot and by `ver`; the documents carry the same numbers)
  *
- * Raise it with every change of the design or of the sources (docs/DESIGN.md, "改版履歴").
+ * There are two versions:
+ *   the SYSTEM version (MK09_VERSION): raised when anything changes in the commands, the applications or the kernel (the servers TTY / DISK / FS / PM / MM,
+ *       the libraries, the tools and the documents belong to the system).  It carries on from the first version of MK09.
+ *   the KERNEL version (MK09_KERNEL_VERSION): raised only when the kernel changes (the directories arch/m6809 and kernel, bsp/BOARD/bsp.c, include/sysnum.h:
+ *       tasks, messages, interrupts, the system calls, the boot table).  A change of the kernel raises both versions.
+ * Both are described in docs/DESIGN.md, chapter 16 ("改版履歴").
  *
+ * The history of the system version:
  *   1.0  2026-10-15  first version (kernel, TTY / DISK / FS / PM, shell, jwp)
  *   1.1  2026-10-18  relocatable programs (MX version 2), memory manager (servers/mm.c), several
  *                    programs at the same time (`prog &`, kill, mem), console owner (TTYC_SETFG)
@@ -89,11 +95,25 @@
  *   1.35 2026-11-13  the FM-11 port (BOARD=fm11, bsp/fm11, fm11/, memmap_fm11.mk; 2HD floppy and hard disk boot) and its commands `format` (low level format of a 2HD floppy: DISK_FORMAT) and `mount` / `umount` (the floppy disks 1-4 as "N:/path": FS_MOUNT, FS_STATFS with a drive, df N).  Backported from the port; the code for several volumes is compiled only for BOARD_FM11 (the FS slot of the sbc09 is full: TPA_BASE stays $3C00).
  *   1.36 2026-11-14  the shell: ^C drops the rest of a script (source) and of a pipeline, not only the program that runs (the status 130 of a program that PM stopped).
  *   1.37 2026-11-14  more 1.1: `more` alone (the standard input is the console) prints the usage and ends; it used to read the keys as the text and there was no way back to the shell.
+ *   1.38 2026-11-14  the FM-11 port merged: Level 2 (the MMU of the FM-11: an address space for every program, 128KB; kernel, PM, the MM2 server, `mem` shows the page map), BASIC / jwp rebuilt when the Makefile changes, C samples (disk/c).  The version is split into the system version and the kernel version (kernel 1.9).  The boot message and `ver` show both.
+ *
+ * The history of the kernel version (the system version that raised it):
+ *   1.0  (1.0)   first version
+ *   1.1  (1.1)   relocatable programs: the task table and the boot of the tasks
+ *   1.2  (1.2)   the memory manager is a task of its own (TID_MM = 5, NTASK 11)
+ *   1.3  (1.4)   faster message round trip (3.1 ms -> 2.2 ms)
+ *   1.4  (1.5)   the same speed-ups in the portable C kernel (KERNEL=c)
+ *   1.5  (1.23)  FS is a privileged task (FS_READTL loads programs into the memory of a new task)
+ *   1.6  (1.28)  the console receive interrupt (the kernel IRQ fills the ring of the TTY server; SYS_RXREG, NFY_RX)
+ *   1.7  (1.32)  the asynchronous disk port ($E049): the disk interrupt wakes the DISK server
+ *   1.8  (1.35)  the FM-11 (BOARD=fm11, FM11): keyboard interrupt, PTM tick, vectors in RAM
+ *   1.9  (1.38)  the FM-11 Level 2: the MMU (an address space for every program)
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.37"
+#define MK09_VERSION    "1.38"            /* the system version */
+#define MK09_KERNEL_VERSION "1.9"        /* the kernel version */
 #ifdef BOARD_FM11
 #define MK09_FOR        " (for FM-11)"      /* the version of a machine dependent system or program ends with this */
 #ifdef FM11_MMU

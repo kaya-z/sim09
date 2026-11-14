@@ -396,7 +396,7 @@ int main(void)
     msg_t m;
     u8 c;
 
-    say("MK09 " MK09_VERSION MK09_FOR ": kernel TTY DISK FS PM MM\r\n");
+    say("MK09 " MK09_VERSION MK09_FOR ": kernel " MK09_KERNEL_VERSION " TTY DISK FS PM MM\r\n");
     if (fsc(FS_SYNC, 0, 0)) say("MK09: no FAT16 volume\r\n");        /* the first FS call mounts the volume */
     start_shell();
     for (;;) {
