@@ -291,6 +291,7 @@ ifeq ($(BOARD),fm11)
 	if [ -f $(TREE)/bin/cc1.mx ] && [ -f $(TREE)/bin/cg.mx ]; then mkdir -p $(TREE)/c; cp disk/c/* $(TREE)/c/; fi
 else
 	for a in $(APPS); do cp $(B)/$$a.mx $(TREE)/bin/$$a.mx; done
+	mkdir -p $(TREE)/c; cp disk/c/* $(TREE)/c/
 endif
 	for d in etc doc bas asm inc pas; do if [ -d disk/$$d ] && [ -n "$$(ls disk/$$d)" ]; then cp disk/$$d/* $(TREE)/$$d/; fi; done
 	printf '# /ETC/RC.SH - run by the shell when the system starts\nstty $(CHARSET)\n' > $(TREE)/etc/rc.sh

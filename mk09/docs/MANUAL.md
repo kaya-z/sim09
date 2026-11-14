@@ -436,6 +436,7 @@ cc /asm/hello.c -o /hello.mx       # 出力を決めないと、ソースの名�
 /hello.mx a b                      # hello from C, 3 argument(s) ...
 cc -S foo.c                        # アセンブラの文 (foo.s) まで
 ```
+ディスクの `/C` に **サンプル** (`hello` `fib` `primes` `wc` `fcopy` `strings` `list` `sort` `float` と `README.TXT`) があります: `cc /C/sort.c -o /sort.mx` → `/sort.mx`。
 `cc` は `cpp` (前処理) → `cc1` (C から中間表現 IR) → `cg` (IR から 6809 のアセンブラ。起動のコードと、使うライブラリの断片も足す) → `as` を順に走らせ、
 一時ファイル (`_.I` `_.ir` `_.A`) を消します (`-k` で残す、`-V` で段のコマンド行を表示。`as` `cpp` `cc1` `cg` `cc` `pas0` `pas1` `pc` は `-v` で名前とそのプログラム自身の版と著作権を出す)。段は互いを**待たずに**、次の段を自分の代わりに実行する
 (PM_EXEC) ので、どの段も TPA を全部使えます。シェルは、段が大きいときは脇へ退き、全部が終わると戻ります (コンパイル中の `ps` にはシェルが出ません)。

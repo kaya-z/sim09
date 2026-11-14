@@ -85,7 +85,7 @@ shutil.copy(IMG, disk)
 # ---- boot, the shell and the programs
 out, rc = run(disk, BOOT + sh('ls /', 'ls /bin', 'cat /etc/rc.sh', 'ver', 'date', 'date -s 2028-02-28', 'ps', 'df', 'stty', 'nosuch', 'help', prompt=P) + OFF)
 check('MK09 microkernel' in out, 'the system boots from the SD image and the shell starts', out[:300])
-check(re.search(r'BIN/\s+DOC/\s+ETC/', out) is not None, 'ls / shows the directories of the volume', out[:600])
+check(re.search(r'BIN/\s+C/\s+DOC/\s+ETC/', out) is not None, 'ls / shows the directories of the volume', out[:600])
 check(all(n in out for n in ('SH.MX', 'LS.MX', 'CAT.MX')), 'ls /bin lists the programs')
 check('stty utf8' in out, 'cat reads /etc/rc.sh')
 check(re.search(r'20\d\d-\d\d-\d\d \d\d:\d\d:\d\d', out) is not None, 'date shows the clock')
@@ -330,6 +330,15 @@ fs = subprocess.run(['fsck.fat', '-n', vol], stdout=subprocess.PIPE, stderr=subp
 check(fs.returncode == 0, 'fsck.fat finds the volume of 128MB consistent', fs.stdout.decode('latin-1'))
 os.remove(disk4)
 os.remove(vol)
+
+# ---- the C samples of the image (/C, the same as on the FM-11): compiled and run on the board
+sdisk = os.path.join(work, 'sdisk.img')
+shutil.copy(IMG, sdisk)
+ssteps = []
+for n, arg in (('HELLO', 'a b'), ('SORT', ''), ('FLOAT', '')):
+    ssteps += ['cc /C/%s.C -o /%s.MX' % (n, n), '/%s.MX %s' % (n, arg), 'echo ==%s==' % n]
+out, rc = run(sdisk, ['timeout 16000000'] + BOOT + sh(*ssteps, prompt='/> ') + OFF, timeout=3000)
+check('hello from C, 3' in out and 'down' in out and 'pi is about' in out, 'the C samples of /C compile (cc) and run on MK09 (hello, sort, float)', out[-1200:])
 
 # ---- Japanese file names (the bytes of the console's character set are kept in the 8.3 name) and text
 jdisk = os.path.join(work, 'jdisk.img')
