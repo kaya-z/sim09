@@ -20,10 +20,10 @@ TPA_END    = DFC0
 TOP        = FC00
 
 # size of the code slots (the build checks that the code fits)
-K_CSZ      = 07F0
+K_CSZ      = 07E0
 TTY_CSZ    = 0B50
-DISK_CSZ   = 0840
-FS_CSZ     = 2CA0
+DISK_CSZ   = 0860
+FS_CSZ     = 2C90
 MM_CSZ     = 01C4
 PM_CSZ     = 0B36
 

@@ -96,7 +96,7 @@ class Fat16:
         if self_cl:
             ents.append(self.entry(b'.          ', 0x10, self_cl, 0, 0))
             ents.append(self.entry(b'..         ', 0x10, parent_cl, 0, 0))
-        for nm in sorted(os.listdir(path)):
+        for nm in sorted(n for n in os.listdir(path) if not n.startswith(".nfs")):   # (an NFS file that is removed while a process has it open)
             full = os.path.join(path, nm)
             n83 = name83(nm)
             if os.path.isdir(full):

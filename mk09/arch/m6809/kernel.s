@@ -767,11 +767,24 @@ rxdrain	clr	<rxgot
 	beq	@x
 	ldb	FM_KEYH
 	lda	FM_KEYL			(reading it takes the code)
-	tstb
-	beq	@asc
+	ifdef	KEYDBG
+	pshs	a,b
+	lda	#'['
+	lbsr	rxput
+	lda	1,s
+	lbsr	hexput
+	lda	,s
+	lbsr	hexput
+	lda	#']'
+	lbsr	rxput
+	puls	a,b
+	endc
 	cmpb	#2			$0201 = BREAK: ^C
-	bne	@rx			function keys, cursor keys: not used
-	lda	#3
+	beq	@brk
+	bitb	#1			high byte bit 0 = 0: an ASCII key (its other bits are not 0: $FExx on the real machine, as the OS-9 clock module tests)
+	beq	@asc
+	bra	@rx			function keys, cursor keys: not used
+@brk	lda	#3
 @asc	ldb	-2,u			the head
 	leax	b,u
 	incb
@@ -783,6 +796,32 @@ rxdrain	clr	<rxgot
 	inc	<rxgot
 	bra	@rx
 @x	rts
+	ifdef	KEYDBG
+rxput	pshs	a,b,x
+	ldb	-2,u
+	leax	b,u
+	incb
+	andb	#RXQ-1
+	cmpb	-1,u
+	beq	@f
+	sta	,x
+	stb	-2,u
+	inc	<rxgot
+@f	puls	a,b,x,pc
+hexput	pshs	a
+	lsra
+	lsra
+	lsra
+	lsra
+	lbsr	hexnib
+	puls	a
+	anda	#$0F
+hexnib	adda	#'0'
+	cmpa	#'9'
+	bls	@h
+	adda	#7
+@h	lbra	rxput
+	endc
 	else
 rxdrain	clr	<rxgot
 	ldu	<rxp

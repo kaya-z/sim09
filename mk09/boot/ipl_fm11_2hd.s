@@ -13,12 +13,19 @@ TRK	equ	$03F0			track of the next sector
 SID	equ	$03F1			side
 SEC	equ	$03F2			sector 1..26
 CUR	equ	$03F3			track of the head
+STG	equ	$03F4			stage: 1 restore, 2 seek, 3 read
+DST	equ	$03F5
+DIRQ	equ	$03F6
+MSGB	equ	$03C0
+D35A	equ	$03F7			$FD35 at the entry
+RTY	equ	$03F8			retries left
 
 FDCST	equ	$FD30
 FDCTRK	equ	$FD31
 FDCSEC	equ	$FD32
 FDCDAT	equ	$FD33
 FDCSID	equ	$FD34
+DENS	equ	$40			$FD34 bit 6 (density) for the MFM tracks: variant A = 1
 FDCDRV	equ	$FD35
 FDCIRQ	equ	$FD37
 
@@ -29,7 +36,13 @@ ipl	orcc	#$50
 	lda	#$01
 	sta	$FD93			boot ROM off: RAM at $5000-$5FFF (the MMU stays off)
 	clr	$FD02			no interrupt
-	clr	FDCDRV			unit 0
+	lda	FDCDRV
+	sta	D35A
+	anda	#$80			unit 0; bit 7 as the boot ROM left it (the ROM writes the unit number only)
+	sta	FDCDRV
+	lda	#10
+	sta	RTY
+again	lds	#$FC7F
 	lda	$FD54			DMA channel 1: enable, no interrupt of it
 	ora	#$02
 	sta	$FD54
@@ -40,6 +53,8 @@ ipl	orcc	#$50
 	sta	$FD56
 	lda	#$0A			restore: track 0
 	sta	FDCST
+	lda	#1
+	sta	STG
 	lbsr	wait
 	clr	TRK
 	clr	CUR
@@ -54,8 +69,11 @@ next	lda	TRK
 	sta	CUR
 	lda	#$1A
 	sta	FDCST
+	lda	#2
+	sta	STG
 	lbsr	wait
 @sk	lda	SID
+	ora	#DENS
 	sta	FDCSID
 	lda	SEC
 	sta	FDCSEC
@@ -71,6 +89,8 @@ next	lda	TRK
 	sta	$FD51
 	lda	#$80			read sector
 	sta	FDCST
+	lda	#3
+	sta	STG
 	lbsr	wait
 	lda	FDCST
 	anda	#$9C			not ready, record not found, CRC, lost data
@@ -94,22 +114,74 @@ copy	lda	,u+
 	sta	,y+
 	decb
 	bne	copy
-	bra	next
+	lbra	next
 run	jmp	,y
 
 * wait: until the controller has finished the command (interrupt flag $FD37 bit 6)
-wait	ldx	#0
+wait	ldy	#4
+@o	ldx	#0
 @w	lda	FDCIRQ
 	bita	#$40
 	bne	@x
 	leax	-1,x
 	bne	@w
+	leay	-1,y
+	bne	@o
 	bra	fail
 @x	rts
 
 * the system image cannot be read: tell the display sub system (PUT STRING) and stop
-fail	ldx	#msg
-	lda	#msgend-msg
+fail	lda	FDCIRQ
+	sta	DIRQ
+	lda	FDCST
+	sta	DST
+	lda	RTY
+	beq	giveup
+	deca
+	sta	RTY
+	lds	#$FC7F
+	lda	#$D0			force interrupt, then try again from the start
+	sta	FDCST
+	ldx	#$4000
+@d	leax	-1,x
+	bne	@d
+	lbra	again
+giveup
+	ldy	#MSGB
+	ldx	#m1
+	bsr	str
+	lda	DST
+	bsr	hex
+	ldx	#m2
+	bsr	str
+	lda	DIRQ
+	bsr	hex
+	ldx	#m3
+	bsr	str
+	lda	STG
+	bsr	hex
+	ldx	#m4
+	bsr	str
+	lda	TRK
+	bsr	hex
+	ldx	#m5
+	bsr	str
+	lda	SID
+	bsr	hex
+	ldx	#m6
+	bsr	str
+	lda	SEC
+	bsr	hex
+	ldx	#m7
+	bsr	str
+	lda	D35A
+	bsr	hex
+	lda	FDCDRV
+	bsr	hex
+	tfr	y,d
+	subd	#MSGB
+	tfr	b,a
+	ldx	#MSGB
 @w1	ldb	$FD05
 	bmi	@w1
 	ldb	#$80
@@ -128,5 +200,36 @@ fail	ldx	#msg
 	bne	@cp
 	clr	$FD05
 	bra	*
-msg	fcc	"MK09: cannot read the system image"
-msgend
+str	lda	,x+
+	beq	@e
+	sta	,y+
+	bra	str
+@e	rts
+hex	pshs	a
+	lsra
+	lsra
+	lsra
+	lsra
+	bsr	nib
+	puls	a
+	anda	#$0F
+nib	adda	#$30
+	cmpa	#$39
+	bls	@s
+	adda	#7
+@s	sta	,y+
+	rts
+m1	fcc	"MK09 ST="
+	fcb	0
+m2	fcc	" IRQ="
+	fcb	0
+m3	fcc	" G="
+	fcb	0
+m4	fcc	" T="
+	fcb	0
+m5	fcc	" H="
+	fcb	0
+m6	fcc	" R="
+	fcb	0
+m7	fcc	" D="
+	fcb	0

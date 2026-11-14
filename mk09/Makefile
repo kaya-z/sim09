@@ -214,7 +214,7 @@ OBJS_sfptest := $(B)/sfpa.o
 # of the text buffer
 CHARSET   ?= $(if $(filter fm11,$(BOARD)),sjis,utf8)
 # (the FM-11 has 156 pages for programs, 8 fewer than the sbc09: a smaller text buffer)
-JWP_BUF   ?= $(if $(filter fm11,$(BOARD)),$(if $(filter 1,$(LEVEL)),7500,11500),11500)
+JWP_BUF   ?= $(if $(filter fm11,$(BOARD)),$(if $(filter 1,$(LEVEL)),7300,11500),11500)
 JWP_OPT   ?= -fomit-frame-pointer
 APPBASE    = $(or $(BASE_$(1)),$(TPA_BASE))
 APPSTACK   = $(or $(STACK_$(1)),512)

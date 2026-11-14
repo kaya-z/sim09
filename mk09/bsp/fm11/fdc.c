@@ -75,7 +75,7 @@ static u8 seek(u8 unit, u8 track)
 static void select(u8 unit)
 {
     if (unit != curunit) {
-        FDC_DRV = unit;
+        FDC_DRV = (FDC_DRV & 0x80) | unit;   /* the boot ROM writes the unit number only (bit 7 as it was) */
         FDC_TRK = curtrk[unit];         /* the track register of that unit */
         curunit = unit;
     }
@@ -86,7 +86,7 @@ void fdc_init(void)
     DMA_ENA |= 1 << DMA_CH;
     DMA_IMSK &= ~(1 << DMA_CH);
     DMA_CFG = 0x08;
-    FDC_DRV = 0;
+    FDC_DRV = FDC_DRV & 0x80;
     curunit = 0;
     seek(0, 0);
 }
@@ -120,7 +120,7 @@ u8 fdc_sector_io(u8 unit, u8 hi, u8 mid, u8 lo, u8 *buf, u8 write)
             seek(unit, 0);              /* recalibrate, then seek again */
         if (curtrk[unit] != track && seek(unit, track))
             continue;
-        FDC_SIDE = side;                /* (bit 4 and bit 6 = 0: MFM) */
+        FDC_SIDE = side | 0x40;         /* bit 6 = density (variant A: 1 for the MFM tracks), bit 4 = 0 */
         FDC_SEC = sec;
         dma((u16)buf, 256, write ? 0x05 : 0x04);
         FDC_CMD = write ? 0xA0 : 0x80;
@@ -146,7 +146,7 @@ u8 fdc_format_track(u8 unit, u8 track, u8 side, u16 addr, u8 bank, u16 len)
             seek(unit, 0);
         if (curtrk[unit] != track && seek(unit, track))
             continue;
-        FDC_SIDE = side;                /* (bit 4 and bit 6 = 0: MFM) */
+        FDC_SIDE = side | 0x40;         /* bit 6 = density (variant A: 1 for the MFM tracks), bit 4 = 0 */
         dmabank = bank;
         dma(addr, len, 0x05);
         dmabank = 0;

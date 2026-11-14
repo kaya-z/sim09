@@ -112,8 +112,8 @@
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.38"            /* the system version */
-#define MK09_KERNEL_VERSION "1.9"        /* the kernel version */
+#define MK09_VERSION    "1.39"            /* the system version */
+#define MK09_KERNEL_VERSION "1.10"        /* the kernel version */
 #ifdef BOARD_FM11
 #define MK09_FOR        " (for FM-11)"      /* the version of a machine dependent system or program ends with this */
 #ifdef FM11_MMU
