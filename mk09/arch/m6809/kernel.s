@@ -148,6 +148,11 @@ hookbits rmb	2
 rxp	rmb	2			the ring of the console server (the bytes; the head and the tail are the two bytes before them) that the receive interrupt fills (0: none yet)
 rxgot	rmb	1			(rxdrain: characters were moved)
 ticks	rmb	2
+	ifdef	FM11
+subt	rmb	1			ticks since the last full second (0..TICK_HZ-1)
+clk	rmb	6			the clock: year (since 1980), month, day, hour, minute, second (the calendar of the FAT format)
+tlatch	rmb	6			SYS_TIME: the snapshot that a get has taken / the new time that sets collect
+	endc
 curp	rmb	2			&tasks[cur]
 frm	rmb	2			the frame of the task that trapped
 cursp0	rmb	2
@@ -342,7 +347,12 @@ swi_entry
 	bne	@ok
 	ldb	#E_PERM
 	bra	@done
-@ok	cmpb	#SYS_RXREG
+@ok
+	ifdef	FM11
+	cmpb	#SYS_TIME
+	else
+	cmpb	#SYS_RXREG
+	endc
 	bhi	@nosys
 	clra
 	aslb
@@ -405,6 +415,15 @@ irq_entry
 	ldd	<ticks
 	addd	#1
 	std	<ticks
+	ifdef	FM11
+	ldb	<subt			the clock of the system: one second every TICK_HZ ticks
+	incb
+	cmpb	#50
+	blo	@sb
+	lbsr	clk_sec
+	clrb
+@sb	stb	<subt
+	endc
 	ldd	T_CPU,y
 	addd	#1
 	std	T_CPU,y
@@ -1025,6 +1044,9 @@ sctab	fdb	0
 	fdb	sc_treap		21
 	fdb	sc_power		22
 	fdb	sc_rxreg		23
+	ifdef	FM11
+	fdb	sc_time			24
+	endc
 
 * common ends of the handlers
 okret	clrb
@@ -1411,6 +1433,110 @@ sc_rxreg
 	sta	ACIA
 	endc
 	lbra	okret
+
+* time (FM-11), B = 0: X = year:month of the clock (year since 1980) and the rest (day:hour, minute:second) is taken into a snapshot;  1: X = day:hour;
+* 2: X = minute:second (of the snapshot);  3, 4, 5: X = year:month, day:hour, minute:second of a new time (collected);  6: the clock is set to it
+	ifdef	FM11
+sc_time
+	ldu	<frm
+	ldb	F_B,u
+	cmpb	#3
+	blo	@get
+	cmpb	#6
+	bhi	@inval
+	beq	@commit
+	subb	#3
+	aslb
+	ldx	#tlatch
+	abx
+	ldd	F_X,u
+	std	,x
+	lbra	okret
+@commit	ldd	<tlatch
+	std	<clk
+	ldd	<tlatch+2
+	std	<clk+2
+	ldd	<tlatch+4
+	std	<clk+4
+	clr	<subt
+	lbra	okret
+@get	tstb
+	bne	@g1
+	ldd	<clk
+	std	<tlatch
+	ldd	<clk+2
+	std	<tlatch+2
+	ldd	<clk+4
+	std	<tlatch+4
+	clrb
+@g1	aslb
+	ldx	#tlatch
+	ldx	b,x
+	clrb
+	andcc	#$FE
+	rts
+@inval	ldb	#E_INVAL
+	lbra	errret
+
+* clk_sec: one second has passed (A, B, X are lost)
+clk_sec	ldx	#clk
+	lda	5,x
+	inca
+	cmpa	#60
+	blo	@s5
+	clr	5,x
+	lda	4,x
+	inca
+	cmpa	#60
+	blo	@s4
+	clr	4,x
+	lda	3,x
+	inca
+	cmpa	#24
+	blo	@s3
+	clr	3,x
+	lda	1,x			a new day: the days of the month are 30 + ((m ^ (m >> 3)) & 1) ...
+	tfr	a,b
+	lsrb
+	lsrb
+	lsrb
+	eorb	1,x
+	andb	#1
+	addb	#30
+	cmpa	#2
+	bne	@dm
+	ldb	,x			... February has 28 days, 29 in a leap year (every 4th year since 1980)
+	andb	#3
+	beq	@lp
+	ldb	#28
+	bra	@dm
+@lp	ldb	#29
+@dm	lda	2,x
+	inca
+	pshs	b
+	cmpa	,s+
+	bls	@s2
+	lda	#1			the first day of the next month
+	sta	2,x
+	lda	1,x
+	inca
+	cmpa	#13
+	blo	@s1
+	lda	#1
+	sta	1,x
+	inc	,x
+	rts
+@s1	sta	1,x
+	rts
+@s2	sta	2,x
+	rts
+@s3	sta	3,x
+	rts
+@s4	sta	4,x
+	rts
+@s5	sta	5,x
+	rts
+	endc
 
 sc_hook	ldu	<frm
 	ldx	F_X,u

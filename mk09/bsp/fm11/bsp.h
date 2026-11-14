@@ -48,8 +48,9 @@ u8   bsp_sector_io(u8 drive, u8 hi, u8 mid, u8 lo, u8 *buf, u8 write);
 u8   bsp_track_format(u8 drive, u8 track, u8 side, u8 *buf, u16 len);
 
 /* for the servers */
-void bsp_rtc_read(u8 *tm);       /* tm[0..5] = year-1900, month, day, hour, min, sec */
 void bsp_now_fat(u16 *date, u16 *time);   /* the clock in the FAT format */
+void bsp_clock_init(void);               /* the clock of the system (kept by the kernel) starts at 2026-01-01 */
+void bsp_set_clock(u16 ym, u16 dh, u16 ms);   /* set the clock: year (since 1980):month, day:hour, minute:second */
 
 void bsp_timer_start(void);
 u8   bsp_timer_fired(void);

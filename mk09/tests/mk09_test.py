@@ -83,12 +83,13 @@ disk = os.path.join(work, 'disk.img')
 shutil.copy(IMG, disk)
 
 # ---- boot, the shell and the programs
-out, rc = run(disk, BOOT + sh('ls /', 'ls /bin', 'cat /etc/rc.sh', 'ver', 'date', 'ps', 'df', 'stty', 'nosuch', 'help', prompt=P) + OFF)
+out, rc = run(disk, BOOT + sh('ls /', 'ls /bin', 'cat /etc/rc.sh', 'ver', 'date', 'date -s 2028-02-28', 'ps', 'df', 'stty', 'nosuch', 'help', prompt=P) + OFF)
 check('MK09 microkernel' in out, 'the system boots from the SD image and the shell starts', out[:300])
 check(re.search(r'BIN/\s+DOC/\s+ETC/', out) is not None, 'ls / shows the directories of the volume', out[:600])
 check(all(n in out for n in ('SH.MX', 'LS.MX', 'CAT.MX')), 'ls /bin lists the programs')
 check('stty utf8' in out, 'cat reads /etc/rc.sh')
 check(re.search(r'20\d\d-\d\d-\d\d \d\d:\d\d:\d\d', out) is not None, 'date shows the clock')
+check('date: the clock cannot be set' in out, 'date -s: the clock of the sbc09 is read-only')
 check(re.search(r'^\s*1\s+(receive|ready|sleep)', out, re.M) is not None and 'running' in out, 'ps lists the tasks (TTY and the running ps)', out)
 check(re.search(r'cluster \d+ bytes, \d+ clusters, \d+ free', out) is not None, 'df reports the clusters')
 check('utf8 cooked 80x24 echo' in out, 'stty shows the console mode')
@@ -135,11 +136,11 @@ check(re.search(r'^\s*5 receive\s+1\s+[0-9a-f]{4}-[0-9a-f]{4}', out, re.M) is no
 out, rc = run(disk, BOOT + sh('stk', prompt=P) + OFF)
 rows = re.findall(r'^\s*([1-5]) [0-9a-f]{4}-[0-9a-f]{4}\s+(\d+) \(the run ends', out, re.M)
 check(len(rows) == 5 and all(int(r[1]) >= 10 for r in rows), 'stk: the five servers (TTY DISK FS PM MM) have some unused stack left', out[-600:])
-check('MK09 1.40: kernel 1.10 TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
+check('MK09 1.41: kernel 1.11 TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
 
 # ---- reboot: the files are written, the system starts again (the banner twice), the file is there
 out, rc = run(disk, BOOT + sh('cp /ETC/RC.SH /RB.TXT', 'reboot', 'cat /RB.TXT', 'rm /RB.TXT', prompt=P) + OFF)
-check(out.count('MK09 1.40: kernel 1.10 TTY DISK FS PM MM') == 2 and 'stty utf8' in out.split('type help')[-1], 'reboot writes the files and starts the system again', out[-700:])
+check(out.count('MK09 1.41: kernel 1.11 TTY DISK FS PM MM') == 2 and 'stty utf8' in out.split('type help')[-1], 'reboot writes the files and starts the system again', out[-700:])
 
 # ---- -v: the version and the copyright of the compilers and the assembler
 tools = ('as', 'cpp', 'cc1', 'cg', 'cc', 'pas0', 'pas1', 'pc')

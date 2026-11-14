@@ -127,6 +127,17 @@ _mk_ticks
 	rts
 	endc
 
+	ifdef	STUB_mk_time
+	export	_mk_time
+_mk_time
+	ldb	3,s
+	ldx	4,s
+	lda	#SYS_TIME
+	swi
+	tfr	x,d
+	rts
+	endc
+
 	ifdef	STUB_mk_yield
 	export	_mk_yield
 _mk_yield

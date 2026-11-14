@@ -26,4 +26,5 @@
 #define SYS_POWER       22
 #define SYS_RXREG       23      /* privileged: the ring that the console receive interrupt fills (and turn the interrupt on) */
 #define SYS_RXGET       23      /* privileged: take the characters that the receive interrupt has collected */
+#define SYS_TIME        24      /* FM-11, privileged: the clock (the calendar of the kernel): b = 0 get year:month (snapshot), 1 day:hour, 2 minute:second; 3, 4, 5 collect a new time, 6 set */
 #endif

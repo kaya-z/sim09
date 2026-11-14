@@ -97,6 +97,7 @@ u8  mk_notify(u8 dst, u16 bits);            /* asynchronous event (never blocks)
 u8  mk_copyfrom(u8 client, u16 off, void *dst, u16 n); /* read the client's grant  */
 u8  mk_copyto(u8 client, u16 off, const void *src, u16 n); /* write the client's grant */
 void mk_sleep(u16 ticks);                   /* sleep (ticks of 1/TICK_HZ s)   */
+u16  mk_time(u8 sel, u16 v);           /* FM-11 (privileged): the clock of the system, see SYS_TIME in sysnum.h */
 u16  mk_ticks(void);                        /* uptime in ticks, low 16 bits   */
 void mk_yield(void);
 void mk_exit(u8 code);                      /* never returns                  */

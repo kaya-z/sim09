@@ -10,25 +10,26 @@
 #   $0600-       system code: kernel, TTY, DISK, FS, PM (one slot each, read from the boot image)
 #   TPA_BASE-    transient program area (programs, handed out in pages of 256 bytes by the MM server)
 #   $E100-$FBFF  data, bss and stacks of the system modules and the high code
-#   $FC00-$FFFF  hardware: RAM $FC00-$FC7F, shared memory with the sub CPU, the I/O page $FD00-$FDFF, RAM and the vectors
+#   $FC00-$FC7F  RAM: the system uses it (the top of the high code); the sub CPU memory starts at $FC80
+#   $FC80-$FFFF  hardware: shared memory with the sub CPU, the I/O page $FD00-$FDFF, RAM and the vectors
 # All numbers are hexadecimal without prefix.
 
 VEC_BASE   = 0100
 SYS_BASE   = 0600
-DATA_BASE  = DFC0
-TPA_END    = DFC0
-TOP        = FC00
+DATA_BASE  = E040
+TPA_END    = E040
+TOP        = FC80
 
 # size of the code slots (the build checks that the code fits)
-K_CSZ      = 07E0
+K_CSZ      = 08A0
 TTY_CSZ    = 0B50
 DISK_CSZ   = 0860
-FS_CSZ     = 2C90
+FS_CSZ     = 2D70
 MM_CSZ     = 01C4
 PM_CSZ     = 0B36
 
 # size of the data slots (rwdata + bss + stack)
-K_DSZ      = 0264
+K_DSZ      = 0270
 TTY_DSZ    = 0230
 DISK_DSZ   = 01F0
 FS_DSZ     = 08C0

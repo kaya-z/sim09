@@ -62,6 +62,7 @@ int  exec(const char *block, u16 len);                        /* this program is
 int  kill(u8 tid);                                            /* stop a program started by PM (not the shell) */
 int  meminfo(u16 *total, u16 *freep, u16 *largest, u16 *procs);  /* pages of 256 bytes; programs running */
 int  gettime(u16 *date, u16 *time);                           /* FAT format */
+int  settime(u16 date, u16 time);                             /* FM-11: set the clock of the system (FAT format) */
 void shutdown(void);
 
 /* stdio (buffered output on file descriptor 1) */

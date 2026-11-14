@@ -5,7 +5,7 @@
 
 Copyright (c) 2026 YUKARI Semiconductor Devices
 
-**版: 1.40** (2026-11-14、カーネル 1.10。ソースの `include/version.h` の `MK09_VERSION` と `MK09_KERNEL_VERSION` と同じ。MX 形式の版は 2)。変更の履歴は [DESIGN.md](DESIGN.md) の 16 章。
+**版: 1.41** (2026-11-14、カーネル 1.11。ソースの `include/version.h` の `MK09_VERSION` と `MK09_KERNEL_VERSION` と同じ。MX 形式の版は 2)。変更の履歴は [DESIGN.md](DESIGN.md) の 16 章。
 
 MK09 の外から見える決まり (システムコール、メッセージ、サーバの要求、ファイルの形式、ハードウェアの前提) を書きます。
 どうしてそうなっているかは [DESIGN.md](DESIGN.md)、使い方は [MANUAL.md](MANUAL.md) にあります。
@@ -164,6 +164,7 @@ CMOC の呼び出し規約 (引数はスタックに 16 ビットずつ、先頭
 | 20 | `u8 mk_tload(u8 tid, u16 addr, const void *src, u16 n)` | B = tid, X = addr, Y = src, U = n | 状態 | ○ |
 | 21 | `u8 mk_treap(u8 *tid, u8 *code)` | | 状態、X = (tid << 8) \| code | ○ |
 | 22 | `void mk_power(void)` | | 戻らない | ○ |
+| 24 | `u16 mk_time(u8 sel, u16 v)` | B = sel, X = v | X = 値 | ○ (FM-11 だけ) |
 
 ### 4.3 メッセージ通信
 
@@ -296,6 +297,7 @@ FAT16 のファイルシステムです。起動時にドライブ 0 の MBR か
 | `FS_FSTAT` (16) | `a` = ハンドル | `a` = 属性、`c:b` = 大きさ |
 | `FS_CHOWN` (17) | `a` = ハンドル、`b` = タスク ID | ハンドルの持ち主を変える (PM が使う) |
 | `FS_TIME` (18) | | `a` = 日付、`b` = 時刻 (FAT 形式)。1.0 の `PM_TIME` の代わり |
+| `FS_STIME` (21) | `a` = 年 (1980 から) × 256 + 月、`b` = 日 × 256 + 時、`c` = 分 × 256 + 秒 | (FM-11 だけ) システムの時計を合わせる (`settime()` が値を確かめて、正しくなければ `E_INVAL`)。sbc09 では `E_NOSYS` |
 | `FS_MOUNT` (20) | `a` = ドライブ (1-4)、`b` = 0 マウント、1 外す、2 問い合わせ | (FM-11 だけ) `a` = 1 (マウント中)。マウントしたドライブのファイルは `N:/パス` で指す |
 
 `FS_OPEN` の `a`: `FO_READ` $01、`FO_WRITE` $02、`FO_CREATE` $04、`FO_TRUNC` $08、`FO_APPEND` $10、`FO_DIR` $20 (ディレクトリを開く)、

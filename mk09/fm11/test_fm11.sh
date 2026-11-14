@@ -3,6 +3,7 @@
 # FM-11 regression test (headless, with the Linux simulator emulator/Fm11gtk), for Level 1 (no MMU) and Level 2 (MMU):
 #   - the hard disk (MDC) image and the 2HD (MB8877) image boot, the shell answers the keyboard,
 #   - a file is copied (disk write + read), the reboot command restarts the system from the disk,
+#   - date: the clock of the system (kept by the kernel) starts at 2026-01-01, date -s sets it, it runs on over a leap day and a year end,
 #   - format, mount, cp, mkdir, mv, ls, df, umount on a floppy disk in drive 1,
 #   - Level 2: the C compiler (cc1 needs 160 pages) compiles a program and the program runs; Level 1: the programs that do not fit are not in the image.
 #   usage: fm11/test_fm11.sh [path-to-fm11-binary] [levels]    (default: "1 2"; make BOARD=fm11 LEVEL=n and make BOARD=fm11 LEVEL=n BOOTDEV=2hd first)
@@ -33,6 +34,11 @@ for L in $LEVELS; do
     run $HD -h0 0x7F 11000 "reboot|${SP}mem|"
     if [ $L = 1 ]; then check "pages of 256 bytes" "L$L hard disk: reboot comes back, the shell answers"
     else check "physical memory" "L$L hard disk: reboot comes back, the shell answers (mem shows the physical memory)"; fi
+    run $HD -h0 0x7F 9000 "date|date -s 2028-02-28 23:59:58|date|date -s 2028-12-31 23:59:50|${SP20}${SP20}date|date -s 2026-13-01|"
+    check "2026-01-01 00:0" "L$L date: the clock of the system starts at 2026-01-01"
+    check "2028-02-28 23:59:5" "L$L date -s: the clock is set"
+    check "2029-01-01 00:00:" "L$L date: the clock runs on (the end of the year, the calendar)"
+    check "bad date or time" "L$L date -s: a bad date is refused"
     run $HD -h0 0x7F 7000 "basic|PRINT 6*7|"
     check " 42" "L$L basic runs"
     if [ $L = 1 ]; then

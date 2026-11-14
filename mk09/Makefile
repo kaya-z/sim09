@@ -111,7 +111,7 @@ $(B)/ipl_2hd.bin: boot/ipl_fm11_2hd.s | $(B)
 
 # ---- the library for the servers and programs ----
 SYSSTUBS := mk_send mk_recv mk_call mk_reply mk_notify mk_tinfo mk_tkill mk_callg mk_copyfrom mk_copyto mk_tload \
-	mk_sleep mk_ticks mk_yield mk_exit mk_self mk_hook mk_rxreg mk_tstart mk_tcreate mk_treap mk_power
+	mk_sleep mk_ticks mk_yield mk_exit mk_self mk_hook mk_rxreg mk_tstart mk_tcreate mk_treap mk_power mk_time
 MEMFUNCS := memcpy memmove memset
 LIBMK_OBJS := $(patsubst %,$(B)/sys_%.o,$(SYSSTUBS)) $(patsubst %,$(B)/mem_%.o,$(MEMFUNCS)) \
 	$(patsubst lib/%.c,$(B)/%.o,$(wildcard lib/mk_*.c))

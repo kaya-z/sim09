@@ -98,6 +98,7 @@
  *   1.38 2026-11-14  the FM-11 port merged: Level 2 (the MMU of the FM-11: an address space for every program, 128KB; kernel, PM, the MM2 server, `mem` shows the page map), BASIC / jwp rebuilt when the Makefile changes, C samples (disk/c).  The version is split into the system version and the kernel version (kernel 1.9).  The boot message and `ver` show both.
  *   1.39 2026-11-14  FM-11: the keyboard code test (bit 0 of the high byte), the floppy controller ($FD35 bit 7 kept, $FD34 bit 6 the density), the IPL of the 2HD floppy retries and shows its state, slot sizes of Level 1, `mkdisk.py` skips .nfs* files (kernel 1.10).
  *   1.40 2026-11-14  the command `time` (time 1.0): runs a command and shows its elapsed time (real 0m1.24s), counted in the ticks of the system.
+ *   1.41 2026-11-14  FM-11: the clock of the system (kernel 1.11: the kernel keeps the calendar and counts it on at every TICK_HZ ticks; SYS_TIME, FS_STIME); `date -s` (date 1.1) sets the clock.
  *
  * The history of the kernel version (the system version that raised it):
  *   1.0  (1.0)   first version
@@ -111,12 +112,13 @@
  *   1.8  (1.35)  the FM-11 (BOARD=fm11, FM11): keyboard interrupt, PTM tick, vectors in RAM
  *   1.9  (1.38)  the FM-11 Level 2: the MMU (an address space for every program)
  *   1.10 (1.39)  FM-11: the keyboard code test in the kernel (bit 0 of the high byte of the key code)
+ *   1.11 (1.41)  FM-11: the clock of the system (the calendar in the kernel, SYS_TIME)
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.40"            /* the system version */
-#define MK09_KERNEL_VERSION "1.10"        /* the kernel version */
+#define MK09_VERSION    "1.41"            /* the system version */
+#define MK09_KERNEL_VERSION "1.11"        /* the kernel version */
 #ifdef BOARD_FM11
 #define MK09_FOR        " (for FM-11)"      /* the version of a machine dependent system or program ends with this */
 #ifdef FM11_MMU

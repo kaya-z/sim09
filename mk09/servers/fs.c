@@ -70,6 +70,9 @@ int main(void)
     u8 st, h, attr, spc;
 
     st = fs_mount();
+#ifdef BOARD_FM11
+    bsp_clock_init();                                   /* the clock of the system starts at a fixed date (no battery) */
+#endif
     for (;;) {
         if (mk_recv(TID_ANY, &m)) continue;
         if (m.src == TID_HW) continue;
@@ -190,6 +193,12 @@ int main(void)
             r.a = date;
             r.op = E_OK;
             break;
+#ifdef BOARD_FM11
+        case FS_STIME:                                      /* a = year:month, b = day:hour, c = minute:second */
+            bsp_set_clock(m.a, m.b, m.c);
+            r.op = E_OK;
+            break;
+#endif
         case FS_CHOWN:
             r.op = fs_chown((u8)m.a, (u8)m.b);
             break;
