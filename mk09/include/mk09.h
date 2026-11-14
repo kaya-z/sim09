@@ -115,6 +115,9 @@ u16 mk_rxget(u8 *buf, u16 n);               /* up to n console characters that t
 typedef struct tcreate {
     u16 entry, lo, hi, top, arg;
     u8  prio;                               /* 0 = most urgent .. 6 */
+#ifdef FM11_MMU
+    u8  map[16];                            /* Level 2 (MMU): the physical page (of 4KB) of each logical page of the new task's address space */
+#endif
 } tcreate_t;
 u8  mk_tcreate(tcreate_t *p, u8 *tid);
 u8  mk_tstart(u8 tid);

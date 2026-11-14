@@ -11,6 +11,8 @@
  */
 #include "types.h"
 #include "mklib.h"
+#include "mkstr.h"
+#include "version.h"
 #define TOOL_VERSION "1.0"
 
 static int show(u8 d)
@@ -33,6 +35,7 @@ int main(int argc, char **argv)
 #endif
     int r;
 
+    if (argc == 2 && !strcmp(argv[1], "-v")) { puts(um ? "umount " TOOL_VERSION MK09_FOR : "mount " TOOL_VERSION MK09_FOR); return 0; }
     if (argc == 1 && !um) {
         for (d = 0; d <= 4; d++) {
             if (d == 0 || fsmounted(d) == 1) {

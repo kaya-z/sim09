@@ -21,6 +21,7 @@
 #include "mk09.h"
 #include "proto.h"
 #include "bsp.h"
+#include "memmap.h"
 #include "mkstr.h"
 
 #define INQ         RX_RING         /* input ring (power of two) */
@@ -28,7 +29,12 @@
 #define CHUNK       48
 
 /* The ring: the kernel (the receive interrupt) is the writer of head, this server the writer of tail; mk_rxreg() tells the kernel where it is. */
+#ifdef FM11_MMU
+struct rxring { u8 h, t; u8 b[INQ]; };
+#define rxr (*(struct rxring *)(K_DATA + K_DSZ - 0x90))   /* in the data of the kernel (the keyboard interrupt of the kernel fills it, in any map) */
+#else
 static struct { u8 h, t; u8 b[INQ]; } rxr;
+#endif
 #define qh  rxr.h
 #define qt  rxr.t
 #define inq rxr.b

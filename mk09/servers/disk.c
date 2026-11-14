@@ -86,7 +86,11 @@ int main(void)
             break;
 #ifdef BOARD_FM11
         case DISK_FORMAT:
+#ifdef FM11_MMU
+            if ((m.a >> 1) > 76) { r.op = E_INVAL; break; }
+#else
             if (m.b < 0x0600 || m.c == 0 || (u16)(m.b + m.c) > 0xFB00 || (m.a >> 1) > 76) { r.op = E_INVAL; break; }
+#endif
             r.op = bsp_track_format((u8)(m.d >> 8), (u8)(m.a >> 1), (u8)(m.a & 1), (u8 *)m.b, m.c) ? E_IO : E_OK;
             break;
 #endif

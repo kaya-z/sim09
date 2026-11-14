@@ -3,26 +3,54 @@
 MK09 (MC6809 マイクロカーネル + TTY/DISK/FS/PM/MM サーバ) を富士通 FM-11 (6809 モード) へ移植したものです。
 元: <https://github.com/kaya-z/sim09/tree/master/mk09> (v1.35 に取り込み済み)。sbc09 ボード向けのビルドは変更なし (`BOARD` 省略時は従来どおり、`build/` が同一バイト列になることを確認済み)。
 
+## Level 1 と Level 2
+
+| | Level 1 | Level 2 (既定) |
+|---|---|---|
+| メモリ | 64KB フラット、MMU なし | 128KB、MMU あり |
+| プログラム領域 | 145 ページ (37KB) を全員で共有 | **プログラムごとに自分のアドレス空間**: `$2000-$EFFF` の 52KB |
+| 動かないもの | cc / cc1 / cg / pc / pas1 (160・149・154 ページ必要) は**イメージに入れない** (`tools/fitapps.py` が自動判定) | すべて動く (cc1 の 160 ページも) |
+| BASIC / jwp | BASIC は数学関数なし・プログラム 1200 バイト、jwp は 7500 バイト | フル版 |
+| バージョン表示 | `MK09 1.37 (for FM-11)`、バナー `Level 1: 64KB flat, no MMU` | `Level 2: 128KB, MMU` |
+
+どちらもこのツリーに残してあり、`LEVEL=1` / `LEVEL=2` で作り分けます (`BOARD=fm11` の既定は 2)。ビルド先は `build-fm11-l1`、`build-fm11-l2` (2HD 版は `-2hd` が付く)。
+FM-11 専用のコマンド (`format` `mount` `umount` `mem`) は `-v` でバージョンを出し、`(for FM-11)` が付きます。
+
+### Level 2 の仕組み (MMU: `$FD80-$FD93`)
+
+* **マップ**: MMR は 16 組 (タスクごとに `$FD90` で切り替え)、各組が論理ページ 16 枚 (4KB) を物理ページ (最大 1MB、実装は 128KB) へ写します。タスク番号 = マップの組の番号です。
+  アイドルとサーバ (タスク 0-5) は**恒等写像**で、Level 1 と同じ 64KB を見ます。プログラム (タスク 6-10) はページ 0・1 (カーネル) が共通で、ページ 2-14 は MM が渡す私有の物理ページです。
+* **カーネル** (`arch/m6809/kernel.s`、`MMU` 条件アセンブル): トラップの入口でタスクのフレームを TCB に退避し (`getframe`)、再開時にタスクのマップに切り替えてスタックへ書き戻します (`dispatch`)。
+  他タスクのメモリは直接触れないので、受信者へのメッセージは TCB に置いて再開時に渡し (`T_RMSG` / `T_PEND`)、`wake` は TCB のフレームを書き換えます。
+  サーバとクライアントの間のデータ (`mk_copyfrom` / `mk_copyto` / `mk_tload`) は `$7C00` の 1KB 窓 (`$FD93` bit6、`$FD91/$FD92`) で相手の物理メモリを 256 バイトずつ読み書きします (`xcopy`)。
+* **メモリマップ** (`memmap_fm11_l2.mk`): カーネルのコードとデータ (TCB、スタック、窓のバッファ、コンソールのキーボードのリング) をページ 0・1 に置き、サーバのコードの位置は変えません。
+  プログラムに渡す物理ページは、システムが使わない 24 ページ (5-12、16-28)。ページ 29-31 は `format` のトラックバッファ (ディスクサーバの論理 `$9000`)。
+* **MM** (`servers/mm2.c`): 4KB ページの空き管理。PM に物理ページの番号の一覧を返します。**PM** はそれをカーネルの `mk_tcreate` に渡します (`tcreate_t.map`)。
+* プログラムは `$2000` にリンクします (`APPLINK`)。MX の再配置はそのまま使えます。
+* DMA は物理アドレスなので、ディスクサーバのバッファ (恒等写像) はそのまま使えます。`format` のトラックイメージはディスクサーバが自分のバッファで作ります (Level 1 は `format` が作って渡す)。
+
 ## ビルドと実行
 
 ```sh
 tools/install_cmoc.sh $HOME/cmoc           # CMOC + lwtools (一度だけ。リポジトリの ../tools にある)
-make BOARD=fm11 CMOC_BIN=$HOME/cmoc/bin                  # HDD 版 (フル)  -> build-fm11/mk09.img
-make BOARD=fm11 BOOTDEV=2hd CMOC_BIN=$HOME/cmoc/bin      # 2HD 版 (縮小) -> build-fm11-2hd/mk09_2hd.img
-sh fm11/test_fm11.sh [path/to/fm11]                      # エミュレータ (Fm11gtk) でのヘッドレス試験
+make BOARD=fm11 CMOC_BIN=$HOME/cmoc/bin                              # Level 2、HDD 版 (フル)   -> build-fm11-l2/mk09.img
+make BOARD=fm11 LEVEL=1 CMOC_BIN=$HOME/cmoc/bin                      # Level 1、HDD 版          -> build-fm11-l1/mk09.img
+make BOARD=fm11 BOOTDEV=2hd CMOC_BIN=$HOME/cmoc/bin                  # Level 2、2HD 版 (縮小)   -> build-fm11-l2-2hd/mk09_2hd.img
+make BOARD=fm11 LEVEL=1 BOOTDEV=2hd CMOC_BIN=$HOME/cmoc/bin          # Level 1、2HD 版          -> build-fm11-l1-2hd/mk09_2hd.img
+sh fm11/test_fm11.sh [path/to/fm11] ["1 2"]                          # エミュレータ (Fm11gtk) でのヘッドレス試験 (Level 1・2)
 ```
 
 エミュレータ (`emulator/Fm11gtk`) での起動:
 
 ```sh
-./fm11 -h0 mk09_fm11_hdd.img --dipsw 0x7F      # HDD ブート (DIPSW: HDD のみ ON)
-./fm11 -f0 mk09_fm11_2hd.img --dipsw 0xBF      # 2HD ブート (8インチ/2HD ドライブ 0)
+./fm11 -h0 mk09_fm11_l2_hdd.img --dipsw 0x7F      # HDD ブート (DIPSW: HDD のみ ON)
+./fm11 -f0 mk09_fm11_l2_2hd.img --dipsw 0xBF      # 2HD ブート (8インチ/2HD ドライブ 0)
 ```
 
 HDD イメージは 20MB (M2235B: 315 シリンダ x 8 ヘッド x 32 レコード x 256B) に合わせてあります (`dist/` のものは 20,643,840 バイトに伸ばしてある)。
 2HD イメージは 1,021,696 バイト (シミュレータの FDD_2HD_256 形式: トラック 0 サイド 0 が 128B x 26、残りが 256B x 26)。
 
-## メモリマップ (`memmap_fm11.mk`)
+## メモリマップ (Level 1: `memmap_fm11.mk`。Level 2 は上の節と `memmap_fm11_l2.mk`)
 
 | 範囲 | 内容 |
 |---|---|
@@ -30,7 +58,7 @@ HDD イメージは 20MB (M2235B: 315 シリンダ x 8 ヘッド x 32 レコー�
 | `$0110-$02FF` | DISK / MM サーバのデータ (`$0200-$02FF` は IPL のセクタバッファ) |
 | `$0400-$05FF` | IPL (FM-11 のブート ROM が読み込む場所。起動後は未使用) |
 | `$0600-` | システムコード (カーネル、TTY、DISK、FS) |
-| `$4E00-$DFBF` | プログラム領域 (37,312 バイト = 145 ページ。sbc09 は 164 ページ) |
+| `$4E00-$DFBF` | プログラム領域 (Level 1: 37,312 バイト = 145 ページ。sbc09 は 164 ページ) |
 | `$DFC0-$FB9E` | サーバのデータ、PM/MM のコード |
 | `$FC00-$FFFF` | ハードウェア: `$FC80-$FCFF` はサブ CPU との共有メモリ、`$FD00-$FDFF` は I/O |
 
@@ -76,6 +104,19 @@ FS サーバは複数のボリュームを持てるようになりました (`se
 制限: カレントディレクトリはドライブ 0 のものだけ (`cd 1:/X` は不可、`1:` の名前は常にルートからの絶対パス)。`mv` / `cp` の一部として別ドライブへ移すのは `cp` で (`mv` は同じドライブの中だけ)。
 プログラムの起動は `/bin` (ドライブ 0) から。FM-11 の FS 要求 `FS_MOUNT` (`include/proto.h`) と `FS_STATFS` の drive 引数を追加。
 
+## C のサンプル (`/C`、Level 2 のイメージ)
+
+`cc` が動くイメージ (Level 2、sbc09 ではなく FM-11 の HDD 版・2HD 版) には、ディレクトリ `/C` に C のサンプルが入っています (Level 1 は `cc` が動かないので入れていません)。
+`cc /C/HELLO.C -o /HELLO.MX` で作って `/HELLO.MX` で走らせます。
+
+`hello` (引数)、`fib` (再帰・ループ・long)、`primes` (ふるい)、`wc` (ファイル: fopen / fgets)、`fcopy` (fread / fwrite)、`strings` (文字列関数・ctype・sprintf)、
+`list` (struct・malloc・連結リスト)、`sort` (関数ポインタ・qsort・rand)、`float` (浮動小数点: sqrt・pi・`%f %e %g`)、`README.TXT`。ソースは `disk/c/`、`fm11/test_csamples.sh` が 9 本すべてをシミュレータの中でコンパイルして走らせ、出力を確かめます。
+
+## `mem` (Level 2)
+
+物理メモリ (128KB = 4KB のページ 32 枚) の内訳 (システム / `format` のバッファ / プログラム: 使用中と空き)、物理ページの地図 (`K` カーネル、`S` サーバ、`F` format、`P` プログラム、`.` 空き: MM の `MM_MAP` で空きを取る)、
+サーバの論理マップ、プログラムの論理マップを出します。
+
 ## 検証したこと / していないこと
 
 エミュレータ `emulator/Fm11gtk` (6809 モード) でのみ確認しました。実機、Windows 版エミュレータ、SD ストレージボード (RTL) では**未確認**です。
@@ -92,7 +133,8 @@ FS サーバは複数のボリュームを持てるようになりました (`se
 * **ANSI エスケープ**: `bsp/fm11/console.c` が `ESC[r;cH` `ESC[J` `ESC[K` `ESC[nL` `ESC[nM` `ESC[...m` をサブ CPU のオーダ (`ESC = row col`、`ESC *`、`ESC T`、`ESC Y`、`ESC E`、`ESC R`、`ESC G attr`) に変換し、それ以外 (スクロール領域 `r` やカーソル相対移動) は捨てます。
   オーダは `subsys.rom` の逆アセンブルで確認したもの。`E`/`R`/`Y` の動作は ROM の読みだけで、画面での確認は `H` `K` `m` と状態行の表示までです。
 * 日付は固定 (2026-01-01)。FM-11 本体側から読める時計は使っていません。
-* **BASIC** は `NOMATH` (SIN COS TAN ATN EXP LOG SQR と非整数のべき乗なし)。I/O 領域のぶんプログラム領域が 38KB しかなく、数学関数つきでは入らないため。
+* **Level 1 のプログラム領域**は 145 ページ: **BASIC** は `NOMATH` (SIN COS TAN ATN EXP LOG SQR と非整数のべき乗なし)、プログラム 1200 バイト、配列 120 要素、スタック 1100 バイト、**jwp** のテキストバッファは 7500 バイトに縮めてあります。
+  cc / cc1 / cg / pc / pas1 (C と Pascal のコンパイラ) は 160・149・154 ページ必要で入らないので、Level 1 のイメージには入れていません (**Level 2 ではすべて動く**)。
 * 2HD 版の FAT16 ボリュームは 476 クラスタ (2KB クラスタ。FAT12 の大きさ) で、MK09 専用です (PC では読めない)。
 * DIPSW のブート順は HDD > 2HD > 2D の順に試されます (ブート ROM 側の仕様)。FM-11 の割り込み (FIRQ = サブからのアテンション) は使っていません。
 * HDD/FDC のドライバはポーリングです (SD ストレージボードでも割り込みなし、DMA は 256 バイトずつ)。

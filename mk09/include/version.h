@@ -94,6 +94,17 @@
 #define MK_VERSION_H
 
 #define MK09_VERSION    "1.37"
+#ifdef BOARD_FM11
+#define MK09_FOR        " (for FM-11)"      /* the version of a machine dependent system or program ends with this */
+#ifdef FM11_MMU
+#define MK09_MEM        "Level 2: 128KB, MMU"
+#else
+#define MK09_MEM        "Level 1: 64KB flat, no MMU"
+#endif
+#else
+#define MK09_FOR        ""
+#define MK09_MEM        "64KB flat, no MMU"
+#endif
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 
 #endif
