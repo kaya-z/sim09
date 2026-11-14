@@ -186,13 +186,13 @@ $(eval $(call SYSMOD,mm,MM,$(if $(filter 2,$(LEVEL)),B4,30)))
 SYSMODS := kernel tty disk fs pm mm
 
 # ---- programs (MX executables): apps/NAME.c -> build/NAME.mx ----
-APPS      := sh as cpp cc1 cg cc pas0 pas1 pmsg pc ls cat echo stty cp mv rm mkdir date df ps hd wc spin stk fstest faults ipcbench dhry more grep life basic kill mem reboot sfptest jwp
+APPS      := sh as cpp cc1 cg cc pas0 pas1 pmsg pc ls cat echo stty cp mv rm mkdir date df ps hd wc spin stk fstest faults ipcbench dhry more grep life basic kill mem reboot sfptest jwp time
 # the 2HD floppy disk of the FM-11 (1MB): the programs that fit, without jwp (and its dictionary) and the test programs
 ifeq ($(BOARD),fm11)
 APPS      += format mount umount
 endif
 ifeq ($(BOOTDEV),2hd)
-APPS      := sh as cpp cc1 cg cc pas0 pas1 pmsg pc ls cat echo stty cp mv rm mkdir date df ps hd wc more grep kill mem reboot basic format mount umount
+APPS      := sh as cpp cc1 cg cc pas0 pas1 pmsg pc ls cat echo stty cp mv rm mkdir date df ps hd wc more grep kill mem reboot basic time format mount umount
 SKKJISYO  :=
 endif
 STACK_sh  := 640

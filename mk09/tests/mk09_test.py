@@ -135,11 +135,11 @@ check(re.search(r'^\s*5 receive\s+1\s+[0-9a-f]{4}-[0-9a-f]{4}', out, re.M) is no
 out, rc = run(disk, BOOT + sh('stk', prompt=P) + OFF)
 rows = re.findall(r'^\s*([1-5]) [0-9a-f]{4}-[0-9a-f]{4}\s+(\d+) \(the run ends', out, re.M)
 check(len(rows) == 5 and all(int(r[1]) >= 10 for r in rows), 'stk: the five servers (TTY DISK FS PM MM) have some unused stack left', out[-600:])
-check('MK09 1.39: kernel 1.10 TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
+check('MK09 1.40: kernel 1.10 TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
 
 # ---- reboot: the files are written, the system starts again (the banner twice), the file is there
 out, rc = run(disk, BOOT + sh('cp /ETC/RC.SH /RB.TXT', 'reboot', 'cat /RB.TXT', 'rm /RB.TXT', prompt=P) + OFF)
-check(out.count('MK09 1.39: kernel 1.10 TTY DISK FS PM MM') == 2 and 'stty utf8' in out.split('type help')[-1], 'reboot writes the files and starts the system again', out[-700:])
+check(out.count('MK09 1.40: kernel 1.10 TTY DISK FS PM MM') == 2 and 'stty utf8' in out.split('type help')[-1], 'reboot writes the files and starts the system again', out[-700:])
 
 # ---- -v: the version and the copyright of the compilers and the assembler
 tools = ('as', 'cpp', 'cc1', 'cg', 'cc', 'pas0', 'pas1', 'pc')
@@ -176,6 +176,15 @@ check(out.count('typed') >= 2 and 'cat:' not in out, 'a background program canno
 # ---- more without a file and without a pipe: usage, and the shell is back
 out, rc = run(disk, BOOT + sh('more', 'echo back-again', prompt=P) + OFF)
 check('usage: more' in out and 'back-again' in out.split('usage: more')[1], 'more alone prints the usage and the shell is back (it did not wait for keys)', out[-400:])
+
+# ---- time: the elapsed time of a command
+out, rc = run(disk, BOOT + sh('time echo hi', 'time echo to-file >T.TXT', 'cat T.TXT', 'time nosuch', 'time', 'time dhry 400', prompt=P) + OFF)
+check(re.search(r'time echo hi\nhi\n\nreal\t0m0\.\d\ds\n', out) is not None, 'time runs the command and shows the elapsed time', out[-900:])
+check(re.search(r'time echo to-file >T.TXT\n\nreal\t0m\d\.\d\ds\n', out) is not None and re.search(r'cat T.TXT\nto-file\n', out) is not None,
+      'time: the output of the command is redirected, the elapsed time goes to the console', out[-900:])
+check('time: nosuch: command not found' in out and 'usage: time command' in out, 'time: a missing command and no command', out[-500:])
+m = re.search(r'time dhry 400\n.*?real\t(\d+)m(\d+)\.(\d\d)s', out, re.S)
+check(m is not None and int(m.group(1)) * 6000 + int(m.group(2)) * 100 + int(m.group(3)) >= 100, 'time: a longer run shows seconds (dhry 400 takes about 1.8 s)', out[-600:])
 
 # ---- ^C also drops the rest of a script and of a pipeline
 steps = BOOT + ['send "echo spin > S.SH\\r"', 'expect "%s"' % P, 'send "echo echo after-script >> S.SH\\r"', 'expect "%s"' % P,
