@@ -34,11 +34,12 @@ for L in $LEVELS; do
     run $HD -h0 0x7F 11000 "reboot|${SP}mem|"
     if [ $L = 1 ]; then check "pages of 256 bytes" "L$L hard disk: reboot comes back, the shell answers"
     else check "physical memory" "L$L hard disk: reboot comes back, the shell answers (mem shows the physical memory)"; fi
-    run $HD -h0 0x7F 9000 "date|date -s 2028-02-28 23:59:58|date|date -s 2028-12-31 23:59:50|${SP20}${SP20}date|date -s 2026-13-01|"
+    run $HD -h0 0x7F 7000 "date|date -s 2028-02-28 23:59:58|date|date -s 2026-13-01|"
     check "2026-01-01 00:0" "L$L date: the clock of the system starts at 2026-01-01"
     check "2028-02-28 23:59:5" "L$L date -s: the clock is set"
-    check "2029-01-01 00:00:" "L$L date: the clock runs on (the end of the year, the calendar)"
     check "bad date or time" "L$L date -s: a bad date is refused"
+    run $HD -h0 0x7F 16000 "date -s 2028-12-31 23:59:58|dhry 400|${SP20}date|"       # (dhry runs a second or two: the clock goes on over the end of the year)
+    check "2029-01-01 00:00:" "L$L date: the clock runs on (the end of the year, the calendar)"
     run $HD -h0 0x7F 7000 "basic|PRINT 6*7|"
     check " 42" "L$L basic runs"
     if [ $L = 1 ]; then

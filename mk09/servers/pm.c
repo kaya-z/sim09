@@ -372,6 +372,7 @@ static void do_spawn(msg_t *m, u8 bg)
         collect();
     }
     st = start_program(bg == 1 ? 0 : w, 0, &tid);
+    if (st && !w) say("\r\nbg: cannot start\r\n");        /* (nobody waits for it: a stage of  pc &  that does not fit in the memory) */
     if (st) { reply(w, st, 0); return; }
     if (bg == 1) {
         reply(m->src, E_OK, tid);

@@ -136,11 +136,11 @@ check(re.search(r'^\s*5 receive\s+1\s+[0-9a-f]{4}-[0-9a-f]{4}', out, re.M) is no
 out, rc = run(disk, BOOT + sh('stk', prompt=P) + OFF)
 rows = re.findall(r'^\s*([1-5]) [0-9a-f]{4}-[0-9a-f]{4}\s+(\d+) \(the run ends', out, re.M)
 check(len(rows) == 5 and all(int(r[1]) >= 10 for r in rows), 'stk: the five servers (TTY DISK FS PM MM) have some unused stack left', out[-600:])
-check('MK09 1.41: kernel 1.11 TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
+check('MK09 1.42: kernel 1.11 TTY DISK FS PM MM' in out, 'the start-up message names the memory manager and the version', out[:200])
 
 # ---- reboot: the files are written, the system starts again (the banner twice), the file is there
 out, rc = run(disk, BOOT + sh('cp /ETC/RC.SH /RB.TXT', 'reboot', 'cat /RB.TXT', 'rm /RB.TXT', prompt=P) + OFF)
-check(out.count('MK09 1.41: kernel 1.11 TTY DISK FS PM MM') == 2 and 'stty utf8' in out.split('type help')[-1], 'reboot writes the files and starts the system again', out[-700:])
+check(out.count('MK09 1.42: kernel 1.11 TTY DISK FS PM MM') == 2 and 'stty utf8' in out.split('type help')[-1], 'reboot writes the files and starts the system again', out[-700:])
 
 # ---- -v: the version and the copyright of the compilers and the assembler
 tools = ('as', 'cpp', 'cc1', 'cg', 'cc', 'pas0', 'pas1', 'pc')
@@ -148,6 +148,12 @@ out, rc = run(disk, BOOT + sh(*[t + ' -v' for t in tools], prompt='/> ') + OFF)
 def tool_version(t):                           # (the version of a program is TOOL_VERSION in its source: -v must print that)
     return re.search(r'#define TOOL_VERSION "([0-9.]+)"', open(os.path.join(MK, 'apps', t + '.c')).read()).group(1)
 check(all(('\n%s %s\n(c) 2026 YUKARI Semiconductor Devices\n' % (t, tool_version(t))) in out for t in tools), '-v prints the name, the own version and the copyright of as cpp cc1 cg cc pas0 pas1 pc', out[-900:])
+
+# ---- a stage of pc that does not fit in the memory while the shell stays in it (pc & in the background): the message, not a silent end
+diskb = os.path.join(work, 'diskb.img')
+shutil.copy(IMG, diskb)
+out, rc = run(diskb, BOOT + sh('pc /PAS/HANOI.PAS -o /H.MX &') + ['sleep 4000'] + sh('ps', prompt=P) + OFF)
+check('bg: cannot start' in out, 'pc & : the stage that does not fit in the memory (the shell stays) is reported', out[-600:])
 
 # ---- several programs at the same time (relocatable programs, the memory manager, & kill mem)
 out, rc = run(disk, BOOT + sh('mem', 'spin &', 'spin &', 'spin &', 'echo hello', 'mem', 'ps', 'kill 7', 'kill 99', 'ps',
