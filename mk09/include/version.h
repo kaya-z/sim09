@@ -5,7 +5,7 @@
  *
  * There are two versions:
  *   the SYSTEM version (MK09_VERSION): raised when anything changes in the commands, the applications or the kernel (the servers TTY / DISK / FS / PM / MM,
- *       the libraries, the tools and the documents belong to the system).  It carries on from the first version of MK09.
+ *       the libraries and the tools belong to the system; a change of the documents only does not raise it).  It carries on from the first version of MK09.
  *   the KERNEL version (MK09_KERNEL_VERSION): raised only when the kernel changes (the directories arch/m6809 and kernel, bsp/BOARD/bsp.c, include/sysnum.h:
  *       tasks, messages, interrupts, the system calls, the boot table).  A change of the kernel raises both versions.
  * Both are described in docs/DESIGN.md, chapter 16 ("改版履歴").
