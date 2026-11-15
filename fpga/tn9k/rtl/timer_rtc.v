@@ -6,8 +6,9 @@
 //   $E030  write $8F  start the periodic timer (and acknowledge a tick)   [FREERUN=0 only]
 //          write $80  stop it, acknowledge
 //          write $04  latch the date and time into $E031-$E036
+//          write $05  set the clock: the calendar takes the values in $E031-$E036 (written before) and starts the second again
 //          read       the last written value; bit 4 is set by every tick (until the next write)
-//   $E031-$E036  year-1900, month, day, hour, minute, second (binary), as latched by $04
+//   $E031-$E036  year-1900, month, day, hour, minute, second (binary), as latched by $04; the values to set with $05 (the guest checks them)
 //
 // A tick raises the interrupt line (IRQ, or FIRQ with the monitor ROM v09.rom: FREERUN=1, the timer then
 // runs from the reset on and $8F does nothing); the line goes low when the CPU takes the interrupt
@@ -48,6 +49,7 @@ module timer_rtc #(
     reg [7:0] y, mo, d, h, mi, s;
     reg [10:0] slo, shi;
     reg        scarry, sec_tick;
+    reg        set_req;                     // a write of $05: the calendar takes the registers
     localparam [21:0] SEC_LAST = ECYC_PER_SEC - 1;
     reg [7:0] l [1:6];                      // the latched copy
 
@@ -106,6 +108,10 @@ module timer_rtc #(
                     end else mi <= mi + 1'b1;
                 end else s <= s + 1'b1;
             end
+            if (set_req) begin                              // set the clock (last: it wins over a tick of the same clock)
+                y <= l[1]; mo <= l[2]; d <= l[3]; h <= l[4]; mi <= l[5]; s <= l[6];
+                slo <= 0; shi <= 0; scarry <= 1'b0; sec_tick <= 1'b0;
+            end
         end
     end
 
@@ -114,11 +120,13 @@ module timer_rtc #(
         if (rst) begin
             running <= (FREERUN != 0);
             pending <= 1'b0;
+            set_req <= 1'b0;
             r0      <= 8'h00;
             tcnt    <= 16'd0;
             l[1] <= 0; l[2] <= 0; l[3] <= 0; l[4] <= 0; l[5] <= 0; l[6] <= 0;
         end else begin
             if (iack) pending <= 1'b0;
+            set_req <= 1'b0;
             if (running && ecyc) begin
                 if (tcnt == ECYC_PER_TICK - 1) begin
                     tcnt    <= 0;
@@ -142,6 +150,8 @@ module timer_rtc #(
                     end else if (wdata == 8'h04) begin
                         l[1] <= y;  l[2] <= mo; l[3] <= d;
                         l[4] <= h;  l[5] <= mi; l[6] <= s;
+                    end else if (wdata == 8'h05) begin
+                        set_req <= 1'b1;
                     end else begin
                         r0 <= wdata;
                     end

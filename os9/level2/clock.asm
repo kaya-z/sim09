@@ -121,7 +121,29 @@ STime.Mv ldy   #6         Move 6 bytes
 FMove    os9   F$Move
          rts
 
-FSTime   clrb
+* F$STime: the packet of the caller (U: its registers, R$X = the address in the user's space) goes to the RTC: it is moved to
+* a buffer on the stack (F$Move: from the task of the caller to the system task), then written to $FFB1-$FFB6 and the
+* command $05 sets the clock of the hardware, which then keeps counting.
+FSTime   leas  -6,s
+         ldy   <D.Proc
+         lda   P$Task,y   task of the caller
+         ldb   <D.SysTsk  to the system task
+         ldx   R$X,u
+         leau  ,s
+         ldy   #6
+         os9   F$Move
+         bcs   FSTimeX
+         ldx   #TimerPort
+         ldd   ,s
+         std   1,x
+         ldd   2,s
+         std   3,x
+         ldd   4,s
+         std   5,x
+         ldb   #$05
+         stb   ,x
+         clrb
+FSTimeX  leas  6,s
          rts
 
          emod

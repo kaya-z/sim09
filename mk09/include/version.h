@@ -100,6 +100,7 @@
  *   1.40 2026-11-14  the command `time` (time 1.0): runs a command and shows its elapsed time (real 0m1.24s), counted in the ticks of the system.
  *   1.41 2026-11-14  FM-11: the clock of the system (kernel 1.11: the kernel keeps the calendar and counts it on at every TICK_HZ ticks; SYS_TIME, FS_STIME); `date -s` (date 1.1) sets the clock.
  *   1.42 2026-11-14  PM: a program that is replaced in the background (a stage of `pc &`: the next stage is bigger than the free memory, the shell stays in memory) used to end silently: it now prints "bg: cannot start".
+ *   1.43 2026-11-15  sbc09: `date -s` sets the clock of the FPGA / simulator (the command $05 of the RTC: the calendar of the hardware takes $E031-$E036 and counts on); date 1.2.
  *
  * The history of the kernel version (the system version that raised it):
  *   1.0  (1.0)   first version
@@ -118,7 +119,7 @@
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.42"            /* the system version */
+#define MK09_VERSION    "1.43"            /* the system version */
 #define MK09_KERNEL_VERSION "1.11"        /* the kernel version */
 #ifdef BOARD_FM11
 #define MK09_FOR        " (for FM-11)"      /* the version of a machine dependent system or program ends with this */

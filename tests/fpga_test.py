@@ -121,8 +121,11 @@ def t_fuzix(exe):
          ('the clock of the board is running (date prints a year >= 2026)', re.search(r'# date\r?\n.*(202[6-9]|20[3-9]\d)', out) is not None, out[-300:]),
          ('shutdown halts and the machine powers off ($E00F), exit code 0', 'Halted.' in out and 'power off' in out and rc == 0, 'rc=%s' % rc),
          ('the card was written (swap and file system)', re.search(r'(\d+) block writes', out) is not None and int(re.search(r'(\d+) block writes', out).group(1)) > 100, out[-200:])]
-    out2, rc2 = run(exe, LOGIN + cmds('cat /root/p') + ['send shutdown\\r', 'expect Halted.'], disk)
+    out2, rc2 = run(exe, LOGIN + cmds('cat /root/p') + ['send setdate -u\\r', 'expect date: ', 'send 2031-12-25\\r', 'expect time: ', 'send 10:20:30\\r', 'expect # ']
+                    + cmds('setdate -w', 'setdate -a', 'date') + ['send shutdown\\r', 'expect Halted.'], disk)
     r += [('a second boot: the file written before is there', re.search(r'# cat /root/p\r?\npersist', out2) is not None, out2[-400:]),
+          ('the clock can be set: setdate -u, -w (the command $05 of the RTC) and -a read back December 25, 2031',
+           re.search(r'# date\r?\n.*Dec\s+25 \d\d:\d\d:\d\d (UTC |[A-Z]+ )?2031', out2) is not None or re.search(r'# date\r?\n.*2031', out2) is not None, out2[-500:]),
           ('and the file system was left clean by shutdown', 'not cleanly' not in out2 and 'Halted.' in out2, out2[:900])]
     shutil.rmtree(d, ignore_errors=True)
     return r

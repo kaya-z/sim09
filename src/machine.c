@@ -229,6 +229,17 @@ void do_timer_write(machine_t *m, int off, uint8_t v)
             r[4] = (uint8_t)tmv.tm_hour;
             r[5] = (uint8_t)tmv.tm_min;
             r[6] = (uint8_t)tmv.tm_sec;
+        } else if (v == 0x05) {
+            /* set the clock from $E031-$E036 (year-1900, month, day, hour, minute, second): the start time moves so that the
+             * emulated time is the given one now (the fixed time of a cross check run stays) */
+            struct tm tmv;
+            memset(&tmv, 0, sizeof tmv);
+            tmv.tm_year = r[1]; tmv.tm_mon = r[2] - 1; tmv.tm_mday = r[3];
+            tmv.tm_hour = r[4]; tmv.tm_min = r[5]; tmv.tm_sec = r[6];
+            tmv.tm_isdst = -1;
+            time_t t = mktime(&tmv);
+            if (t != (time_t)-1)
+                m->start_time = (long)t - (long)(m->cpu.total_cycles / (uint64_t)m->clock_hz);
         } else {
             r[0] = v;
         }

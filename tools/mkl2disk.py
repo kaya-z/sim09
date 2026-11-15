@@ -153,7 +153,7 @@ def main():
         if os.path.isfile(p) and open(p, 'rb').read(2) == b'\x87\xcd':
             built.add(f)
     built.add('shutdown')
-    have = "as attr basic09 cg cmp copy date dhry del deldir dir dump echo free ident jwp cc cc1 cpp link list load login makdir mdir mfree pas0 pas1 pc procs pwd pxd reboot runb shutdown sleep tee tsmon unlink ysdbasic".split()
+    have = "as attr basic09 cg cmp copy date dhry del deldir dir dump echo free ident jwp cc cc1 cpp link list load login makdir mdir mfree pas0 pas1 pc procs pwd pxd reboot runb setime shutdown sleep tee tsmon unlink ysdbasic".split()
     names = [n for n in have if n in built]
     cmds = root.child('CMDS')
     for n in names:

@@ -142,6 +142,14 @@ for level in (1, 2):
     check(year in s.text(), '%s clock/RTC shows the host date (%s)' % (tag, year))
     s.close()
 
+    # --- setime: F$STime sets the clock of the hardware (the command $05 of the RTC), date reads it back ---
+    s = Session(level)
+    s.run(cmds('setime 2031/12/25 10:20:30', 'date', 'setime 2027/02/28 23:59:59', 'date'))
+    t = s.text().replace('\r', '')
+    check('December 25, 2031' in t and 'February 28, 2027' in t,
+          '%s setime sets the clock (F$STime) and date shows it' % tag, t[-400:])
+    s.close()
+
     # --- Japanese: UTF-8 round trip, editing, file names ---
     for kj in ('utf8', 'euc', 'sjis'):
         s = Session(level, kj)
