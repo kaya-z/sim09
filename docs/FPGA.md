@@ -179,7 +179,7 @@ sudo dd if=os9/skk/SKK_utf8.dsk of=/dev/sdX bs=512 seek=262144 conv=fsync
 ## 使い方
 
 * **コンソール**: ボードの USB を PC につなぐと USB シリアルが 2 つ見えます (BL702)。2 つめ (多くは `/dev/ttyUSB1` か
-  `/dev/ttyACM1`) が FPGA につながっています。`picocom -b 115200 /dev/ttyUSB1` など (8N1、フロー制御なし)。
+  `/dev/ttyACM1`。PC によっては `/dev/ttyUSB2` で、2026-11-15 の PC では `ttyUSB1` が JTAG 側、`ttyUSB2` がコンソールだった) が FPGA につながっています。`picocom -b 115200 /dev/ttyUSB1` など (8N1、フロー制御なし)。
   受信は 255 文字の FIFO があるので、貼り付けても取りこぼしません。
 * **リセット**: ボタン S1 (カードの初期化とメモリの消去からやり直します)。電源を入れたときも同じ手順です。
 * **LED** (点灯 = 1):
@@ -504,6 +504,8 @@ LED (アクティブロー): LED0 = 点滅 (動作中)、LED1 = PSRAM と起動�
    `build.sh` は、ビルドの最後に、合成ログの `Undeclared symbol` と `does not have a driver` (PSRAM の未使用の出力を除く) を表示します。
 7. 漢字ローダのフラッシュの読み出しは、実機で**ときどき失敗しました** (先頭が `0xFF` や別の値)。読む前にフラッシュを初期状態に戻す手順 (`FFh FFh`: 連続読み出しモードの解除、`ABh`: 電源断の解除、
    `66h 99h`: リセット) を入れ、先頭の `KJF1` が違えば最大 8 回やり直します (`rtl/kanji_loader.v`)。
+
+**時計の設定 (2026-11-15、実機で確認)**: MK09 1.43 の `date -s 2031-12-25 10:20:30`、OS-9 Level 2 / Level 1 の `setime 2031/12/25 23:59:55`、FUZIX の `setdate -u` (日付と時刻を入れる) → `setdate -w` → `setdate -a` で時計を合わせられ、設定した時刻から日付をまたいで数え続けました (RTC のコマンド `$05`)。リセットは `openFPGALoader -b tangnano9k -r` (カードを替えたあと、電源を入れ直さなくても読み直す)。Level 1 のカード (`os9/OS9.dsk`) は配布のコマンドを持つので、新しい `setime` を `/d0/CMDS` に入れてあります。古い `setime` (`yy/mm/dd`) のままだと日時が壊れます。
 
 診断用のビルド (UART に、通常の出力のかわりに状態を出す。CPU のレジスタのあとの最後の 4 桁が `status`): `DEBUG=1` はシステムの状態、`DEBUG=2` は漢字ローダ
 (`ok`、`done`、失敗した回数、フラッシュから読んだ最初のバイト。正常なら `C04B`)、`DEBUG=3` は `DEBUG=2` でフラッシュの 0x16 番地 (ビットストリーム内の `0xA5`) を読む、

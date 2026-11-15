@@ -71,7 +71,7 @@ sudo dd if=os9/OS9L2.dsk of=/dev/sdX bs=1M conv=fsync status=progress           
 ```
 
 ビットストリームを `-f` で書くとフラッシュ全体が消えるので、漢字データは必ずそのあとに書きます。カードに書き込んだあとは、USB を抜き差しして起動します。
-コンソールは USB シリアル (`minicom -D /dev/ttyUSB1 -b 115200`) と HDMI の画面です。起動時には `Memory >>>>>` と出てメモリを検査し、検査が終わると OS が始まります。
+コンソールは USB シリアル (`minicom -D /dev/ttyUSB1 -b 115200` (PC によっては `ttyUSB2`)) と HDMI の画面です。起動時には `Memory >>>>>` と出てメモリを検査し、検査が終わると OS が始まります。
 
 ## ビルドと実行
 
