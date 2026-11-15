@@ -103,6 +103,7 @@
  *   1.43 2026-11-15  sbc09: `date -s` sets the clock of the FPGA / simulator (the command $05 of the RTC: the calendar of the hardware takes $E031-$E036 and counts on); date 1.2.
  *   1.44 2026-11-15  FM-11 Level 2: the RAM is found at the start (kernel 1.12: memprobe tries the steps of 128KB through the window, up to 1MB; MM manages them; `mem` shows the pages).
  *   1.45 2026-11-15  FM-11 Level 2: the banner of the shell shows the installed RAM (Level 2: MMU, RAM 512KB), not the range.
+ *   1.46 2026-11-15  FM-11: the 2HD floppy disk has dhry (the Dhrystone benchmark) too.
  *
  * The history of the kernel version (the system version that raised it):
  *   1.0  (1.0)   first version
@@ -122,7 +123,7 @@
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.45"            /* the system version */
+#define MK09_VERSION    "1.46"            /* the system version */
 #define MK09_KERNEL_VERSION "1.12"        /* the kernel version */
 #ifdef BOARD_FM11
 #define MK09_FOR        " (for FM-11)"      /* the version of a machine dependent system or program ends with this */
