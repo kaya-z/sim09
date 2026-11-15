@@ -11,7 +11,7 @@ MK09 (MC6809 マイクロカーネル + TTY/DISK/FS/PM/MM サーバ) を富士�
 | プログラム領域 | 144 ページ (36KB) を全員で共有 | **プログラムごとに自分のアドレス空間**: `$2000-$EFFF` の 52KB |
 | 動かないもの | cc / cc1 / cg / pc / pas1 (160・149・154 ページ必要) は**イメージに入れない** (`tools/fitapps.py` が自動判定) | すべて動く (cc1 の 160 ページも) |
 | BASIC / jwp | BASIC は数学関数なし・プログラム 1200 バイト、jwp は 7300 バイト | フル版 |
-| バージョン表示 | `MK09 1.37 (for FM-11)`、バナー `Level 1: 64KB flat, no MMU` | `Level 2: MMU, 128KB-1MB RAM` |
+| バージョン表示 | `MK09 1.37 (for FM-11)`、バナー `Level 1: 64KB flat, no MMU` | `Level 2: MMU, RAM 512KB` (搭載量を起動時に調べて出す) |
 
 どちらもこのツリーに残してあり、`LEVEL=1` / `LEVEL=2` で作り分けます (`BOARD=fm11` の既定は 2)。ビルド先は `build-fm11-l1`、`build-fm11-l2` (2HD 版は `-2hd` が付く)。
 FM-11 専用のコマンド (`format` `mount` `umount` `mem`) は `-v` でバージョンを出し、`(for FM-11)` が付きます。

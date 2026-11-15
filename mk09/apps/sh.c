@@ -17,6 +17,10 @@
 #include "mklib.h"
 #include "mkstr.h"
 #include "version.h"
+#ifdef FM11_MMU
+#include "mk09.h"
+#include "proto.h"
+#endif
 
 #define LINEMAX     100
 #define MAXARG      16
@@ -301,9 +305,18 @@ int main(int argc, char **argv)
              "| |\\/| | ' / | | | | (_) |\n"
              "| |  | | . \\ | |_| |\\__, |\n"
              "|_|  |_|_|\\_\\ \\___/   /_/\n"
-             "\n"
-             " MC6809 microkernel " MK09_VERSION MK09_FOR " (kernel " MK09_KERNEL_VERSION ")  --  " MK09_MEM "\n"
-             " TTY + DISK + FS(FAT16) + PM  /  type help\n"
+             );
+        putstr(" MC6809 microkernel " MK09_VERSION MK09_FOR " (kernel " MK09_KERNEL_VERSION ")  --  " MK09_MEM);
+#ifdef FM11_MMU
+        {   /* Level 2: the RAM that the kernel found at the start (MM tells the steps of 128KB) */
+            msg_t q;
+            q.op = MM_MAP;
+            q.a = 0;
+            if (!mk_call(TID_MM, &q) && !q.op && q.c >= 1 && q.c <= 8) printf(", RAM %uKB", (u16)q.c * 128);
+        }
+#endif
+        putstr("\n");
+        puts(" TTY + DISK + FS(FAT16) + PM  /  type help\n"
              " (c) 2026 YUKARI Semiconductor Devices\n");
         do_source("/ETC/RC.SH");
     }
