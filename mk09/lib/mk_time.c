@@ -18,11 +18,25 @@ int settime(u16 date, u16 time)
     u8 y = date >> 9, mo = (date >> 5) & 15, d = date & 31, mi = (time >> 5) & 63, sec = (time & 31) << 1, len = (u8)(30 + ((mo ^ (mo >> 3)) & 1));
     if (mo == 2) len = (y & 3) ? 28 : 29;
     if (mo < 1 || mo > 12 || d < 1 || d > len || (time >> 11) > 23 || mi > 59 || sec > 58) return -E_INVAL;
+#ifdef BOARD_FM11
     m.op = FS_STIME;
     m.a = ((u16)y << 8) | mo;
     m.b = ((u16)d << 8) | (time >> 11);
     m.c = ((u16)mi << 8) | sec;
     return mk_rpc(TID_FS, &m, 0);
+#else
+    /* the sbc09 has no protection and the slot of the FS server is full: the program writes the registers of the clock of the
+     * hardware ($E031-$E036: year-1900, month, day, hour, minute, second) and the command $05 sets the clock */
+    (void)m;
+    *(volatile u8 *)0xE031 = (u8)(y + 80);
+    *(volatile u8 *)0xE032 = mo;
+    *(volatile u8 *)0xE033 = d;
+    *(volatile u8 *)0xE034 = (u8)(time >> 11);
+    *(volatile u8 *)0xE035 = mi;
+    *(volatile u8 *)0xE036 = sec;
+    *(volatile u8 *)0xE030 = 0x05;
+    return 0;
+#endif
 }
 
 int gettime(u16 *date, u16 *time)

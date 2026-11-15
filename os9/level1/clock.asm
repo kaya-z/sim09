@@ -36,6 +36,8 @@ name     fcs   /Clock/
 
 SysTbl   fcb   F$Time
          fdb   FTime-*-2
+         fcb   F$STime
+         fdb   FSTime-*-2
          fcb   $80
 
 
@@ -124,6 +126,25 @@ FTime    ldx   R$X,u
          ldd   5,y
          std   4,x
          std   <D.Min
+         clrb
+         rts
+
+* F$STime system call code (after the first call, made by the kernel at the boot with the default time: that one only
+* sets the system variables and starts this module): the packet (year-1900, month, day, hour, minute, second) goes to the
+* registers of the RTC, the command $05 sets the clock of the hardware, which then keeps counting; the variables follow.
+FSTime   ldx   R$X,u
+         ldy   #TimerPort
+         ldd   ,x
+         std   1,y
+         std   <D.Year
+         ldd   2,x
+         std   3,y
+         std   <D.Day
+         ldd   4,x
+         std   5,y
+         std   <D.Min
+         ldb   #$05
+         stb   ,y
          clrb
          rts
 

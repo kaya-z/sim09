@@ -3,7 +3,7 @@
 SRC1  = ../../nitros9-code/level1/cmds
 A09   = ../../../tools/a09 -I ../../nitros9-code/defs/
 
-CMDS = asm attr calldbg cmp config copy cputype date debug del deldir devs dir_cb dirsort dump \
+CMDS = asm attr calldbg cmp config copy cputype date debug del deldir devs dir_cb dirsort dump setime \
        echo edit disasm free ident irqs link list load makdir mdir mfree \
        procs prompt shellplus sleep tee touch tsmon unlink
 

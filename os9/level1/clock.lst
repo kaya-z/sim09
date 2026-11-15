@@ -27,8 +27,8 @@ E030:                   TimerPort set  $e030
 0006:                   TkPerTS  equ   TkPerSec/10 ticks per time slice
 0000:                   
 0000:                   
-0000: 87CD00A8000DC181           mod   eom,name,tylg,atrv,ClkEnt,size
-0009: 00480000
+0000: 87CD00C9000DC181           mod   eom,name,tylg,atrv,ClkEnt,size
+0009: 004B0000
 0000:                   
 0000:                   size     equ   .
 0000:                   
@@ -36,101 +36,122 @@ E030:                   TimerPort set  $e030
 0012: 06                         fcb   edition
 0013:                   
 0013: 15                SysTbl   fcb   F$Time
-0014: 0071                       fdb   FTime-*-2
-0016: 80                         fcb   $80
-0017:                   
-0017:                   
-0017:                   * The hardware IRQ vector leads here with the direct page of the interrupted
-0017:                   * process.  The code below and the kernel's Clock routine reached through
-0017:                   * D.Clock address the system variables (D.Tick, D.Slice, ...) with direct
-0017:                   * addressing, so DP has to be 0.  Without this every tick decremented bytes of
-0017:                   * the user's data page at $48 / $59 (D.Slice / D.Tick): output of commands got
-0017:                   * characters changed by -1.  The interrupted DP is restored by the RTI.
-0017: 4F                ClockIRQ clra
-0018: 1F8B                       tfr   a,dp
-001A: 8EE030                     ldx   #TimerPort
-001D: A684                       lda   ,x
-001F: 8510                       bita  #$10
-0021: 260A                       bne   L00B4
-0023: AD9F003A          L00AE    jsr   [>D.Poll]  poll ISRs
-0027: 24FA                       bcc   L00AE      keep polling until carry set
-0029: 6E9F006B                   jmp   [>D.AltIRQ] jump into an alternate IRQ if available
-002D:                   
-002D:                   L00B4
-002D: C68F                       ldb   #$8f     start timer
-002F: E784                       stb   ,x
-0031:                   
-0031: 0A59                       dec   <D.Tick 
-0033: 260D                       bne   L007F      go around if not zero
-0035: D658                       ldb   <D.Sec     get minutes/seconds
-0037:                   * Seconds increment
-0037: 5C                         incb             increment seconds
-0038: C13C                       cmpb  #60        full minute?
-003A: 2506                       blo   L007F
-003C: D65A                       ldb   <D.TSec
-003E: D759                       stb   <D.Tick
-0040: 8D2F                       bsr   FTimeS         read the RTC into the system time variables
-0042: D758              L007F    stb   <D.Sec
-0044:                   
-0044: 6E9F0081                   jmp   [>D.Clock]
-0048:                   
-0048:                   ClkEnt   equ   *
-0048: CC3B01                     ldd   #59*256+$01 last second and last tick
-004B: DD58                       std   <D.Sec     will prompt RTC read at next time slice
-004D: C63C                       ldb   #TkPerSec
-004F: D75A                       stb   <D.TSec    set ticks per second
-0051: D759                       stb   <D.Tick    set ticks per second
-0053: C606                       ldb   #TkPerTS   get ticks per time slice
-0055: D75B                       stb   <D.TSlice  set ticks per time slice
-0057: D748                       stb   <D.Slice   set first time slice
-0059: 3401                       pshs  cc
-005B: 1A50                       orcc  #FIRQMask+IRQMask       mask ints
-005D: 308CB7                     leax  <ClockIRQ,pcr
-0060: 9F32                       stx   <D.IRQ
-0062:                   * install system calls
-0062: 318CAE                     leay  <SysTbl,pcr
-0065: 103F32                     os9   F$SSvc
-0068: 8EE030                     ldx   #TimerPort
-006B: C68F                       ldb   #$8f     start timer
-006D: E784                       stb   ,x
-006F: 3581                       puls  pc,cc
-0071:                   
-0071:                   * Read the RTC into D.Year..D.Min only.  The original code ran FTime from the
-0071:                   * clock IRQ with U pointing at a stack frame whose "caller's X" is garbage,
-0071:                   * so once a minute six bytes of the date were written to a random address
-0071:                   * (it destroyed the module directory in long running systems).
-0071: 108EE030          FTimeS   ldy   #TimerPort
-0075: C604                       ldb   #$04
-0077: E7A4                       stb   ,y
-0079: EC21                       ldd   1,y
-007B: DD53                       std   <D.Year
-007D: EC23                       ldd   3,y
-007F: DD55                       std   <D.Day
-0081: EC25                       ldd   5,y
-0083: DD57                       std   <D.Min
-0085: 5F                         clrb
-0086: 39                         rts
-0087:                   
-0087:                   * F$Time system call code
-0087: AE44              FTime    ldx   R$X,u
-0089: 108EE030                   ldy   #TimerPort
-008D: C604                       ldb   #$04
-008F: E7A4                       stb   ,y
-0091: EC21                       ldd   1,y
-0093: ED84                       std   ,x
-0095: DD53                       std   <D.Year
-0097: EC23                       ldd   3,y
-0099: ED02                       std   2,x
-009B: DD55                       std   <D.Day
-009D: EC25                       ldd   5,y
-009F: ED04                       std   4,x
-00A1: DD57                       std   <D.Min
-00A3: 5F                         clrb
-00A4: 39                         rts
-00A5:                   
-00A5: 098B05                     emod
-00A8:                   eom      equ   *
-00A8:                            end
+0014: 0074                       fdb   FTime-*-2
+0016: 16                         fcb   F$STime
+0017: 008F                       fdb   FSTime-*-2
+0019: 80                         fcb   $80
+001A:                   
+001A:                   
+001A:                   * The hardware IRQ vector leads here with the direct page of the interrupted
+001A:                   * process.  The code below and the kernel's Clock routine reached through
+001A:                   * D.Clock address the system variables (D.Tick, D.Slice, ...) with direct
+001A:                   * addressing, so DP has to be 0.  Without this every tick decremented bytes of
+001A:                   * the user's data page at $48 / $59 (D.Slice / D.Tick): output of commands got
+001A:                   * characters changed by -1.  The interrupted DP is restored by the RTI.
+001A: 4F                ClockIRQ clra
+001B: 1F8B                       tfr   a,dp
+001D: 8EE030                     ldx   #TimerPort
+0020: A684                       lda   ,x
+0022: 8510                       bita  #$10
+0024: 260A                       bne   L00B4
+0026: AD9F003A          L00AE    jsr   [>D.Poll]  poll ISRs
+002A: 24FA                       bcc   L00AE      keep polling until carry set
+002C: 6E9F006B                   jmp   [>D.AltIRQ] jump into an alternate IRQ if available
+0030:                   
+0030:                   L00B4
+0030: C68F                       ldb   #$8f     start timer
+0032: E784                       stb   ,x
+0034:                   
+0034: 0A59                       dec   <D.Tick 
+0036: 260D                       bne   L007F      go around if not zero
+0038: D658                       ldb   <D.Sec     get minutes/seconds
+003A:                   * Seconds increment
+003A: 5C                         incb             increment seconds
+003B: C13C                       cmpb  #60        full minute?
+003D: 2506                       blo   L007F
+003F: D65A                       ldb   <D.TSec
+0041: D759                       stb   <D.Tick
+0043: 8D2F                       bsr   FTimeS         read the RTC into the system time variables
+0045: D758              L007F    stb   <D.Sec
+0047:                   
+0047: 6E9F0081                   jmp   [>D.Clock]
+004B:                   
+004B:                   ClkEnt   equ   *
+004B: CC3B01                     ldd   #59*256+$01 last second and last tick
+004E: DD58                       std   <D.Sec     will prompt RTC read at next time slice
+0050: C63C                       ldb   #TkPerSec
+0052: D75A                       stb   <D.TSec    set ticks per second
+0054: D759                       stb   <D.Tick    set ticks per second
+0056: C606                       ldb   #TkPerTS   get ticks per time slice
+0058: D75B                       stb   <D.TSlice  set ticks per time slice
+005A: D748                       stb   <D.Slice   set first time slice
+005C: 3401                       pshs  cc
+005E: 1A50                       orcc  #FIRQMask+IRQMask       mask ints
+0060: 308CB7                     leax  <ClockIRQ,pcr
+0063: 9F32                       stx   <D.IRQ
+0065:                   * install system calls
+0065: 318CAB                     leay  <SysTbl,pcr
+0068: 103F32                     os9   F$SSvc
+006B: 8EE030                     ldx   #TimerPort
+006E: C68F                       ldb   #$8f     start timer
+0070: E784                       stb   ,x
+0072: 3581                       puls  pc,cc
+0074:                   
+0074:                   * Read the RTC into D.Year..D.Min only.  The original code ran FTime from the
+0074:                   * clock IRQ with U pointing at a stack frame whose "caller's X" is garbage,
+0074:                   * so once a minute six bytes of the date were written to a random address
+0074:                   * (it destroyed the module directory in long running systems).
+0074: 108EE030          FTimeS   ldy   #TimerPort
+0078: C604                       ldb   #$04
+007A: E7A4                       stb   ,y
+007C: EC21                       ldd   1,y
+007E: DD53                       std   <D.Year
+0080: EC23                       ldd   3,y
+0082: DD55                       std   <D.Day
+0084: EC25                       ldd   5,y
+0086: DD57                       std   <D.Min
+0088: 5F                         clrb
+0089: 39                         rts
+008A:                   
+008A:                   * F$Time system call code
+008A: AE44              FTime    ldx   R$X,u
+008C: 108EE030                   ldy   #TimerPort
+0090: C604                       ldb   #$04
+0092: E7A4                       stb   ,y
+0094: EC21                       ldd   1,y
+0096: ED84                       std   ,x
+0098: DD53                       std   <D.Year
+009A: EC23                       ldd   3,y
+009C: ED02                       std   2,x
+009E: DD55                       std   <D.Day
+00A0: EC25                       ldd   5,y
+00A2: ED04                       std   4,x
+00A4: DD57                       std   <D.Min
+00A6: 5F                         clrb
+00A7: 39                         rts
+00A8:                   
+00A8:                   * F$STime system call code (after the first call, made by the kernel at the boot with the default time: that one only
+00A8:                   * sets the system variables and starts this module): the packet (year-1900, month, day, hour, minute, second) goes to the
+00A8:                   * registers of the RTC, the command $05 sets the clock of the hardware, which then keeps counting; the variables follow.
+00A8: AE44              FSTime   ldx   R$X,u
+00AA: 108EE030                   ldy   #TimerPort
+00AE: EC84                       ldd   ,x
+00B0: ED21                       std   1,y
+00B2: DD53                       std   <D.Year
+00B4: EC02                       ldd   2,x
+00B6: ED23                       std   3,y
+00B8: DD55                       std   <D.Day
+00BA: EC04                       ldd   4,x
+00BC: ED25                       std   5,y
+00BE: DD57                       std   <D.Min
+00C0: C605                       ldb   #$05
+00C2: E7A4                       stb   ,y
+00C4: 5F                         clrb
+00C5: 39                         rts
+00C6:                   
+00C6: 9A01BC                     emod
+00C9:                   eom      equ   *
+00C9:                            end
 0 Pass 2 errors.
 
 SYMBOL TABLE
@@ -152,7 +173,7 @@ SYMBOL TABLE
      C$RGT 01 001c    C$RPET 01 0001    C$RPRT 01 0004  C$SHRARR 01 0019
       C$SI 01 000f      C$SO 01 000e    C$SPAC 01 0020      C$UP 01 001e
     C$XOFF 01 0013     C$XON 01 0011     CARRY 00 0001   CBLCODE 00 0005
-     CCODE 00 0004CHECK_FOR_VALID_ 00 0001    CLKENT 02 0048  CLOCKIRQ 02 0017
+     CCODE 00 0004CHECK_FOR_VALID_ 00 0001    CLKENT 02 004b  CLOCKIRQ 02 001a
   CNTRLBIT 00 0002    COCO.D 01 0001     COLOR 01 0001    COLOR3 01 0002
     CONDEM 00 0002  CPUSPEED 01 0001   CPUTYPE 01 0001   CRCCON1 00 0080
   CRCCON23 00 0fe3    CRCOFF 00 0000     CRCON 00 0001    D$GSTA 02 0009
@@ -220,7 +241,7 @@ SYMBOL TABLE
     E$UNIT 02 00f0  E$UNKPRC 02 002b  E$UNKSVC 02 00d0  E$UNKSYM 02 000a
   E$UNMCNT 02 0045      E$UP 02 00c5   E$USIGP 02 00e9  E$VALRNG 02 0034
    E$WADEF 02 00b8      E$WP 02 00f2   E$WRITE 02 00f5   E$WRSUB 02 0041
-  E$WUNDEF 02 00c4   EDITION 01 0006    ENTIRE 00 0080       EOM 02 00a8
+  E$WUNDEF 02 00c4   EDITION 01 0006    ENTIRE 00 0080       EOM 02 00c9
      EXEC. 00 0004   F$ALL64 02 0030  F$ALLBIT 02 0013   F$APROC 02 002c
    F$CHAIN 02 0005  F$CMPNAM 02 0011     F$CRC 02 0017   F$DEBUG 02 0023
   F$DELBIT 02 0014    F$EXIT 02 0006  F$FIND64 02 002f    F$FORK 02 0003
@@ -239,120 +260,121 @@ SYMBOL TABLE
     FMDLET 02 000c    FMGSTA 02 001e    FMMDIR 02 0006    FMOPEN 02 0003
     FMRDLN 02 0018    FMREAD 02 0012    FMSEEK 02 000f    FMSSTA 02 0021
    FMT.DNS 00 0002  FMT.SIDE 00 0001  FMT.T0DN 00 0020  FMT.TDNS 00 0004
-    FMWRIT 02 0015    FMWRLN 02 001b  FRTNCODE 00 0006     FTIME 02 0087
-    FTIMES 02 0071     H6309 06 0000  HALFCRRY 00 0020   HW.PAGE 01 00ff
-      HZ50 00 0001      HZ60 00 0002  I$ATTACH 02 0080  I$CHGDIR 02 0086
-   I$CLOSE 02 008f  I$CREATE 02 0083  I$DELETE 02 0087  I$DELETX 02 0090
-  I$DETACH 02 0081     I$DUP 02 0082  I$GETSTT 02 008d  I$MAKDIR 02 0085
-    I$OPEN 02 0084    I$READ 02 0089  I$READLN 02 008b    I$SEEK 02 0088
-  I$SETSTT 02 008e   I$WRITE 02 008a  I$WRITLN 02 008c     ICODE 00 0002
-    IMGCHG 00 0010  INDRIVER 00 0020   INITSTR 02 000eINSTALLNAME 02 001f
-  INTMASKS 00 0050   IRQMASK 00 0010     ISIZ. 00 0020    IT.ALF 02 0017
-    IT.BAU 02 0027    IT.BSE 02 0024    IT.BSO 02 0014    IT.BSP 02 001b
-    IT.COL 02 002c    IT.CYL 02 0017    IT.D2P 02 0028    IT.DEL 02 001c
-    IT.DLO 02 0015    IT.DNS 02 0016    IT.DRV 02 0013    IT.DTP 02 0012
-    IT.DUP 02 0020    IT.DVC 02 0012    IT.EKO 02 0016    IT.EOF 02 001e
-    IT.EOR 02 001d  IT.EXTEN 02 0022    IT.ILV 02 001f    IT.INT 02 0022
-  IT.LLDRV 02 0028    IT.MPI 02 002a    IT.NUL 02 0018    IT.OFS 02 0026
-    IT.OVF 02 0025    IT.PAG 02 001a    IT.PAR 02 0026    IT.PAU 02 0019
-    IT.PSC 02 0021    IT.QUT 02 0023    IT.ROW 02 002d    IT.RPR 02 001f
-    IT.RWC 02 0028    IT.SAS 02 0020    IT.SCT 02 001b    IT.SID 02 0019
-  IT.SOFF1 02 0025  IT.SOFF2 02 0026  IT.SOFF3 02 0027  IT.STOFF 02 0024
-    IT.STP 02 0014    IT.T0S 02 001d    IT.TFM 02 0021    IT.TYP 02 0015
-    IT.UPC 02 0013    IT.VFY 02 001a    IT.WPC 02 0025   IT.XOFF 02 002b
-    IT.XON 02 002a   IT.XTYP 02 002e     L007F 02 0042     L00AE 02 0023
-     L00B4 02 002d  LANGMASK 00 000f   LEFTBIT 00 0020     LEVEL 00 0001
-    M$DTYP 02 0012    M$EXEC 02 0009    M$FMGR 02 0009      M$ID 02 0000
-     M$ID1 00 0087    M$ID12 00 87cd     M$ID2 00 00cd  M$IDSIZE 02 0009
-     M$MEM 02 000b    M$MODE 02 000d    M$NAME 02 0004     M$OPT 02 0011
-  M$PARITY 02 0008    M$PDEV 02 000b    M$PORT 02 000e    M$REVS 02 0007
-    M$SIZE 02 0002    M$TYPE 02 0006    MAXMEM 02 0009  MD$ESIZE 02 0004
-   MD$LINK 02 0002   MD$MPTR 02 0000    MINSEC 01 0010    MODNAT 00 0020
-   MODPROT 00 0040  MPI.SLCT 01 ff7f  MPI.SLOT 01 0003     MULTI 00 0030
-      NAME 02 000d  NEGATIVE 00 0008   NOS9MAJ 00 0000   NOS9MIN 00 0001
-   NOS9VER 00 0001  NUMPATHS 00 0010   OBJ6309 00 0007     OBJCT 00 0001
-    ONEMHZ 00 0001    OPTCNT 00 001a     OS9.D 01 0001  OS9MAJOR 00 0000
-  OS9MINOR 00 0001   OS9VRSN 00 0001   OSLEVEL 02 0017   OSMAJOR 02 0019
-   OSMINOR 02 001a    OSNAME 02 001d     OSVER 02 0018    P$ADDR 02 0007
-     P$AGE 02 000c    P$CHAP 02 0006     P$CID 02 0003     P$DIO 02 001a
-      P$ID 02 0000    P$IOQN 02 0011    P$IOQP 02 0010     P$NIO 02 003b
-  P$PAGCNT 02 0008    P$PATH 02 0026     P$PID 02 0001  P$PMODUL 02 0012
-   P$PRIOR 02 000b   P$QUEUE 02 000e     P$SID 02 0002  P$SIGDAT 02 0039
-  P$SIGNAL 02 0036  P$SIGVEC 02 0037    P$SIZE 02 0040      P$SP 02 0004
-   P$STATE 02 000d     P$SWI 02 0014    P$SWI2 02 0016    P$SWI3 02 0018
-    P$USER 02 0009   PAREVEN 00 0060   PARMARK 00 00a0   PARMASK 00 00e0
-   PARNONE 00 0000    PARODD 00 0020  PARSPACE 00 00e0     PCODE 00 0003
-    PD.ALF 02 0025    PD.ATT 02 0033    PD.BAU 02 0035    PD.BSE 02 0032
-    PD.BSO 02 0022    PD.BSP 02 0029    PD.BUF 02 0008    PD.CNT 02 0002
-     PD.CP 02 000b    PD.CPR 02 0005    PD.CYL 02 0025    PD.D2P 02 0036
-    PD.DCP 02 003a    PD.DEL 02 002a    PD.DEV 02 0003    PD.DFD 02 0037
-    PD.DLO 02 0023    PD.DNS 02 0024    PD.DRV 02 0021    PD.DSK 02 001c
-    PD.DTB 02 001e    PD.DTP 02 0020    PD.DUP 02 002e    PD.DV2 02 000a
-    PD.DVT 02 003e    PD.EKO 02 0024    PD.EOF 02 002c    PD.EOR 02 002b
-    PD.ERR 02 003a  PD.EXTEN 02 0030     PD.FD 02 0034    PD.FST 02 000a
-    PD.ILV 02 002d    PD.INT 02 0030    PD.MAX 02 000d    PD.MIN 02 000f
-    PD.MOD 02 0001    PD.NUL 02 0026    PD.OPT 02 0020    PD.OVF 02 0033
-    PD.PAG 02 0028    PD.PAR 02 0034    PD.PAU 02 0027     PD.PD 02 0000
-    PD.PLP 02 003d    PD.PSC 02 002f    PD.PST 02 003f    PD.QUT 02 0031
-    PD.RAW 02 000c    PD.RGS 02 0006    PD.RPR 02 002d    PD.SAS 02 002e
-    PD.SBL 02 0013    PD.SBP 02 0016    PD.SCT 02 0029    PD.SID 02 0027
-    PD.SIZ 02 000f    PD.SMF 02 000a    PD.SSZ 02 0019    PD.STM 02 0012
-  PD.STOFF 02 0032    PD.STP 02 0022    PD.STS 02 0010    PD.T0S 02 002b
-    PD.TBL 02 003b    PD.TFM 02 002f    PD.TYP 02 0023    PD.UPC 02 0021
-    PD.VFY 02 0028   PD.XOFF 02 0039    PD.XON 02 0038    PDELIM 00 002f
-      PDIR 00 002e    PDSIZE 02 0040    PENTIR 00 0040    PEXEC. 00 0020
-  PIA0BASE 00 ff00  PIA1BASE 00 ff20   POLLCNT 02 000c    POLSIZ 02 0009
-    PREAD. 00 0008     PRGRM 00 0010  PROC6309 00 0002  PROC6809 00 0000
-  PROTFLAG 02 0016   PST.DCD 00 0001    PWRIT. 00 0010  PWRLNFRQ 01 0002
-    Q$FLIP 02 0002    Q$MASK 02 0003    Q$POLL 02 0000    Q$PRTY 02 0008
-    Q$SERV 02 0004    Q$STAT 02 0006       R$A 00 0001       R$B 00 0002
-      R$CC 00 0000       R$D 00 0001      R$DP 00 0003      R$PC 00 000a
-    R$SIZE 00 000c       R$U 00 0008       R$X 00 0004       R$Y 00 0006
-     RBF.D 01 0001     READ. 00 0001     REENT 00 0080       REV 01 0001
-  REVSMASK 00 000f  RIGHTBIT 00 0040   S$ABORT 02 0002   S$ALARM 02 0005
-     S$HUP 02 0004  S$INTRPT 02 0003    S$KILL 02 0000    S$WAKE 02 0001
-  S$WINDOW 02 0004     SBRTN 00 0020     SCF.D 01 0001    SHARE. 00 0040
-  SHELLSUB 00 0050  SHIFTBIT 00 0001      SIGN 00 0080    SINBUF 00 0002
-      SIZE 02 0000  SPACEBIT 00 0080  SS.AAGBF 02 0080  SS.ALFAS 02 001c
-  SS.ANPAL 02 009a  SS.ASCRN 02 008b   SS.ATTR 02 001c  SS.BLKRD 02 0014
-  SS.BLKWR 02 0015  SS.BREAK 02 001d  SS.CDREL 02 009b  SS.CDSIG 02 009a
-  SS.CDSTA 02 0099  SS.CLOSE 02 002a  SS.COMST 02 0028  SS.CURSR 02 0025
-   SS.DCMD 02 000d  SS.DEVNM 02 000e  SS.DFPAL 02 0097 SS.DIRENT 02 0020
-  SS.DSCRN 02 008c  SS.DSIZE 02 0026  SS.DSTAT 02 0012    SS.ECC 02 00b0
-   SS.ELOG 02 0019    SS.EOF 02 0006  SS.FBRGS 02 0096     SS.FD 02 000f
-  SS.FDINF 00 0020   SS.FEED 02 0009   SS.FILL 02 00a0  SS.FNDBF 02 009b
-    SS.FRZ 02 000a  SS.FSCRN 02 008d   SS.FSIG 02 002c    SS.GIP 02 0094
-   SS.GIP2 02 0099   SS.HIST 02 00a1  SS.HNGUP 02 002b    SS.JOY 02 0013
-  SS.KYSNS 02 0027   SS.LINK 02 0007   SS.LOCK 02 0011  SS.MNSEL 02 0087
-  SS.MONTR 02 0092  SS.MOUNT 02 0082  SS.MOUSE 02 0089  SS.MPGPB 02 0084
-  SS.MSSIG 02 008a   SS.OPEN 02 0029    SS.OPT 02 0000  SS.PALET 02 0091
-    SS.POS 02 0005  SS.PSCRN 02 008e  SS.RDNET 02 0083  SS.READY 02 0001
-  SS.RELEA 02 001b  SS.RESET 02 0003  SS.RETEN 02 0016    SS.RFM 02 0018
-  SS.RSBIT 02 001e   SS.SBAR 02 0088  SS.SCINF 02 008f  SS.SCSIZ 02 0026
-  SS.SCTYP 02 0093  SS.SETMF 02 0024   SS.SIZE 02 0002  SS.SLGBF 02 0081
-  SS.SLOTS 02 0085    SS.SPT 02 000b    SS.SQD 02 000c   SS.SSIG 02 001a
-  SS.TICKS 02 0010   SS.TONE 02 0098  SS.ULINK 02 0008  SS.UMBAR 02 0095
-SS.VARSECT 02 0012    SS.WFM 02 0017  SS.WNSET 02 0086   SS.WTRK 02 0004
-    STDSTR 02 0012     STOP1 00 0000     STOP2 00 0010  STP.12MS 00 0002
-  STP.20MS 00 0001  STP.30MS 00 0000   STP.6MS 00 0003    SVCTNM 00 0002
-    SVCTSZ 00 006e  SYSSTATE 00 0080    SYSSTR 02 0010    SYSTBL 02 0013
-     SYSTM 00 00c0 TIMERPORT 01 e030    TIMOUT 00 0020  TIMSLEEP 00 0040
-  TKPERSEC 01 003c   TKPERTS 00 0006      TRUE 00 0001    TWOMHZ 00 0002
-  TWOSOVFL 00 0002      TYLG 01 00c1   TYP.256 00 0000     TYP.3 00 0001
-     TYP.5 00 0000   TYP.512 00 0004   TYP.CCF 00 0020   TYP.FLP 00 0000
-  TYP.HARD 00 0080  TYP.NCCF 00 0000   TYP.NSF 00 0040   TYP.SBO 00 0002
-   TYP.SOF 00 0000  TYPEMASK 00 00f0 TYPH.1024 00 0002 TYPH.2048 00 0003
-  TYPH.256 00 0000  TYPH.512 00 0001 TYPH.DRSV 00 000c  TYPH.DSQ 00 0010
-  TYPH.SSM 00 0003     UPBIT 00 0008    UPDAT. 00 0003    V$DESC 02 0004
-    V$DRIV 02 0000    V$FMGR 02 0006    V$STAT 02 0002    V$USRS 02 0008
-  V.BMAPSZ 02 001c     V.BMB 02 0017    V.BUSY 02 0004    V.DEV2 02 0009
-  V.DISKID 02 001a     V.ERR 02 000e  V.FILEHD 02 0018    V.INTR 02 000b
-   V.KANJI 02 0011    V.KBUF 02 0012    V.LINE 02 0007    V.LPRC 02 0003
-  V.MAPSCT 02 001d  V.MODADR 02 0014    V.NDRV 02 0006    V.PAGE 02 0000
-    V.PAUS 02 0008    V.PCHR 02 000d   V.PDLHD 02 0016    V.PORT 02 0001
-    V.QUIT 02 000c  V.RESBIT 02 001e     V.RSV 02 0018     V.SCF 02 001d
-  V.SCOFST 02 0020  V.SCTKOF 02 001f  V.TKOFST 02 0021    V.TRAK 02 0015
-    V.TYPE 02 0006    V.USER 02 0006    V.WAKE 02 0005    V.XOFF 02 0010
-     V.XON 02 000f    VD.OFS 02 0061    VD.STP 02 0060    VI.CNT 02 0000
-  VI.IFLAG 00 0001   VI.PKSZ 02 0005    VI.RST 02 0002   VI.STAT 02 0004
-     WORD7 00 0020     WORD8 00 0000    WRITE. 00 0002      ZERO 00 0004
+    FMWRIT 02 0015    FMWRLN 02 001b  FRTNCODE 00 0006    FSTIME 02 00a8
+     FTIME 02 008a    FTIMES 02 0074     H6309 06 0000  HALFCRRY 00 0020
+   HW.PAGE 01 00ff      HZ50 00 0001      HZ60 00 0002  I$ATTACH 02 0080
+  I$CHGDIR 02 0086   I$CLOSE 02 008f  I$CREATE 02 0083  I$DELETE 02 0087
+  I$DELETX 02 0090  I$DETACH 02 0081     I$DUP 02 0082  I$GETSTT 02 008d
+  I$MAKDIR 02 0085    I$OPEN 02 0084    I$READ 02 0089  I$READLN 02 008b
+    I$SEEK 02 0088  I$SETSTT 02 008e   I$WRITE 02 008a  I$WRITLN 02 008c
+     ICODE 00 0002    IMGCHG 00 0010  INDRIVER 00 0020   INITSTR 02 000e
+INSTALLNAME 02 001f  INTMASKS 00 0050   IRQMASK 00 0010     ISIZ. 00 0020
+    IT.ALF 02 0017    IT.BAU 02 0027    IT.BSE 02 0024    IT.BSO 02 0014
+    IT.BSP 02 001b    IT.COL 02 002c    IT.CYL 02 0017    IT.D2P 02 0028
+    IT.DEL 02 001c    IT.DLO 02 0015    IT.DNS 02 0016    IT.DRV 02 0013
+    IT.DTP 02 0012    IT.DUP 02 0020    IT.DVC 02 0012    IT.EKO 02 0016
+    IT.EOF 02 001e    IT.EOR 02 001d  IT.EXTEN 02 0022    IT.ILV 02 001f
+    IT.INT 02 0022  IT.LLDRV 02 0028    IT.MPI 02 002a    IT.NUL 02 0018
+    IT.OFS 02 0026    IT.OVF 02 0025    IT.PAG 02 001a    IT.PAR 02 0026
+    IT.PAU 02 0019    IT.PSC 02 0021    IT.QUT 02 0023    IT.ROW 02 002d
+    IT.RPR 02 001f    IT.RWC 02 0028    IT.SAS 02 0020    IT.SCT 02 001b
+    IT.SID 02 0019  IT.SOFF1 02 0025  IT.SOFF2 02 0026  IT.SOFF3 02 0027
+  IT.STOFF 02 0024    IT.STP 02 0014    IT.T0S 02 001d    IT.TFM 02 0021
+    IT.TYP 02 0015    IT.UPC 02 0013    IT.VFY 02 001a    IT.WPC 02 0025
+   IT.XOFF 02 002b    IT.XON 02 002a   IT.XTYP 02 002e     L007F 02 0045
+     L00AE 02 0026     L00B4 02 0030  LANGMASK 00 000f   LEFTBIT 00 0020
+     LEVEL 00 0001    M$DTYP 02 0012    M$EXEC 02 0009    M$FMGR 02 0009
+      M$ID 02 0000     M$ID1 00 0087    M$ID12 00 87cd     M$ID2 00 00cd
+  M$IDSIZE 02 0009     M$MEM 02 000b    M$MODE 02 000d    M$NAME 02 0004
+     M$OPT 02 0011  M$PARITY 02 0008    M$PDEV 02 000b    M$PORT 02 000e
+    M$REVS 02 0007    M$SIZE 02 0002    M$TYPE 02 0006    MAXMEM 02 0009
+  MD$ESIZE 02 0004   MD$LINK 02 0002   MD$MPTR 02 0000    MINSEC 01 0010
+    MODNAT 00 0020   MODPROT 00 0040  MPI.SLCT 01 ff7f  MPI.SLOT 01 0003
+     MULTI 00 0030      NAME 02 000d  NEGATIVE 00 0008   NOS9MAJ 00 0000
+   NOS9MIN 00 0001   NOS9VER 00 0001  NUMPATHS 00 0010   OBJ6309 00 0007
+     OBJCT 00 0001    ONEMHZ 00 0001    OPTCNT 00 001a     OS9.D 01 0001
+  OS9MAJOR 00 0000  OS9MINOR 00 0001   OS9VRSN 00 0001   OSLEVEL 02 0017
+   OSMAJOR 02 0019   OSMINOR 02 001a    OSNAME 02 001d     OSVER 02 0018
+    P$ADDR 02 0007     P$AGE 02 000c    P$CHAP 02 0006     P$CID 02 0003
+     P$DIO 02 001a      P$ID 02 0000    P$IOQN 02 0011    P$IOQP 02 0010
+     P$NIO 02 003b  P$PAGCNT 02 0008    P$PATH 02 0026     P$PID 02 0001
+  P$PMODUL 02 0012   P$PRIOR 02 000b   P$QUEUE 02 000e     P$SID 02 0002
+  P$SIGDAT 02 0039  P$SIGNAL 02 0036  P$SIGVEC 02 0037    P$SIZE 02 0040
+      P$SP 02 0004   P$STATE 02 000d     P$SWI 02 0014    P$SWI2 02 0016
+    P$SWI3 02 0018    P$USER 02 0009   PAREVEN 00 0060   PARMARK 00 00a0
+   PARMASK 00 00e0   PARNONE 00 0000    PARODD 00 0020  PARSPACE 00 00e0
+     PCODE 00 0003    PD.ALF 02 0025    PD.ATT 02 0033    PD.BAU 02 0035
+    PD.BSE 02 0032    PD.BSO 02 0022    PD.BSP 02 0029    PD.BUF 02 0008
+    PD.CNT 02 0002     PD.CP 02 000b    PD.CPR 02 0005    PD.CYL 02 0025
+    PD.D2P 02 0036    PD.DCP 02 003a    PD.DEL 02 002a    PD.DEV 02 0003
+    PD.DFD 02 0037    PD.DLO 02 0023    PD.DNS 02 0024    PD.DRV 02 0021
+    PD.DSK 02 001c    PD.DTB 02 001e    PD.DTP 02 0020    PD.DUP 02 002e
+    PD.DV2 02 000a    PD.DVT 02 003e    PD.EKO 02 0024    PD.EOF 02 002c
+    PD.EOR 02 002b    PD.ERR 02 003a  PD.EXTEN 02 0030     PD.FD 02 0034
+    PD.FST 02 000a    PD.ILV 02 002d    PD.INT 02 0030    PD.MAX 02 000d
+    PD.MIN 02 000f    PD.MOD 02 0001    PD.NUL 02 0026    PD.OPT 02 0020
+    PD.OVF 02 0033    PD.PAG 02 0028    PD.PAR 02 0034    PD.PAU 02 0027
+     PD.PD 02 0000    PD.PLP 02 003d    PD.PSC 02 002f    PD.PST 02 003f
+    PD.QUT 02 0031    PD.RAW 02 000c    PD.RGS 02 0006    PD.RPR 02 002d
+    PD.SAS 02 002e    PD.SBL 02 0013    PD.SBP 02 0016    PD.SCT 02 0029
+    PD.SID 02 0027    PD.SIZ 02 000f    PD.SMF 02 000a    PD.SSZ 02 0019
+    PD.STM 02 0012  PD.STOFF 02 0032    PD.STP 02 0022    PD.STS 02 0010
+    PD.T0S 02 002b    PD.TBL 02 003b    PD.TFM 02 002f    PD.TYP 02 0023
+    PD.UPC 02 0021    PD.VFY 02 0028   PD.XOFF 02 0039    PD.XON 02 0038
+    PDELIM 00 002f      PDIR 00 002e    PDSIZE 02 0040    PENTIR 00 0040
+    PEXEC. 00 0020  PIA0BASE 00 ff00  PIA1BASE 00 ff20   POLLCNT 02 000c
+    POLSIZ 02 0009    PREAD. 00 0008     PRGRM 00 0010  PROC6309 00 0002
+  PROC6809 00 0000  PROTFLAG 02 0016   PST.DCD 00 0001    PWRIT. 00 0010
+  PWRLNFRQ 01 0002    Q$FLIP 02 0002    Q$MASK 02 0003    Q$POLL 02 0000
+    Q$PRTY 02 0008    Q$SERV 02 0004    Q$STAT 02 0006       R$A 00 0001
+       R$B 00 0002      R$CC 00 0000       R$D 00 0001      R$DP 00 0003
+      R$PC 00 000a    R$SIZE 00 000c       R$U 00 0008       R$X 00 0004
+       R$Y 00 0006     RBF.D 01 0001     READ. 00 0001     REENT 00 0080
+       REV 01 0001  REVSMASK 00 000f  RIGHTBIT 00 0040   S$ABORT 02 0002
+   S$ALARM 02 0005     S$HUP 02 0004  S$INTRPT 02 0003    S$KILL 02 0000
+    S$WAKE 02 0001  S$WINDOW 02 0004     SBRTN 00 0020     SCF.D 01 0001
+    SHARE. 00 0040  SHELLSUB 00 0050  SHIFTBIT 00 0001      SIGN 00 0080
+    SINBUF 00 0002      SIZE 02 0000  SPACEBIT 00 0080  SS.AAGBF 02 0080
+  SS.ALFAS 02 001c  SS.ANPAL 02 009a  SS.ASCRN 02 008b   SS.ATTR 02 001c
+  SS.BLKRD 02 0014  SS.BLKWR 02 0015  SS.BREAK 02 001d  SS.CDREL 02 009b
+  SS.CDSIG 02 009a  SS.CDSTA 02 0099  SS.CLOSE 02 002a  SS.COMST 02 0028
+  SS.CURSR 02 0025   SS.DCMD 02 000d  SS.DEVNM 02 000e  SS.DFPAL 02 0097
+ SS.DIRENT 02 0020  SS.DSCRN 02 008c  SS.DSIZE 02 0026  SS.DSTAT 02 0012
+    SS.ECC 02 00b0   SS.ELOG 02 0019    SS.EOF 02 0006  SS.FBRGS 02 0096
+     SS.FD 02 000f  SS.FDINF 00 0020   SS.FEED 02 0009   SS.FILL 02 00a0
+  SS.FNDBF 02 009b    SS.FRZ 02 000a  SS.FSCRN 02 008d   SS.FSIG 02 002c
+    SS.GIP 02 0094   SS.GIP2 02 0099   SS.HIST 02 00a1  SS.HNGUP 02 002b
+    SS.JOY 02 0013  SS.KYSNS 02 0027   SS.LINK 02 0007   SS.LOCK 02 0011
+  SS.MNSEL 02 0087  SS.MONTR 02 0092  SS.MOUNT 02 0082  SS.MOUSE 02 0089
+  SS.MPGPB 02 0084  SS.MSSIG 02 008a   SS.OPEN 02 0029    SS.OPT 02 0000
+  SS.PALET 02 0091    SS.POS 02 0005  SS.PSCRN 02 008e  SS.RDNET 02 0083
+  SS.READY 02 0001  SS.RELEA 02 001b  SS.RESET 02 0003  SS.RETEN 02 0016
+    SS.RFM 02 0018  SS.RSBIT 02 001e   SS.SBAR 02 0088  SS.SCINF 02 008f
+  SS.SCSIZ 02 0026  SS.SCTYP 02 0093  SS.SETMF 02 0024   SS.SIZE 02 0002
+  SS.SLGBF 02 0081  SS.SLOTS 02 0085    SS.SPT 02 000b    SS.SQD 02 000c
+   SS.SSIG 02 001a  SS.TICKS 02 0010   SS.TONE 02 0098  SS.ULINK 02 0008
+  SS.UMBAR 02 0095SS.VARSECT 02 0012    SS.WFM 02 0017  SS.WNSET 02 0086
+   SS.WTRK 02 0004    STDSTR 02 0012     STOP1 00 0000     STOP2 00 0010
+  STP.12MS 00 0002  STP.20MS 00 0001  STP.30MS 00 0000   STP.6MS 00 0003
+    SVCTNM 00 0002    SVCTSZ 00 006e  SYSSTATE 00 0080    SYSSTR 02 0010
+    SYSTBL 02 0013     SYSTM 00 00c0 TIMERPORT 01 e030    TIMOUT 00 0020
+  TIMSLEEP 00 0040  TKPERSEC 01 003c   TKPERTS 00 0006      TRUE 00 0001
+    TWOMHZ 00 0002  TWOSOVFL 00 0002      TYLG 01 00c1   TYP.256 00 0000
+     TYP.3 00 0001     TYP.5 00 0000   TYP.512 00 0004   TYP.CCF 00 0020
+   TYP.FLP 00 0000  TYP.HARD 00 0080  TYP.NCCF 00 0000   TYP.NSF 00 0040
+   TYP.SBO 00 0002   TYP.SOF 00 0000  TYPEMASK 00 00f0 TYPH.1024 00 0002
+ TYPH.2048 00 0003  TYPH.256 00 0000  TYPH.512 00 0001 TYPH.DRSV 00 000c
+  TYPH.DSQ 00 0010  TYPH.SSM 00 0003     UPBIT 00 0008    UPDAT. 00 0003
+    V$DESC 02 0004    V$DRIV 02 0000    V$FMGR 02 0006    V$STAT 02 0002
+    V$USRS 02 0008  V.BMAPSZ 02 001c     V.BMB 02 0017    V.BUSY 02 0004
+    V.DEV2 02 0009  V.DISKID 02 001a     V.ERR 02 000e  V.FILEHD 02 0018
+    V.INTR 02 000b   V.KANJI 02 0011    V.KBUF 02 0012    V.LINE 02 0007
+    V.LPRC 02 0003  V.MAPSCT 02 001d  V.MODADR 02 0014    V.NDRV 02 0006
+    V.PAGE 02 0000    V.PAUS 02 0008    V.PCHR 02 000d   V.PDLHD 02 0016
+    V.PORT 02 0001    V.QUIT 02 000c  V.RESBIT 02 001e     V.RSV 02 0018
+     V.SCF 02 001d  V.SCOFST 02 0020  V.SCTKOF 02 001f  V.TKOFST 02 0021
+    V.TRAK 02 0015    V.TYPE 02 0006    V.USER 02 0006    V.WAKE 02 0005
+    V.XOFF 02 0010     V.XON 02 000f    VD.OFS 02 0061    VD.STP 02 0060
+    VI.CNT 02 0000  VI.IFLAG 00 0001   VI.PKSZ 02 0005    VI.RST 02 0002
+   VI.STAT 02 0004     WORD7 00 0020     WORD8 00 0000    WRITE. 00 0002
+      ZERO 00 0004

@@ -86,6 +86,13 @@ check(re.search(r'/dev/hda1\s+\d+\s+\d+\s+\d+', out) is not None, 'df reports th
 check(str(datetime.date.today().year) in out.split('# date')[-1][:60], 'date shows the date of the simulated machine')
 check('Halted.' in out and rc == 0, 'shutdown (init stops the system) halts and the simulator powers off (exit code 0)', 'rc=%s' % rc)
 
+# --- setdate: -u sets the system time, -w writes it to /dev/rtc (the command $05 of the clock), -a reads /dev/rtc back
+out4, rc4 = run(disk, LOGIN + ['send "setdate -u\r"', 'expect "Enter new date: "', 'send "2031-12-25\r"', 'expect "Enter new time: "',
+                               'send "10:20:30\r"', 'expect "# "'] +
+                cmds('setdate -w', 'setdate -a', 'date', 'sync') + ['send "shutdown\\r"', 'expect "Halted."', 'sleep 500'])
+check('2031' in out4.split('# date')[-1][:80] and 'Dec' in out4.split('# date')[-1][:80],
+      'setdate -u / -w / -a: the system time is set, written to /dev/rtc and read back (date)', out4[-500:])
+
 # --- the written file survives a restart, the file system was unmounted cleanly by shutdown
 out2, rc2 = run(disk, LOGIN + cmds('cat /tmp/t/f', 'ls /tmp/t') + ['send "halt\\r"', 'expect "Halted."', 'sleep 500'])
 check(re.search(r'# cat /tmp/t/f\ndata\n', out2) is not None and 'not cleanly' not in out2,

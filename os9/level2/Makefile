@@ -57,7 +57,7 @@ d1 : d1.asm
 v0 : v0.asm
 	$(A09) $@.asm -o $@ $(LST)
 
-clock :  
+clock : clock.asm
 	$(A09) clock.asm -o clock $(LST)
 
 pty : ../level1/pty.asm

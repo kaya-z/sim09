@@ -2,14 +2,14 @@
 /* Copyright (c) 2026 YUKARI Semiconductor Devices */
 /*
  * date - show the date and time of the clock;  date -s YYYY-MM-DD [HH:MM[:SS]]  sets the clock (FM-11: it has no calendar chip and no battery,
- * the clock of the system counts from 2026-01-01 at every boot; on the sbc09 the clock is read-only)
+ * the clock of the system counts from 2026-01-01 at every boot; on the sbc09 the program sets the clock of the hardware: command $05 of the RTC)
  */
 #include "types.h"
 #include "mklib.h"
 #include "mkstr.h"
 #include "mk09.h"
 #include "version.h"
-#define TOOL_VERSION "1.1"
+#define TOOL_VERSION "1.2"
 
 int main(int argc, char **argv)
 {

@@ -217,7 +217,8 @@
 00ED: 8601                       lda   #$01                    standard output
 00EF: 103F8A                     os9   I$Write                 write out banner
 00F2:                   
-00F2:                   * Set default time
+00F2:                   * Set default time (the kernel starts the Clock module with this call; the module is not in the table of system calls yet,
+00F2:                   * so the RTC of the hardware is not touched: its F$STime sets it)
 00F2: 308DFF89                   leax  >DefTime,pcr
 00F6: 103F16                     os9   F$STime                 set time to default
 00F9:                   

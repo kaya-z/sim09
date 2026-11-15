@@ -210,7 +210,8 @@ SignOn
          lda   #$01                    standard output
          os9   I$Write                 write out banner
 
-* Set default time
+* Set default time (the kernel starts the Clock module with this call; the module is not in the table of system calls yet,
+* so the RTC of the hardware is not touched: its F$STime sets it)
          leax  >DefTime,pcr
          os9   F$STime                 set time to default
 
