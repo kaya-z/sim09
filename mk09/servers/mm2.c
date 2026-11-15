@@ -3,7 +3,8 @@
 /*
  * mm2.c - the memory manager of Level 2 (the MMU of the FM-11; TASK 5, protocol MM_* in proto.h)
  *
- * It keeps the books of the physical pages of 4KB that the system does not use (the first 128KB of the machine, MM_POOL0 / MM_POOL1 of memmap.h):
+ * It keeps the books of the physical pages of 4KB that the system does not use (the first 128KB of the machine: MM_POOL0 / MM_POOL1 of memmap.h; every further
+ * step of 128KB that the kernel found at the start, up to 1MB):
  * PM asks for n pages and gets a list of page numbers (written to its buffer, the grant of the call), and gives them back with the list.
  * The kernel puts them into the map of the new program (tcreate).  MM_INFO tells the numbers in pages of 256 bytes, as in Level 1.
  */
@@ -12,14 +13,17 @@
 #include "proto.h"
 #include "memmap.h"
 
-static u16 freem[2];                    /* free pages: bit n of freem[0] = the physical page n, of freem[1] = n + 16 */
+static u16 freem[16];                   /* free pages: bit n of freem[k] = the physical page 16 * k + n (up to 1MB = 256 pages) */
 static u8 total;
+static u16 npages;                      /* its pages (the product by a shift: 32 * 8 does not go into a byte) */
+static u8 ngrp;                         /* the RAM of the machine in steps of 128KB (32 pages): the kernel has tried it at the start (memprobe) */
+#define MEMGRP  (*(volatile u8 *)(K_DATA + K_DSZ - 0x91))
 
 static u8 count(void)
 {
     u8 n = 0, i;
     u16 w;
-    for (i = 0; i < 2; i++)
+    for (i = 0; i < 2 * ngrp; i++)
         for (w = freem[i]; w; w >>= 1)
             if (w & 1) n++;
     return n;
@@ -28,10 +32,16 @@ static u8 count(void)
 int main(void)
 {
     msg_t m, r;
-    u8 list[16], i, n, p, got;
+    u8 list[16], i, n, got;
+    u16 p;
 
+    ngrp = MEMGRP;
+    if (ngrp < 1 || ngrp > 8) ngrp = 1;
+    npages = ngrp;
+    npages <<= 5;
     freem[0] = MM_POOL0;
     freem[1] = MM_POOL1;
+    for (i = 2; i < 2 * ngrp; i++) freem[i] = 0xFFFF;      /* (the steps above the first 128KB are all free) */
     total = count();
     for (;;) {
         if (mk_recv(TID_ANY, &m)) continue;
@@ -45,7 +55,7 @@ int main(void)
             if (n == 0 || n > 13 || m.c < n) { r.op = E_INVAL; break; }
             if (count() < n) { r.op = E_NOMEM; break; }
             got = 0;
-            for (p = 0; p < 32 && got < n; p++)
+            for (p = 0; p < npages && got < n; p++)
                 if (freem[p >> 4] & (1u << (p & 15))) {
                     freem[p >> 4] &= ~(1u << (p & 15));
                     list[got++] = p;
@@ -62,12 +72,15 @@ int main(void)
             r.op = mk_copyfrom(m.src, 0, list, n);
             if (r.op) break;
             for (i = 0; i < n; i++)
-                if (list[i] < 32) freem[list[i] >> 4] |= 1u << (list[i] & 15);
+                if (list[i] < npages) freem[list[i] >> 4] |= 1u << (list[i] & 15);
             break;
         case MM_MAP:
             r.op = E_OK;
-            r.a = freem[0];
-            r.b = freem[1];
+            i = (u8)m.a;                                /* the word to start with (0, 2, ..): the free pages 16 * i .. 16 * i + 31 */
+            if (i > 2 * ngrp - 2) i = 0;
+            r.a = freem[i];
+            r.b = freem[i + 1];
+            r.c = ngrp;
             break;
         case MM_INFO:
             r.op = E_OK;

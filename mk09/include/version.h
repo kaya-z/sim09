@@ -101,6 +101,7 @@
  *   1.41 2026-11-14  FM-11: the clock of the system (kernel 1.11: the kernel keeps the calendar and counts it on at every TICK_HZ ticks; SYS_TIME, FS_STIME); `date -s` (date 1.1) sets the clock.
  *   1.42 2026-11-14  PM: a program that is replaced in the background (a stage of `pc &`: the next stage is bigger than the free memory, the shell stays in memory) used to end silently: it now prints "bg: cannot start".
  *   1.43 2026-11-15  sbc09: `date -s` sets the clock of the FPGA / simulator (the command $05 of the RTC: the calendar of the hardware takes $E031-$E036 and counts on); date 1.2.
+ *   1.44 2026-11-15  FM-11 Level 2: the RAM is found at the start (kernel 1.12: memprobe tries the steps of 128KB through the window, up to 1MB; MM manages them; `mem` shows the pages).
  *
  * The history of the kernel version (the system version that raised it):
  *   1.0  (1.0)   first version
@@ -115,16 +116,17 @@
  *   1.9  (1.38)  the FM-11 Level 2: the MMU (an address space for every program)
  *   1.10 (1.39)  FM-11: the keyboard code test in the kernel (bit 0 of the high byte of the key code)
  *   1.11 (1.41)  FM-11: the clock of the system (the calendar in the kernel, SYS_TIME)
+ *   1.12 (1.44)  FM-11 Level 2: the installed RAM is tried at the start (memprobe), the number of steps of 128KB is left for MM
  */
 #ifndef MK_VERSION_H
 #define MK_VERSION_H
 
-#define MK09_VERSION    "1.43"            /* the system version */
-#define MK09_KERNEL_VERSION "1.11"        /* the kernel version */
+#define MK09_VERSION    "1.44"            /* the system version */
+#define MK09_KERNEL_VERSION "1.12"        /* the kernel version */
 #ifdef BOARD_FM11
 #define MK09_FOR        " (for FM-11)"      /* the version of a machine dependent system or program ends with this */
 #ifdef FM11_MMU
-#define MK09_MEM        "Level 2: 128KB, MMU"
+#define MK09_MEM        "Level 2: MMU, 128KB-1MB RAM"
 #else
 #define MK09_MEM        "Level 1: 64KB flat, no MMU"
 #endif

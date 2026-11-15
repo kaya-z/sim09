@@ -25,10 +25,18 @@ int main(int argc, char **argv)
     (void)argc; (void)argv;
     if (meminfo(&total, &freep, &big, &procs) < 0) { puts("mem: no answer"); return 1; }
 #ifdef FM11_MMU
-    {   /* Level 2: the machine has 128KB = 32 physical pages of 4KB; MM hands out the pages that the system does not use, to the programs */
-        u16 pp = total >> 4, pf = freep >> 4;
-        printf("physical memory (RAM 128KB = 32 pages of 4KB):\n");
-        printf("  system (kernel, servers, vectors)  %2u pages  %3u KB\n", 32 - 3 - pp, (32 - 3 - pp) * 4);
+    {   /* Level 2: the machine has 128KB .. 1MB (the kernel has tried it at the start); MM hands out the pages that the system does not use, to the programs */
+        u16 pp = total >> 4, pf = freep >> 4, sp;
+        u8 g = 1, k;
+        msg_t q;
+        q.op = MM_MAP;
+        q.a = 0;
+        if (!mk_call(TID_MM, &q) && !q.op && q.c >= 1 && q.c <= 8) g = (u8)q.c;
+        for (sp = 0, k = 0; k < 32; k++)                /* the pages of the first 128KB that MM does not manage */
+            if (!((k < 16 ? MM_POOL0 : MM_POOL1) & (1u << (k & 15)))) sp++;
+        sp -= 3;
+        printf("physical memory (RAM %uKB = %u pages of 4KB):\n", (u16)g * 128, (u16)g * 32);
+        printf("  system (kernel, servers, vectors)  %2u pages  %3u KB\n", sp, sp * 4);
         printf("  track buffer of format             %2u pages  %3u KB\n", 3, 12);
         printf("  programs (MM)                      %2u pages  %3u KB\n", pp, pp * 4);
         printf("    used                             %2u pages  %3u KB  (%u program%s)\n", pp - pf, (pp - pf) * 4, procs, procs == 1 ? "" : "s");
@@ -36,18 +44,22 @@ int main(int argc, char **argv)
     }
     {   /* which page is what: K kernel, S servers, F format buffer, P a program, . free, - not used, H hardware (the I/O area is in the page 15) */
         msg_t m;
-        u16 pool[2], fr[2];
-        u8 p, row, ch;
+        u16 pool[2], fr[2], fw;
+        u8 p, row, ch, wi, ng = 1;
         pool[0] = MM_POOL0;
         pool[1] = MM_POOL1;
-        m.op = MM_MAP;
-        fr[0] = fr[1] = 0;
-        if (!mk_call(TID_MM, &m) && !m.op) { fr[0] = m.a; fr[1] = m.b; }
         puts("  physical pages of 4KB (K kernel, S servers, F format, P programs, . free):");
-        for (row = 0; row < 2; row++) {
-            printf("    %02u-%02u  ", row * 16, row * 16 + 15);
-            for (p = row * 16; p < row * 16 + 16; p++) {
-                if (pool[p >> 4] & (1u << (p & 15))) ch = (fr[p >> 4] & (1u << (p & 15))) ? '.' : 'P';
+        for (wi = 0; wi < 2 * ng; wi += 2) {
+            m.op = MM_MAP;
+            m.a = wi;
+            fr[0] = fr[1] = 0;
+            if (!mk_call(TID_MM, &m) && !m.op) { fr[0] = m.a; fr[1] = m.b; if (m.c >= 1 && m.c <= 8) ng = (u8)m.c; }
+            p = wi * 16;                                /* (the first page of the line: 32 pages) */
+            printf("    %03u-%03u  ", p, p + 31);
+            for (fw = 0; fw < 32; fw++, p++) {
+                row = fw >> 4;
+                if (p >= 32) ch = (fr[row] & (1u << (fw & 15))) ? '.' : 'P';
+                else if (pool[p >> 4] & (1u << (p & 15))) ch = (fr[row] & (1u << (fw & 15))) ? '.' : 'P';
                 else if (p >= BOUNCE && p < BOUNCE + 3) ch = 'F';
                 else if (p < 16) ch = (p <= ((K_DATA + K_DSZ - 1) >> 12)) ? 'K' : 'S';
                 else ch = '-';
