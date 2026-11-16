@@ -1,0 +1,1682 @@
+* SPDX-License-Identifier: MIT
+* Copyright (c) 2026 YUKARI Semiconductor Devices
+* kernel.s - the MK09 kernel in MC6809 assembler
+*
+* The same kernel as kernel/kernel.c + arch/m6809/entry.s (tasks, synchronous messages,
+* notifications, the timer tick, grants, the scheduler), written in assembler: it is less than
+* half the size of the C version and about twice as fast, and the memory of a 64KB machine
+* is what the programs need.  kernel/kernel.c is the portable version for other processors
+* (and the reference of this one: the tests run with both, "make KERNEL=c").
+*
+* Conventions:
+*   - the kernel runs with interrupts masked, on its own stack, with DP = the page of its
+*     variables ("<name" addressing); a task's DP is saved in its frame and comes back by RTI
+*   - a system call handler gets nothing in registers; it reads its arguments from the frame
+*     of the caller (frm).  It returns B = status, X = value and the carry set when the call has
+*     not completed (the task is blocked or has exited: its frame is left alone)
+*   - U, Y and D are scratch inside the kernel; the current task is cur / curp
+*
+* Task table entry (TSZ bytes):
+*   state prio peer call priv gfl exitcode - nbits(2) sp(2) wake(2) ubuf(2) lo(2) hi(2)
+*   gptr(2) glen(2) cpu(2) msg(10)
+
+	include memmap.inc
+	include sysnum.inc
+
+KDP	equ	K_DATA/256
+
+NTASK	equ	11
+	ifdef	MMU
+TSZ	equ	75
+	else
+TSZ	equ	36
+	endc
+FRAME	equ	12
+QUANTUM	equ	2
+PRIO_IDLE equ	7
+STACKGUARD equ	16
+MAXCOPY	equ	1024
+TID_PM	equ	4
+TID_MM	equ	5
+TID_USER0 equ	6
+TID_ANY	equ	$FF
+TID_HW	equ	$FE
+OP_NOTIFY equ	$FF
+NFY_EXIT equ	2
+NFY_RX	equ	$10
+NFY_DISK equ	$20
+DCTL	equ	$E049			the disk port: control / status of the asynchronous mode
+TID_DISK equ	2
+
+TS_FREE	equ	0
+TS_READY equ	1
+TS_RECV	equ	2
+TS_SEND	equ	3
+TS_SLEEP equ	4
+TS_ZOMBIE equ	5
+TS_NEW	equ	6
+TS_RUN	equ	7
+
+E_PERM	equ	1
+E_NOTASK equ	2
+E_DEAD	equ	3
+E_FAULT	equ	4
+E_NOSLOT equ	5
+E_NOMEM	equ	6
+E_NOTWAIT equ	7
+E_INVAL	equ	8
+E_NOSYS	equ	22
+
+GR_READ	equ	1
+GR_WRITE equ	2
+
+T_STATE	equ	0
+T_PRIO	equ	1
+T_PEER	equ	2
+T_CALL	equ	3
+T_PRIV	equ	4
+T_GFL	equ	5
+T_EXIT	equ	6
+T_NBITS	equ	8
+T_SP	equ	10
+T_WAKE	equ	12
+T_UBUF	equ	14
+T_LO	equ	16
+T_HI	equ	18
+T_GPTR	equ	20
+T_GLEN	equ	22
+T_CPU	equ	24
+T_MSG	equ	26
+	ifdef	MMU
+* Level 2 (the MMU of the FM-11): the frame of a task that has trapped is kept in its table entry (T_FRM; the task's stack is in its own
+* address space and cannot be reached from another one), a message for a task that waits for it is kept in T_RMSG (T_PEND = 1) until the task runs
+* again, and T_MAP is the physical page of each of its 16 logical pages of 4KB (the map set of the task is the one with its number)
+T_FRM	equ	36
+T_RMSG	equ	48
+T_PEND	equ	58
+T_MAP	equ	59
+FM_TASK	equ	$FD90			the map set in use (0-15)
+FM_MMR	equ	$FD80			its 16 registers: the physical page of the logical page 0-15
+FM_MCFG	equ	$FD93			bit 7 MMU on, bit 6 the window at $7C00-$7FFF, bit 0 boot ROM off
+FM_WIN1	equ	$FD91			the window: physical address bits 19-16
+FM_WIN2	equ	$FD92			and bits 15-8 (the window shows the address (FM_WIN2 * 256 + $7C00 + n))
+WINLOG	equ	$7C00
+	endc
+M_SRC	equ	0
+M_B	equ	4
+M_C	equ	6
+MSGSZ	equ	10
+
+F_CC	equ	0
+F_A	equ	1
+F_B	equ	2
+F_DP	equ	3
+F_X	equ	4
+F_Y	equ	6
+F_U	equ	8
+F_PC	equ	10
+
+TIMER	equ	$E030
+ACIA	equ	$E000			the console: status / control, data at +1
+RXQ	equ	128			the size of the ring of the console server (servers/tty.c, RX_RING)
+POWER	equ	$E00F
+* FM-11 (FM11=1): no ACIA / timer / disk port of the sbc09 board; the console input is the key code of the keyboard
+* ($FD00/$FD01, interrupt flag $FD03 bit 6), the tick is the timer 2 of the MC6840 PTM ($FD38-$FD3F), the console
+* output and the disk are done by the servers (bsp/fm11)
+FM_KEYH	equ	$FD00
+FM_KEYL	equ	$FD01
+FM_IMSK	equ	$FD02
+FM_IFLG	equ	$FD03
+FM_PTMC2 equ	$FD39			PTM control register 2 (write) / status (read)
+FM_PTMC13 equ	$FD38			PTM control register 1 or 3
+FM_PTM2H equ	$FD3C			timer 2: latch / counter
+
+* ================================================================================ variables
+	section	bss
+	export	kernel_dp_end
+cur	rmb	1			the running task
+slice	rmb	1			ticks left of its time slice
+resched	rmb	1			something happened: the scheduler has to look at all tasks
+hooktid	rmb	1			task that gets hookbits at every tick (0 = nobody)
+mode	rmb	1			ipc: 0 send, 1 call, 2 reply; grant: GR_READ / GR_WRITE
+gfl	rmb	1			ipc: grant flags of a call
+dstid	rmb	1
+cnt	rmb	1
+sendhint rmb	1			not 0: a task may be blocked in a send (set when one blocks, cleared by a receive that finds none)
+sseen	rmb	1			(sc_recv: a task in SEND state was seen)
+hookbits rmb	2
+rxp	rmb	2			the ring of the console server (the bytes; the head and the tail are the two bytes before them) that the receive interrupt fills (0: none yet)
+rxgot	rmb	1			(rxdrain: characters were moved)
+ticks	rmb	2
+curp	rmb	2			&tasks[cur]
+frm	rmb	2			the frame of the task that trapped
+cursp0	rmb	2
+dstp	rmb	2			ipc: &tasks[dst]
+ubuf	rmb	2
+tmpw	rmb	2
+tmpw2	rmb	2
+kmsg	rmb	MSGSZ			a message being built (also the taskinfo)
+	ifdef	MMU
+tcb	rmb	27			the block of a task creation (+ the 16 physical pages of its map)
+	else
+tcb	rmb	11			the block of a task creation
+	endc
+kernel_dp_end equ *
+tasks	rmb	NTASK*TSZ
+rrlast	rmb	2			the server / the program that ran last (round robin)
+idlestk	rmb	64
+kstack	rmb	96
+kstk_top equ	*
+	ifdef	MMU
+xp	rmb	2			xcopy: the table entry of the other task
+xa	rmb	2			its address
+xc	rmb	2			the address of the caller's memory
+xn	rmb	2			the bytes to go
+xm	rmb	1			GR_READ: from the other task, GR_WRITE: to it
+xbuf	rmb	256			(the window and the caller's memory are not in sight together)
+	endc
+	endsection
+
+* ================================================================================ start
+	section	start
+	import	l_bss
+	import	s_bss
+	export	_start
+_start	orcc	#$50
+	lds	#kstk_top
+	ldx	#s_bss			clear the bss
+	ldd	#l_bss
+@clr	clr	,x+
+	subd	#1
+	bne	@clr
+	lda	#KDP
+	tfr	a,dp
+* the vector jump table (the hardware vectors in the boot ROM point to VEC_BASE+0..15)
+	ldx	#VEC_BASE
+	ldy	#vectab
+@vec	lda	#$7E			JMP extended
+	sta	,x+
+	ldd	,y++
+	std	,x++
+	cmpy	#vectab+12
+	bne	@vec
+	ifdef	FM11
+* the hardware vectors are RAM on the FM-11 ($FFF2-$FFFD): point them to the jump table
+	ldx	#$FFF2
+	ldy	#fmvecs
+@fv	ldd	,y++
+	std	,x++
+	cmpx	#$FFFE
+	bne	@fv
+	endc
+* the idle task and the system tasks
+	ldy	#boottab
+@bt	ldb	,y
+	cmpb	#$FF
+	beq	@btdone
+	lda	#TSZ
+	mul
+	addd	#tasks
+	tfr	d,x
+	lda	#TS_READY
+	sta	T_STATE,x
+	lda	1,y
+	sta	T_PRIO,x
+	lda	2,y
+	sta	T_PRIV,x
+	ldd	5,y
+	std	T_LO,x
+	ldd	7,y
+	std	T_HI,x			(D = hi = the top of the stack)
+	pshs	y
+	ldy	3,y			entry
+	ldu	#0
+	lbsr	mkframe
+	puls	y
+	leay	9,y
+	bra	@bt
+@btdone
+	ifdef	MMU
+	lbsr	mmuinit
+	endc
+	ifdef	FM11
+* PTM: reset, timer 2 = 16 bit, continuous, internal clock (E = 2 MHz), interrupt on, 40000 counts = 50 Hz
+	lda	#$01
+	sta	FM_PTMC2		CR2 bit 0 = 1: $FD38 is CR1
+	sta	FM_PTMC13		CR1 bit 0 = 1: reset the timers
+	sta	FM_PTMC2		(the reset cleared CR2: select CR1 again)
+	clr	FM_PTMC13		CR1 = 0: all timers run
+	lda	#$42			CR2: interrupt enable, 16 bit, continuous, E clock, $FD38 = CR3
+	sta	FM_PTMC2
+	ldd	#40000
+	std	FM_PTM2H		starts the timer
+	lda	#$90			interrupt mask: keyboard and PTM
+	sta	FM_IMSK
+	else
+	lda	#$8F			the timer
+	sta	TIMER
+	endc
+	clr	<cur
+	ldx	#tasks
+	stx	<curp
+	clr	<slice
+	lbra	sched
+
+vectab	fdb	trap_ret		SWI3
+	fdb	trap_ret		SWI2
+	fdb	swi_entry		SWI: system calls
+	fdb	trap_ret		NMI
+	fdb	irq_entry		IRQ: the timer
+	fdb	trap_ret		FIRQ
+	ifdef	FM11
+fmvecs	fdb	VEC_BASE+0,VEC_BASE+3,VEC_BASE+15,VEC_BASE+12,VEC_BASE+6,VEC_BASE+9	SWI3 SWI2 FIRQ IRQ SWI NMI
+	endc
+
+* tid, prio, priv, entry, lo, hi
+boottab	fcb	0,PRIO_IDLE,0
+	fdb	idle,idlestk,idlestk+64
+	fcb	1,1,1
+	fdb	TTY_CODE,TTY_DATA,TTY_DATA+TTY_DSZ
+	fcb	2,1,0
+	fdb	DISK_CODE,DISK_DATA,DISK_DATA+DISK_DSZ
+	fcb	3,1,1				FS is privileged: it loads programs into new tasks (FS_READTL)
+	fdb	FS_CODE,FS_DATA,FS_DATA+FS_DSZ
+	fcb	4,1,1
+	fdb	PM_CODE,PM_DATA,PM_DATA+PM_DSZ
+	fcb	5,1,0
+	fdb	MM_CODE,MM_DATA,MM_DATA+MM_DSZ
+	fcb	$FF
+	endsection
+
+* ================================================================================ code
+	section	code
+	export	trap_ret
+
+* mkframe: X = task, D = top of its stack, Y = entry, U = argument (X in the first run):
+* make the first frame and set the task's sp
+mkframe	pshs	d,x,y,u
+	subd	#FRAME
+	std	T_SP,x
+	ifdef	MMU
+	leax	T_FRM,x			(the frame is written to the stack when the task runs: dispatch)
+	else
+	tfr	d,x
+	endc
+	lda	#$80			CC: E flag, interrupts enabled
+	sta	F_CC,x
+	clr	F_A,x
+	clr	F_B,x
+	clr	F_DP,x
+	ldd	6,s			argument
+	std	F_X,x
+	ldd	#0
+	std	F_Y,x
+	std	F_U,x
+	ldd	4,s			entry
+	std	F_PC,x
+	puls	d,x,y,u,pc
+
+idle	sync
+	bra	idle
+
+* ------------------------------------------------------------------------ the traps
+swi_entry
+	sts	>cursp0			(extended: the DP of the task is still in force)
+	lds	#kstk_top
+	lda	#KDP
+	tfr	a,dp
+	ldu	<cursp0
+	stu	<frm
+	ldy	<curp
+	stu	T_SP,y
+	lbsr	chkstack
+	lbcs	sched
+	ifdef	MMU
+	lbsr	getframe
+	stu	<frm
+	endc
+	ldb	F_A,u			the number of the call
+	cmpb	#16
+	blo	@ok
+	tst	T_PRIV,y
+	bne	@ok
+	ldb	#E_PERM
+	bra	@done
+@ok	cmpb	#SYS_RXREG
+	bhi	@nosys
+	clra
+	aslb
+	ldx	#sctab
+	ldx	d,x
+	beq	@nosys
+	jsr	,x			-> B = status, X = value, carry: blocked
+	lbcs	sched
+	ldu	<frm
+	stx	F_X,u
+@done	ldu	<frm
+	stb	F_B,u
+	lbra	sched
+@nosys	ldb	#E_NOSYS
+	bra	@done
+
+irq_entry
+	sts	>cursp0			(extended: the DP of the task is still in force)
+	lds	#kstk_top
+	lda	#KDP
+	tfr	a,dp
+	ldu	<cursp0
+	stu	<frm
+	ldy	<curp
+	stu	T_SP,y
+	ifdef	MMU
+	lbsr	getframe
+	stu	<frm
+	endc
+	lbsr	rxdrain			the console (the IRQ line is shared with the timer)
+	ifndef	FM11
+	lda	DCTL			the disk: a command has finished and the interrupt is on?
+	anda	#$C0
+	cmpa	#$C0
+	bne	@nd
+	lda	#$01			asynchronous, the interrupt off (the disk server reads the result, which takes the done flag)
+	sta	DCTL
+	ldb	#TID_DISK
+	ldx	#NFY_DISK
+	lbsr	notify
+	ldy	<curp
+@nd	lda	TIMER
+	anda	#$10
+	bne	@tick
+	else
+	lda	FM_PTMC2		PTM status: bit 7 = a timer interrupt is pending
+	bmi	@tick
+	endc
+	tst	<rxgot			(not the timer) characters have arrived: tell the console server
+	beq	@out
+	ldx	#NFY_RX
+	bra	@ntf
+@tick
+	ifdef	FM11
+	lda	FM_PTM2H		reading the counter after the status clears the flag
+	else
+	lda	#$8F
+	sta	TIMER
+	endc
+	ldd	<ticks
+	addd	#1
+	std	<ticks
+	ldd	T_CPU,y
+	addd	#1
+	std	T_CPU,y
+	lda	<slice
+	beq	@noslice
+	deca
+	sta	<slice
+	bne	@noslice
+	lda	#1
+	sta	<resched
+@noslice
+	ldx	#tasks+TSZ		wake the sleepers
+	lda	#NTASK-1
+	sta	<cnt
+@sl	ldb	T_STATE,x
+	cmpb	#TS_SLEEP
+	bne	@nx
+	ldd	<ticks
+	subd	T_WAKE,x
+	bmi	@nx
+	pshs	x
+	ldb	#0
+	ldy	#0
+	lbsr	wake
+	puls	x
+@nx	leax	TSZ,x
+	dec	<cnt
+	bne	@sl
+	ldx	<hookbits
+@ntf	ldb	<hooktid
+	beq	@out
+	lbsr	notify
+@out	ldy	<curp
+	ifdef	MMU
+	ldu	T_SP,y
+	else
+	ldu	<frm
+	endc
+	bsr	chkstack
+
+* sched: run the best task: S := its frame, RTI
+sched	tst	<resched
+	bne	@full
+	tst	<slice
+	beq	@full
+	ldy	<curp
+	lda	T_STATE,y
+	cmpa	#TS_READY
+	beq	@go			nothing happened that could change the choice
+@full	clr	<resched
+	bsr	pick			B = the task to run
+	cmpb	<cur
+	bne	@new
+	tst	<slice
+	bne	@same
+@new	lda	#QUANTUM
+	sta	<slice
+@same	stb	<cur
+	lda	#TSZ
+	mul
+	addd	#tasks
+	std	<curp
+@go	ldy	<curp
+	ifdef	MMU
+	lbsr	dispatch
+	endc
+	ldd	T_SP,y
+	tfr	d,s
+trap_ret
+	rti
+
+* chkstack: the frame (U) of the current task (Y) must lie in its region; if not the task is
+* stopped (code $FD) and the carry is set
+chkstack
+	tst	<cur
+	beq	@ok
+	ldd	T_LO,y
+	addd	#STACKGUARD
+	std	<tmpw
+	cmpu	<tmpw
+	blo	@bad
+	leax	FRAME,u
+	cmpx	T_HI,y
+	bhi	@bad
+@ok	andcc	#$FE
+	rts
+@bad	ldb	<cur
+	lda	#$FD
+	lbsr	exit
+	orcc	#1
+	rts
+
+* pick: -> B = the task to run.  The scheduling classes are given by the task number: the servers 1 .. TID_MM (priority
+* 1) first, then the programs TID_USER0 .. NTASK-1 (priority 4, PM makes them all so), then the idle task 0.  Inside a class
+* round robin from the one that ran last (rrlast: a server that wakes at every tick must not restart the rotation of the
+* programs).  The current task stays while its slice lasts and nothing more urgent waits.  (Two short scans instead of a
+* search for the best priority over all the tasks: the scheduler runs twice in every message round trip.)
+pick	ldy	<curp
+	lda	T_STATE,y
+	cmpa	#TS_READY
+	bne	@srv
+	tst	<slice
+	beq	@srv
+	ldb	<cur
+	beq	@srv			the idle task does not stay: something may have become READY
+	cmpb	#TID_MM
+	bls	@stay			a server stays while its slice lasts: nothing is more urgent
+	bsr	srvscan			a program stays unless a server waits
+	bcc	@ret
+@stay	ldb	<cur
+@ret	rts
+@srv	bsr	srvscan
+	bcc	@ret
+	bsr	usrscan
+	bcc	@ret
+	clrb				the idle task
+	rts
+
+* srvscan / usrscan: the next READY server / program after the one that ran last -> carry clear and B = it, or carry set
+srvscan	ldx	#rrlast
+	ldd	#TID_MM*256+1		(the servers 1 .. TID_MM: A = the last one, B = the first)
+	bra	scan
+usrscan	ldx	#rrlast+1
+	ldd	#(NTASK-1)*256+TID_USER0	(the programs TID_USER0 .. NTASK-1)
+scan	std	<tmpw			A = the last task of the class, B = the first
+	suba	<tmpw+1
+	inca
+	sta	<cnt			the number of tasks in it
+	ldb	,x			the one that ran last
+	cmpb	<tmpw+1
+	bhs	@ok
+	ldb	<tmpw+1
+	decb
+@ok	bsr	@ty
+@l	leay	TSZ,y
+	incb
+	cmpb	<tmpw
+	bls	@w
+	ldb	<tmpw+1
+	bsr	@ty
+@w	lda	T_STATE,y
+	cmpa	#TS_READY
+	beq	@got
+	dec	<cnt
+	bne	@l
+	orcc	#1
+	rts
+@got	stb	,x
+	andcc	#$FE
+	rts
+@ty	pshs	b			Y = &tasks[B]
+	lda	#TSZ
+	mul
+	addd	#tasks
+	tfr	d,y
+	puls	b,pc
+
+* ------------------------------------------------------------------------ helpers
+	ifdef	MMU
+* getframe: Y = the task, U = its frame on its stack: the frame is copied to the table entry; U = the copy
+getframe
+	ldd	0,u
+	std	T_FRM,y
+	ldd	2,u
+	std	T_FRM+2,y
+	ldd	4,u
+	std	T_FRM+4,y
+	ldd	6,u
+	std	T_FRM+6,y
+	ldd	8,u
+	std	T_FRM+8,y
+	ldd	10,u
+	std	T_FRM+10,y
+	leau	T_FRM,y
+	rts
+
+* dispatch: Y = the task that runs now: select its map set, put its frame on its stack, give it a message that waited for it
+dispatch
+	lda	<cur
+	sta	FM_TASK
+	ldu	T_SP,y
+	ldd	T_FRM,y
+	std	0,u
+	ldd	T_FRM+2,y
+	std	2,u
+	ldd	T_FRM+4,y
+	std	4,u
+	ldd	T_FRM+6,y
+	std	6,u
+	ldd	T_FRM+8,y
+	std	8,u
+	ldd	T_FRM+10,y
+	std	10,u
+	tst	T_PEND,y
+	beq	@r
+	clr	T_PEND,y
+	ldu	T_UBUF,y
+	leax	T_RMSG,y
+	lbsr	copymsg
+@r	rts
+
+* mmuinit: the map sets of the idle task and of the servers (tasks 0-5) are the identity: the flat memory of Level 1.  Then the MMU is switched on.
+* (the set of the disk server also has the 3 pages of its track buffer: logical $9000-$BFFF = the physical pages BOUNCE..)
+mmuinit	clrb				every set maps the pages 0 and 1 (the kernel) as they are
+@all	stb	FM_TASK
+	clr	FM_MMR
+	lda	#1
+	sta	FM_MMR+1
+	incb
+	cmpb	#16
+	blo	@all
+	clrb
+@set	stb	FM_TASK
+	pshs	b
+	lda	#TSZ
+	mul
+	addd	#tasks+T_MAP
+	tfr	d,u
+	ldx	#FM_MMR
+	clra
+@pg	sta	,x+
+	sta	,u+
+	inca
+	cmpa	#16
+	bne	@pg
+	puls	b
+	cmpb	#TID_DISK
+	bne	@nd
+	lda	#BOUNCE
+	sta	FM_MMR+9
+	inca
+	sta	FM_MMR+10
+	inca
+	sta	FM_MMR+11
+@nd	incb
+	cmpb	#TID_MM+1
+	blo	@set
+	clr	FM_TASK
+	lda	#$81
+	sta	FM_MCFG
+	rts
+
+* xcopy: copy xn bytes between the caller's memory (xc) and the memory of the task xp (xa, a logical address in its map): xm = GR_READ: from the
+* other task, GR_WRITE: to it.  The other memory is reached through the window at $7C00 (a physical address chosen with FM_WIN1 / FM_WIN2),
+* 256 bytes at most at a time (never across a page of the other map), through xbuf.
+xcopy	ldd	xn
+	lbeq	@done
+	lda	xa			the logical page of the other task's address
+	lsra
+	lsra
+	lsra
+	lsra
+	ldx	xp
+	leax	T_MAP,x
+	lda	a,x			A = its physical page
+	tfr	a,b
+	lsra
+	lsra
+	lsra
+	lsra
+	sta	FM_WIN1			physical address bits 19-16
+	andb	#$0F
+	aslb
+	aslb
+	aslb
+	aslb				B = (page & 15) << 4
+	lda	xa
+	anda	#$0F
+	pshs	a
+	orb	,s+			B = bits 15-8 of the physical address
+	subb	#WINLOG/256		the window shows FM_WIN2 * 256 + $7C00 + n
+	stb	FM_WIN2
+	ldb	xa+1			B = the offset in the 256 byte block
+	clra
+	pshs	d			(offset)
+	negb
+	bne	@nz			256 - offset
+	ldd	#256
+	bra	@l1
+@nz	clra
+@l1	cmpd	xn
+	bls	@ok
+	ldd	xn
+@ok	pshs	d			(count, offset below)
+	lda	xm
+	cmpa	#GR_WRITE
+	beq	@wr
+* from the other task: the window to xbuf, then xbuf to the caller's memory
+	lda	#$C1
+	sta	FM_MCFG			window on
+	ldd	2,s
+	addd	#WINLOG
+	tfr	d,x
+	ldu	#xbuf
+	ldd	,s
+	lbsr	copy
+	lda	#$81
+	sta	FM_MCFG			window off
+	ldx	#xbuf
+	ldu	xc
+	ldd	,s
+	lbsr	copy
+	bra	@adv
+* to the other task: the caller's memory to xbuf, then xbuf to the window
+@wr	ldx	xc
+	ldu	#xbuf
+	ldd	,s
+	lbsr	copy
+	lda	#$C1
+	sta	FM_MCFG			window on
+	ldd	2,s
+	addd	#WINLOG
+	tfr	d,u
+	ldx	#xbuf
+	ldd	,s
+	lbsr	copy
+	lda	#$81
+	sta	FM_MCFG			window off
+@adv	puls	d			count
+	leas	2,s
+	pshs	d
+	addd	xa
+	std	xa
+	ldd	,s
+	addd	xc
+	std	xc
+	ldd	xn
+	subd	,s++
+	std	xn
+	lbra	xcopy
+@done	rts
+	endc
+
+* uok: D = address, X = length, Y = a task.  Carry clear if [D, D+X) is inside the task's region.
+uok	pshs	d
+	pshs	x
+	addd	,s++
+	bcs	@bad
+	cmpd	T_HI,y
+	bhi	@bad
+	ldd	,s
+	cmpd	T_LO,y
+	blo	@bad
+	leas	2,s
+	andcc	#$FE
+	rts
+@bad	leas	2,s
+	orcc	#1
+	rts
+
+* rxdrain: move the characters of the console ACIA into the ring of the console server (rxp: the bytes; the head is at rxp-2, the tail at rxp-1), rxgot not 0 if there were any.
+* A character that finds the ring full is lost (the server empties it at once; the board has a FIFO of 256 characters for the time that the CPU is held).
+* Clobbers A, B, X, U.
+	ifdef	FM11
+rxdrain	clr	<rxgot
+	ldu	<rxp
+	beq	@x
+@rx	lda	FM_IFLG
+	bita	#$40			a key code?
+	beq	@x
+	ldb	FM_KEYH
+	lda	FM_KEYL			(reading it takes the code)
+	ifdef	KEYDBG
+	pshs	a,b
+	lda	#'['
+	lbsr	rxput
+	lda	1,s
+	lbsr	hexput
+	lda	,s
+	lbsr	hexput
+	lda	#']'
+	lbsr	rxput
+	puls	a,b
+	endc
+	cmpb	#2			$0201 = BREAK: ^C
+	beq	@brk
+	bitb	#1			high byte bit 0 = 0: an ASCII key (its other bits are not 0: $FExx on the real machine, as the OS-9 clock module tests)
+	beq	@asc
+	bra	@rx			function keys, cursor keys: not used
+@brk	lda	#3
+@asc	ldb	-2,u			the head
+	leax	b,u
+	incb
+	andb	#RXQ-1
+	cmpb	-1,u			the tail
+	beq	@rx
+	sta	,x
+	stb	-2,u
+	inc	<rxgot
+	bra	@rx
+@x	rts
+	ifdef	KEYDBG
+rxput	pshs	a,b,x
+	ldb	-2,u
+	leax	b,u
+	incb
+	andb	#RXQ-1
+	cmpb	-1,u
+	beq	@f
+	sta	,x
+	stb	-2,u
+	inc	<rxgot
+@f	puls	a,b,x,pc
+hexput	pshs	a
+	lsra
+	lsra
+	lsra
+	lsra
+	lbsr	hexnib
+	puls	a
+	anda	#$0F
+hexnib	adda	#'0'
+	cmpa	#'9'
+	bls	@h
+	adda	#7
+@h	lbra	rxput
+	endc
+	else
+rxdrain	clr	<rxgot
+	ldu	<rxp
+	beq	@x
+@rx	lda	ACIA
+	lsra
+	bcc	@x			(no character)
+	ldb	-2,u			the head
+	leax	b,u			X = the place of the character (the head is below 128)
+	incb
+	andb	#RXQ-1
+	lda	ACIA+1
+	cmpb	-1,u			the tail
+	beq	@rx
+	sta	,x
+	stb	-2,u
+	inc	<rxgot
+	bra	@rx
+@x	rts
+	endc
+
+* copymsg: a message (MSGSZ = 10 bytes) from X to U; D is clobbered
+copymsg	ldd	,x++
+	std	,u++
+	ldd	,x++
+	std	,u++
+	ldd	,x++
+	std	,u++
+	ldd	,x++
+	std	,u++
+	ldd	,x++
+	std	,u++
+	rts
+
+* copy: D bytes from X to U (forward; the blocks do not overlap).  Y is kept.
+copy	cmpd	#0
+	beq	@done
+	pshs	y
+	lsra
+	rorb				D = n / 2, carry = n & 1
+	bcc	@even
+	pshs	a,b
+	lda	,x+
+	sta	,u+
+	puls	a,b
+@even	tfr	d,y
+	leay	,y
+	beq	@dy
+@loop	ldd	,x++
+	std	,u++
+	leay	-1,y
+	bne	@loop
+@dy	puls	y
+@done	rts
+
+* tp: B = task id -> X = its entry in the task table (D clobbered)
+tp	lda	#TSZ
+	mul
+	addd	#tasks
+	tfr	d,x
+	rts
+
+* wake: X = task, B = status, Y = value: complete its blocked system call
+wake
+	ifdef	MMU
+	leau	T_FRM,x
+	else
+	ldu	T_SP,x
+	endc
+	stb	F_B,u
+	sty	F_X,u
+	lda	#TS_READY
+	sta	T_STATE,x
+	clr	T_GFL,x
+	lda	#1
+	sta	<resched
+	rts
+
+* deliver: X = a task that waits in a receive, Y = a message: copy it to its buffer and wake it
+deliver	pshs	x,y
+	ifdef	MMU
+	leau	T_RMSG,x		(copied to the buffer of the task when it runs again)
+	lda	#1
+	sta	T_PEND,x
+	else
+	ldu	T_UBUF,x
+	endc
+	tfr	y,x
+	bsr	copymsg
+	ldx	,s
+	ldb	#0
+	ldy	#0
+	bsr	wake
+	puls	x,y,pc
+
+* notify: B = task id, X = bits -> B = status
+notify	cmpb	#NTASK
+	bhs	@notask
+	stx	<tmpw			the bits
+	bsr	tp
+	lda	T_STATE,x
+	beq	@notask
+	cmpa	#TS_NEW
+	beq	@notask
+	cmpa	#TS_ZOMBIE
+	beq	@dead
+	cmpa	#TS_RECV
+	bne	@acc
+	lda	T_PEER,x
+	cmpa	#TID_ANY
+	bne	@acc
+	lda	#TID_HW			deliver it at once
+	ldb	#OP_NOTIFY
+	std	<kmsg
+	ldd	<tmpw
+	ora	T_NBITS,x
+	orb	T_NBITS+1,x
+	std	<kmsg+2
+	ldd	#0
+	std	<kmsg+4
+	std	<kmsg+6
+	std	<kmsg+8
+	std	T_NBITS,x
+	ldy	#kmsg
+	bsr	deliver
+	clrb
+	rts
+@acc	ldd	<tmpw
+	ora	T_NBITS,x
+	orb	T_NBITS+1,x
+	std	T_NBITS,x
+	clrb
+	rts
+@notask	ldb	#E_NOTASK
+	rts
+@dead	ldb	#E_DEAD
+	rts
+
+* exit: B = task id, A = exit code: the task becomes a zombie; everybody who waits for it gets an error
+exit	sta	<tmpw2
+	stb	<tmpw2+1
+	lbsr	tp
+	lda	#TS_ZOMBIE
+	sta	T_STATE,x
+	lda	<tmpw2
+	sta	T_EXIT,x
+	ldd	#0
+	std	T_NBITS,x
+	ldx	#tasks
+	lda	#NTASK
+	sta	<cnt
+@l	lda	T_STATE,x
+	cmpa	#TS_SEND
+	beq	@w
+	cmpa	#TS_RECV
+	bne	@n
+@w	ldb	T_PEER,x
+	cmpb	<tmpw2+1
+	bne	@n
+	pshs	x
+	ldb	#E_DEAD
+	ldy	#0
+	lbsr	wake
+	puls	x
+@n	leax	TSZ,x
+	dec	<cnt
+	bne	@l
+	ldb	<tmpw2+1
+	cmpb	<hooktid
+	bne	@nh
+	clr	<hooktid
+@nh	cmpb	#TID_PM
+	beq	@r
+	ldb	#TID_PM
+	ldx	#NFY_EXIT
+	lbsr	notify
+@r	rts
+
+* ------------------------------------------------------------------------ system calls
+sctab	fdb	0
+	fdb	sc_send			1
+	fdb	sc_recv			2
+	fdb	sc_call			3
+	fdb	sc_callg		4
+	fdb	sc_reply		5
+	fdb	sc_notify		6
+	fdb	sc_copyfrom		7
+	fdb	sc_copyto		8
+	fdb	sc_sleep		9
+	fdb	sc_ticks		10
+	fdb	sc_yield		11
+	fdb	sc_exit			12
+	fdb	sc_self			13
+	fdb	sc_tinfo		14
+	fdb	0			15
+	fdb	sc_hook			16
+	fdb	sc_tcreate		17
+	fdb	sc_tstart		18
+	fdb	sc_tkill		19
+	fdb	sc_tload		20
+	fdb	sc_treap		21
+	fdb	sc_power		22
+	fdb	sc_rxreg		23
+
+* common ends of the handlers
+okret	clrb
+	ldx	#0
+	andcc	#$FE
+	rts
+errret	ldx	#0			(B = the error)
+	andcc	#$FE
+	rts
+blocked	orcc	#1
+	rts
+
+sc_send	clr	<mode
+	clr	<gfl
+	bra	ipc_send
+sc_call	lda	#1
+	sta	<mode
+	clr	<gfl
+	bra	ipc_send
+sc_callg lda	#1
+	sta	<mode
+	ldu	<frm
+	lda	F_Y+1,u
+	sta	<gfl
+	bra	ipc_send
+sc_reply lda	#2
+	sta	<mode
+	clr	<gfl
+
+* ipc_send: send / call / reply (mode, gfl) to the task in the frame's B, the message at its X
+ipc_send
+	ldu	<frm
+	ldb	F_B,u
+	cmpb	#NTASK
+	lbhs	@notask
+	cmpb	<cur
+	lbeq	@notask
+	stb	<dstid
+	lbsr	tp
+	stx	<dstp
+	lda	T_STATE,x
+	lbeq	@notask
+	cmpa	#TS_NEW
+	lbeq	@notask
+	cmpa	#TS_ZOMBIE
+	lbeq	@dead
+	ldy	<curp
+	ldd	F_X,u
+	std	<ubuf
+	ldx	#MSGSZ
+	lbsr	uok
+	lbcs	@fault
+	ldx	<ubuf			copy the message to this task's msg
+	leau	T_MSG,y
+	lbsr	copymsg
+	ldy	<curp
+	lda	<cur
+	sta	T_MSG+M_SRC,y
+	clr	T_GFL,y
+	lda	<mode
+	cmpa	#1
+	bne	@nog
+	lda	<gfl
+	beq	@nog
+	ldd	T_MSG+M_B,y		the granted area must be the caller's
+	ldx	T_MSG+M_C,y
+	lbsr	uok
+	bcs	@fault
+	ldd	T_MSG+M_B,y
+	std	T_GPTR,y
+	ldd	T_MSG+M_C,y
+	std	T_GLEN,y
+	lda	<gfl
+	sta	T_GFL,y
+@nog	ldx	<dstp
+	lda	T_STATE,x
+	cmpa	#TS_RECV
+	bne	@wait
+	lda	T_PEER,x
+	cmpa	#TID_ANY
+	beq	@here
+	cmpa	<cur
+	bne	@wait
+@here	leay	T_MSG,y			the receiver is waiting: deliver
+	lbsr	deliver
+	ldy	<curp
+	lda	<mode
+	cmpa	#1
+	lbne	okret
+	lda	#TS_RECV		a call: now wait for the reply
+	sta	T_STATE,y
+	lda	<dstid
+	sta	T_PEER,y
+	ldd	<ubuf
+	std	T_UBUF,y
+	lbra	blocked
+@wait	lda	<mode
+	cmpa	#2
+	beq	@notwait
+	lda	#TS_SEND
+	sta	T_STATE,y
+	sta	<sendhint
+	lda	<dstid
+	sta	T_PEER,y
+	lda	<mode
+	sta	T_CALL,y
+	ldd	<ubuf
+	std	T_UBUF,y
+	lbra	blocked
+@notask	ldb	#E_NOTASK
+	lbra	errret
+@dead	ldb	#E_DEAD
+	lbra	errret
+@fault	ldb	#E_FAULT
+	lbra	errret
+@notwait ldb	#E_NOTWAIT
+	lbra	errret
+
+* sc_recv: the sender is the frame's B (TID_ANY: anybody and notifications), the buffer its X
+sc_recv	ldu	<frm
+	ldy	<curp
+	ldd	F_X,u
+	std	<ubuf
+	ldx	#MSGSZ
+	lbsr	uok
+	lbcs	@fault
+	ldu	<frm
+	ldb	F_B,u
+	stb	<dstid			(the sender wanted)
+	cmpb	#TID_ANY
+	bne	@scan
+	ldd	T_NBITS,y
+	beq	@scan
+	lda	#TID_HW			a pending notification
+	ldb	#OP_NOTIFY
+	std	<kmsg
+	ldd	T_NBITS,y
+	std	<kmsg+2
+	ldd	#0
+	std	<kmsg+4
+	std	<kmsg+6
+	std	<kmsg+8
+	std	T_NBITS,y
+	ldx	#kmsg
+	ldu	<ubuf
+	lbsr	copymsg
+	lbra	okret
+@scan	tst	<sendhint		is a sender blocked at all?
+	beq	@nosend
+	clr	<sseen
+	ldx	#tasks			a blocked sender?
+	clrb
+@l	lda	T_STATE,x
+	cmpa	#TS_SEND
+	bne	@n
+	sta	<sseen
+	lda	T_PEER,x
+	cmpa	<cur
+	bne	@n
+	lda	<dstid
+	cmpa	#TID_ANY
+	beq	@take
+	pshs	b
+	cmpa	,s+
+	bne	@n
+@take	pshs	x
+	leax	T_MSG,x
+	ldu	<ubuf
+	lbsr	copymsg
+	puls	x
+	tst	T_CALL,x
+	beq	@plain
+	lda	#TS_RECV		a call: it waits for the reply now
+	sta	T_STATE,x
+	lda	<cur
+	sta	T_PEER,x
+	clr	T_CALL,x
+	lbra	okret
+@plain	ldb	#0
+	ldy	#0
+	lbsr	wake
+	lbra	okret
+@n	leax	TSZ,x
+	incb
+	cmpb	#NTASK
+	blo	@l
+	tst	<sseen
+	bne	@nosend
+	clr	<sendhint		nobody waits to send: the next receive need not look
+@nosend	ldb	<dstid
+	cmpb	#TID_ANY
+	beq	@block
+	cmpb	#NTASK
+	bhs	@notask
+	lbsr	tp
+	lda	T_STATE,x
+	beq	@dead
+	cmpa	#TS_ZOMBIE
+	beq	@dead
+@block	ldy	<curp
+	lda	#TS_RECV
+	sta	T_STATE,y
+	lda	<dstid
+	sta	T_PEER,y
+	ldd	<ubuf
+	std	T_UBUF,y
+	lbra	blocked
+@fault	ldb	#E_FAULT
+	lbra	errret
+@notask	ldb	#E_NOTASK
+	lbra	errret
+@dead	ldb	#E_DEAD
+	lbra	errret
+
+sc_notify
+	ldu	<frm
+	ldb	F_B,u
+	ldx	F_X,u
+	lbsr	notify
+	lbra	errret
+
+* copyfrom / copyto: B = client, X = offset, Y = the caller's memory, U = length
+sc_copyfrom
+	lda	#GR_READ
+	bra	grant
+sc_copyto
+	lda	#GR_WRITE
+grant	sta	<mode
+	ldu	<frm
+	ldb	F_B,u
+	cmpb	#NTASK
+	bhs	@notask
+	lbsr	tp
+	stx	<dstp			the client
+	lda	T_STATE,x
+	cmpa	#TS_RECV
+	bne	@perm
+	lda	T_PEER,x
+	cmpa	<cur
+	bne	@perm
+	lda	T_GFL,x
+	anda	<mode
+	beq	@perm
+	ldd	F_U,u			length
+	cmpd	#MAXCOPY
+	bhi	@inval
+	ldd	T_GLEN,x
+	subd	F_X,u			glen - off
+	blo	@fault			(off > glen)
+	cmpd	F_U,u
+	blo	@fault			(n > glen - off)
+	ldy	<curp			the caller's memory must be its own
+	ldd	F_Y,u
+	ldx	F_U,u
+	lbsr	uok
+	bcs	@fault
+	ldx	<dstp
+	ldd	T_GPTR,x
+	addd	F_X,u
+	std	<tmpw			the client's address
+	ldd	F_U,u
+	pshs	d			(the length)
+	lda	<mode
+	cmpa	#GR_WRITE
+	beq	@to
+	ldx	<tmpw			copyfrom: client -> the caller's memory
+	ldu	F_Y,u
+	bra	@do
+@to	ldx	F_Y,u			copyto: the caller's memory -> client
+	ldu	<tmpw
+@do	puls	d
+	ifdef	MMU
+	std	xn
+	ldd	<tmpw
+	std	xa
+	lda	<mode
+	sta	xm
+	ldx	<dstp
+	stx	xp
+	ldu	<frm
+	ldd	F_Y,u
+	std	xc
+	lbsr	xcopy
+	else
+	lbsr	copy
+	endc
+	lbra	okret
+@notask	ldb	#E_NOTASK
+	lbra	errret
+@perm	ldb	#E_PERM
+	lbra	errret
+@inval	ldb	#E_INVAL
+	lbra	errret
+@fault	ldb	#E_FAULT
+	lbra	errret
+
+sc_sleep
+	ldu	<frm
+	ldx	F_X,u
+	beq	@yield
+	ldy	<curp
+	tfr	x,d
+	addd	<ticks
+	std	T_WAKE,y
+	lda	#TS_SLEEP
+	sta	T_STATE,y
+	lbra	blocked
+@yield	bra	sc_yield
+
+sc_ticks
+	ldx	<ticks
+	clrb
+	andcc	#$FE
+	rts
+
+sc_yield
+	clr	<slice
+	lda	#1
+	sta	<resched
+	lbra	okret
+
+sc_self	ldb	<cur
+	clra
+	tfr	d,x
+	clrb
+	andcc	#$FE
+	rts
+
+sc_exit	ldu	<frm
+	lda	F_B,u
+	ldb	<cur
+	lbsr	exit
+	lbra	blocked
+
+* tinfo: B = task, X = the buffer for state, prio, lo, hi, sp, cpu (10 bytes)
+sc_tinfo
+	ldu	<frm
+	ldb	F_B,u
+	cmpb	#NTASK
+	bhs	@notask
+	stb	<dstid
+	ldd	F_X,u
+	std	<ubuf
+	ldy	<curp
+	ldx	#10
+	lbsr	uok
+	bcs	@fault
+	ldb	<dstid
+	lbsr	tp
+	lda	T_STATE,x
+	ldb	<dstid
+	cmpb	<cur
+	bne	@s
+	lda	#TS_RUN
+@s	sta	<kmsg
+	lda	T_PRIO,x
+	sta	<kmsg+1
+	ldd	T_LO,x
+	std	<kmsg+2
+	ldd	T_HI,x
+	std	<kmsg+4
+	ldd	T_SP,x
+	std	<kmsg+6
+	ldd	T_CPU,x
+	std	<kmsg+8
+	ldx	#kmsg
+	ldu	<ubuf
+	ldd	#10
+	lbsr	copy
+	lbra	okret
+@notask	ldb	#E_NOTASK
+	lbra	errret
+@fault	ldb	#E_FAULT
+	lbra	errret
+
+* rxreg: X = the ring of the console server (the bytes; head and tail are the two bytes before them): the receive interrupt puts the characters of the console into it and notifies the hook
+* task (NFY_RX).  The call turns the interrupt on.
+sc_rxreg
+	ldu	<frm
+	ldx	F_X,u
+	stx	<rxp
+	ifndef	FM11
+	lda	#$95			8N1 with the receive interrupt
+	sta	ACIA
+	endc
+	lbra	okret
+
+sc_hook	ldu	<frm
+	ldx	F_X,u
+	stx	<hookbits
+	lda	<cur
+	sta	<hooktid
+	lbra	okret
+
+* tcreate: X = the block entry, lo, hi, top, arg (16 bit each), prio (8 bit) -> X = the task id
+sc_tcreate
+	ldu	<frm
+	ldd	F_X,u
+	std	<ubuf
+	ldy	<curp
+	ifdef	MMU
+	ldx	#27
+	else
+	ldx	#11
+	endc
+	lbsr	uok
+	lbcs	@fault
+	ldx	<ubuf
+	ldu	#tcb
+	ifdef	MMU
+	ldd	#27
+	else
+	ldd	#11
+	endc
+	lbsr	copy
+	ldd	<tcb+2			lo < hi
+	cmpd	<tcb+4
+	lbhs	@inval
+	addd	#FRAME			top >= lo + FRAME
+	cmpd	<tcb+6
+	lbhi	@inval
+	ldd	<tcb+6			top <= hi
+	cmpd	<tcb+4
+	lbhi	@inval
+	ldd	<tcb			lo <= entry < hi
+	cmpd	<tcb+2
+	ifdef	MMU
+	lblo	@inval
+	else
+	blo	@inval
+	endc
+	cmpd	<tcb+4
+	ifdef	MMU
+	lbhs	@inval
+	else
+	bhs	@inval
+	endc
+	lda	<tcb+10			prio < PRIO_IDLE
+	cmpa	#PRIO_IDLE
+	ifdef	MMU
+	lbhs	@inval
+	else
+	bhs	@inval
+	endc
+	ifdef	MMU
+	bra	@free			(every task has its own address space)
+	endc
+	ldx	#tasks+TSZ		the region must be free
+	lda	#NTASK-1
+	sta	<cnt
+@ov	lda	T_STATE,x
+	beq	@nx
+	ldd	<tcb+4			hi <= o.lo: apart
+	cmpd	T_LO,x
+	bls	@nx
+	ldd	<tcb+2			lo >= o.hi: apart
+	cmpd	T_HI,x
+	bhs	@nx
+	ldb	#E_NOMEM
+	ifdef	MMU
+	lbra	@err
+	else
+	bra	@err
+	endc
+@nx	leax	TSZ,x
+	dec	<cnt
+	bne	@ov
+@free	ldx	#tasks+TID_USER0*TSZ	a free slot
+	ldb	#TID_USER0
+@sl	lda	T_STATE,x
+	beq	@found
+	leax	TSZ,x
+	incb
+	cmpb	#NTASK
+	blo	@sl
+	ldb	#E_NOSLOT
+	bra	@err
+@found	stb	<dstid
+	lda	#TS_NEW
+	sta	T_STATE,x
+	lda	<tcb+10
+	sta	T_PRIO,x
+	clr	T_PEER,x
+	clr	T_CALL,x
+	clr	T_PRIV,x
+	clr	T_GFL,x
+	ldd	#0
+	std	T_NBITS,x
+	std	T_CPU,x
+	ldd	<tcb+2
+	std	T_LO,x
+	ldd	<tcb+4
+	std	T_HI,x
+	ifdef	MMU
+	pshs	x
+	clr	tcb+11			(the pages 0 and 1 are the kernel in every map)
+	lda	#1
+	sta	tcb+12
+	leau	T_MAP,x			the map of the task (tcb+11 ..): physical pages
+	ldy	#tcb+11
+	ldb	#16
+@mp	lda	,y+
+	sta	,u+
+	decb
+	bne	@mp
+	ldb	<dstid			and into the registers of its map set
+	stb	FM_TASK
+	ldx	#FM_MMR
+	ldy	#tcb+11
+	ldb	#16
+@mr	lda	,y+
+	sta	,x+
+	decb
+	bne	@mr
+	lda	<cur
+	sta	FM_TASK
+	puls	x
+	endc
+	ldd	<tcb+6			top
+	ldy	<tcb			entry
+	ldu	<tcb+8			argument
+	lbsr	mkframe
+	ldb	<dstid
+	clra
+	tfr	d,x
+	clrb
+	andcc	#$FE
+	rts
+@inval	ldb	#E_INVAL
+	bra	@err
+@fault	ldb	#E_FAULT
+@err	lbra	errret
+
+sc_tstart
+	ldu	<frm
+	ldb	F_B,u
+	cmpb	#TID_USER0
+	blo	@notask
+	cmpb	#NTASK
+	bhs	@notask
+	lbsr	tp
+	lda	T_STATE,x
+	cmpa	#TS_NEW
+	bne	@notask
+	lda	#TS_READY
+	sta	T_STATE,x
+	lda	#1
+	sta	<resched
+	lbra	okret
+@notask	ldb	#E_NOTASK
+	lbra	errret
+
+* tkill: B = task, X = exit code
+sc_tkill
+	ldu	<frm
+	ldb	F_B,u
+	cmpb	#TID_USER0
+	blo	@notask
+	cmpb	#NTASK
+	bhs	@notask
+	lbsr	tp
+	lda	T_STATE,x
+	beq	@notask
+	cmpa	#TS_ZOMBIE
+	beq	@notask
+	lda	F_X+1,u
+	ldb	F_B,u
+	lbsr	exit
+	lbra	okret
+@notask	ldb	#E_NOTASK
+	lbra	errret
+
+* tload: B = task (new), X = address in it, Y = source (the caller's), U = length
+sc_tload
+	ldu	<frm
+	ldb	F_B,u
+	cmpb	#TID_USER0
+	blo	@notask
+	cmpb	#NTASK
+	bhs	@notask
+	lbsr	tp
+	lda	T_STATE,x
+	cmpa	#TS_NEW
+	bne	@notask
+	tfr	x,y
+	ldd	F_X,u
+	ldx	F_U,u
+	lbsr	uok
+	bcs	@fault
+	ldy	<curp
+	ldd	F_Y,u
+	ldx	F_U,u
+	lbsr	uok
+	bcs	@fault
+	ifdef	MMU
+	ldd	F_U,u
+	std	xn
+	ldd	F_X,u
+	std	xa
+	lda	#GR_WRITE
+	sta	xm
+	ldd	F_Y,u
+	std	xc
+	ldb	F_B,u
+	lbsr	tp
+	stx	xp
+	lbsr	xcopy
+	else
+	ldx	F_Y,u
+	ldd	F_U,u
+	pshs	d
+	ldu	F_X,u
+	puls	d
+	lbsr	copy
+	endc
+	lbra	okret
+@notask	ldb	#E_NOTASK
+	lbra	errret
+@fault	ldb	#E_FAULT
+	lbra	errret
+
+* treap: collect an exited task: X = (task id << 8) | exit code
+sc_treap
+	ldx	#tasks+TID_USER0*TSZ
+	ldb	#TID_USER0
+@l	lda	T_STATE,x
+	cmpa	#TS_ZOMBIE
+	beq	@found
+	leax	TSZ,x
+	incb
+	cmpb	#NTASK
+	blo	@l
+	ldb	#E_NOTASK
+	lbra	errret
+@found	lda	T_EXIT,x
+	pshs	d			(B = id, A = code)
+	clr	T_STATE,x
+	ldd	#0
+	std	T_LO,x
+	std	T_HI,x
+	puls	d
+	exg	a,b			D = (id << 8) | code
+	tfr	d,x
+	clrb
+	andcc	#$FE
+	rts
+
+sc_power
+	ifndef	FM11
+	lda	#$A5
+	sta	POWER
+	endc
+	bra	*
+
+	endsection

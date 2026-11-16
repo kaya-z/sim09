@@ -42,6 +42,13 @@ for L in $LEVELS; do
     check "2029-01-01 00:00:" "L$L date: the clock runs on (the end of the year, the calendar)"
     run $HD -h0 0x7F 7000 "basic|PRINT 6*7|"
     check " 42" "L$L basic runs"
+    if [ $L = 2 ]; then   # the installed RAM is found at the start (the simulator: --mem KB)
+        for M in 128 512 1024; do
+            cp $HD $W/d.img; : > $W/t.txt
+            "$FM11" --headless 16000 $W/s.ppm -h0 $W/d.img --dipsw 0x7F --mem $M --keyat 7000 --keygap 14 --keys "${SP}mem|" --text $W/t.txt --mute 2>/dev/null
+            check "RAM ${M}KB = $((M / 4)) pages" "L2 --mem $M: the kernel finds the RAM, mem shows it"
+        done
+    fi
     if [ $L = 1 ]; then
         run $HD -h0 0x7F 5000 "cc|"
         check "not found" "L1: cc (it needs cc1: 160 pages) is not in the image"

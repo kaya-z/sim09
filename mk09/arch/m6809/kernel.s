@@ -664,6 +664,68 @@ mmuinit	clrb				every set maps the pages 0 and 1 (the kernel) as they are
 	clr	FM_TASK
 	lda	#$81
 	sta	FM_MCFG
+	lbsr	memprobe
+	rts
+
+* memprobe: how much RAM the machine has.  The installed memory comes in steps of 128KB (32 pages of 4KB; the first step is always there).  For every
+* further step the first two bytes of its first page are tried through the window (write $A5 $5A, read back); the step is there when they stay,
+* and it is not an echo (a mirror of a lower step: the same bytes show in the first page of a step below).  The bytes are put back.  The number of
+* the steps (1..8) is left at MEMGRP (K_DATA + K_DSZ - $91, behind the data of the kernel and in front of the ring of the console), for MM.
+MEMGRP	equ	K_DATA+K_DSZ-$91
+memprobe lda	#1
+	pshs	a			g: the step that is tried (its first page is 32 * g)
+@g	lda	,s
+	asla
+	sta	FM_WIN1			physical address bits 19-16 of the page 32 * g
+	lda	#$100-WINLOG/256	(bits 15-8 = 0)
+	sta	FM_WIN2
+	lda	#$C1
+	sta	FM_MCFG			window on
+	ldx	#WINLOG
+	ldd	,x
+	pshs	d			(what was there)
+	lda	#$A5
+	ldb	#$5A
+	std	,x
+	ldd	,x
+	cmpd	#$A55A
+	bne	@no
+	clr	,-s			h: the steps below
+@h	lda	,s
+	cmpa	3,s
+	bhs	@ok
+	asla
+	sta	FM_WIN1
+	ldd	,x
+	cmpd	#$A55A
+	beq	@echo
+	inc	,s
+	bra	@h
+@echo	leas	1,s
+	bra	@no
+@ok	leas	1,s
+	lda	2,s
+	asla
+	sta	FM_WIN1
+	puls	d
+	std	,x			(put back)
+	puls	a
+	inca
+	cmpa	#8
+	bhs	@all
+	pshs	a
+	bra	@g
+@all	lda	#8
+	bra	@end
+@no	lda	2,s
+	asla
+	sta	FM_WIN1
+	puls	d
+	std	,x			(put back)
+	puls	a
+@end	sta	MEMGRP
+	lda	#$81
+	sta	FM_MCFG			window off
 	rts
 
 * xcopy: copy xn bytes between the caller's memory (xc) and the memory of the task xp (xa, a logical address in its map): xm = GR_READ: from the

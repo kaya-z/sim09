@@ -26,7 +26,7 @@ TTY_CSZ    = 0B50
 DISK_CSZ   = 0860
 FS_CSZ     = 2D70
 MM_CSZ     = 01C4
-PM_CSZ     = 0B36
+PM_CSZ     = 0B40
 
 # size of the data slots (rwdata + bss + stack)
 K_DSZ      = 0270
