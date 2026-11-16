@@ -19,3 +19,5 @@ os9/level2/cmds/basic09
 os9/level2/cmds/runb
 os9/OS9-basic09.dsk
 os9/OS9L2-basic09.dsk
+
+.nfs*
