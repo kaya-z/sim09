@@ -432,6 +432,14 @@ def skk_session(level, kj='utf8', entries=SKK_ENTRIES, user=None, files=None, ar
     return Session(level, kj, files=f, args='-d /skk.dic -u /skku.dic ' + args)
 
 
+def host_has(s, name):
+    try:
+        s.host(name)
+        return True
+    except FileNotFoundError:
+        return False
+
+
 def result(s, name='memo.txt', codec='utf-8'):
     """text of the saved file (CR -> LF)"""
     return s.host(name).decode(codec).replace('\r', '\n')
@@ -492,6 +500,22 @@ for level in (1,):
     s.run(['\\x0a', 'Hoge', ' ', 'ほげ！\\r', '\\x13'], wait='保存しました')
     check(result(s) == 'ほげ！\n', '%s a word without candidates is registered (prompt) and inserted' % tag, repr(result(s)))
     check(s.host('skku.dic') == 'ほげ /ほげ！/\r'.encode('utf-8'), '%s the registered word is in the user dictionary' % tag, repr(s.host('skku.dic')))
+    s.close()
+    # --- recursive registration: the word of the registration prompt is converted with SKK (the prompt has its own buffer)
+    s = skk_session(level)
+    s.run(['\\x0a', 'Hoge', ' ', 'Kanji', ' ', '\\r', '\\r', '\\x13'], wait='保存しました')
+    check(result(s) == '漢字\n' and s.host('skku.dic') == 'ほげ /漢字/\r'.encode('utf-8'),
+          '%s recursive registration: the word of the registration prompt is converted (Kanji Space), Enter, Enter' % tag, repr((result(s), s.host('skku.dic'))))
+    s.close()
+    s = skk_session(level)
+    s.run(['\\x0a', 'Hoge', ' ', 'Fuga', ' ', 'ふが\\r', '\\r', '\\x13'], wait='保存しました')
+    check(result(s) == 'ふが\n' and s.host('skku.dic') == 'ふが /ふが/\rほげ /ふが/\r'.encode('utf-8'),
+          '%s two levels: a word without candidates inside the registration is registered too' % tag, repr((result(s), s.host('skku.dic'))))
+    s.close()
+    s = skk_session(level)
+    s.run(['\\x0a', 'Hoge', ' ', 'Fuga', ' ', '\\x07', '\\x07', '\\x07', '\\x07', 'Kanji', ' ', '\\r', '\\x13'], wait='保存しました')
+    check(result(s) == '漢字\n' and not host_has(s, 'skku.dic'),
+          '%s ^G cancels the inner registration, the reading of the inner prompt, the outer registration, the reading in the text' % tag, repr(result(s)))
     s.close()
     s = skk_session(level, user='ほげ /ほげ！/\r')
     s.run(['\\x0a', 'Hoge', ' ', '\\r', '\\x13'], wait='保存しました')

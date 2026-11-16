@@ -535,6 +535,128 @@ static void sk_accept(void)
     msgp = 0;
 }
 
+/* ------------------------------------------------- a prompt with SKK (recursive registration)
+ *
+ * The prompt of the dictionary registration is edited in a small gap buffer of its own (pbufs: buf/bsz/gs/ge
+ * are switched, so that the whole input method works on it as it does on the document), and the keys go to
+ * skk_key() first.  A word that is not in the dictionary asks for its registration again: the state of the
+ * input method of the outer level is saved in sks[] while the inner one runs (at most PDEPTH levels). */
+
+#define PBSZ   128
+#define PDEPTH 3
+
+typedef struct {
+    int state, pre, rstart, okpos, okc, abbrev, trigger, rn, rdn, okn, keyn, ci, lbase, mode;
+    char rb[5];
+    uchar rd[64], okana[12], key[70];
+    uchar *sbuf;
+    int sbsz, sgs, sge, smod;
+    const char *smsg;
+} SKS;
+
+static SKS sks[PDEPTH];
+static uchar pbufs[PDEPTH][PBSZ + 1];
+
+static void sk_save(SKS *s)
+{
+    s->state = sk_state; s->pre = sk_pre; s->rstart = sk_rstart; s->okpos = sk_okpos; s->okc = sk_okc;
+    s->abbrev = sk_abbrev; s->trigger = sk_trigger; s->rn = sk_rn; s->rdn = sk_rdn; s->okn = sk_okn;
+    s->keyn = sk_keyn; s->ci = sk_ci; s->lbase = sk_lbase; s->mode = skk_mode;
+    memcpy(s->rb, sk_rb, sizeof(sk_rb));
+    memcpy(s->rd, sk_rd, sizeof(sk_rd));
+    memcpy(s->okana, sk_okana, sizeof(sk_okana));
+    memcpy(s->key, sk_key, sizeof(sk_key));
+    s->sbuf = buf; s->sbsz = bsz; s->sgs = gs; s->sge = ge; s->smod = modified; s->smsg = msgp;
+}
+
+static void sk_load(SKS *s)
+{
+    sk_state = s->state; sk_pre = s->pre; sk_rstart = s->rstart; sk_okpos = s->okpos; sk_okc = s->okc;
+    sk_abbrev = s->abbrev; sk_trigger = s->trigger; sk_rn = s->rn; sk_rdn = s->rdn; sk_okn = s->okn;
+    sk_keyn = s->keyn; sk_ci = s->ci; sk_lbase = s->lbase; skk_mode = s->mode;
+    memcpy(sk_rb, s->rb, sizeof(sk_rb));
+    memcpy(sk_rd, s->rd, sizeof(sk_rd));
+    memcpy(sk_okana, s->okana, sizeof(sk_okana));
+    memcpy(sk_key, s->key, sizeof(sk_key));
+    buf = s->sbuf; bsz = s->sbsz; gs = s->sgs; ge = s->sge; modified = s->smod; msgp = s->smsg;
+}
+
+static int skk_key(int c);
+
+/* the bottom two rows: the mode and the candidates (status row), the prompt and its text (message row) */
+static void pdraw(const char *prompt)
+{
+    int k;
+    movegap(tlen());
+    buf[gs] = 0;
+    rowbegin(trows);
+    oc(27); oc('['); oc('7'); oc('m');
+    ostrcol(skk_mode == 1 ? M[M_KANA] : skk_mode == 2 ? M[M_KATA] : M[M_LATIN]);
+    if (msgp) { ostrcol("  "); ostrcol(msgp); }
+    opad();
+    oc(27); oc('['); oc('m');
+    sc_write(1, ob, on);
+    rvalid[trows] = 0;
+    rowbegin(rows - 1);
+    for (k = 0; k < pdepth - 1; k++) ostrcol("[");
+    ostrcol(prompt);
+    ostrcol((const char *)buf);
+    oc(27); oc('['); onum(rows); oc(';'); onum(ocol + 1); oc('H');
+    sc_write(1, ob, on);
+    rvalid[rows - 1] = 0;
+    lastm = 0;
+}
+
+static int askline_skk(const char *prompt, char *dst, int max, int mode)
+{
+    SKS *s = &sks[pdepth];
+    int c, l, n, ok = 0;
+    uchar ch;
+    if (pdepth >= PDEPTH || !enc) return askline_s(prompt, dst, max);   /* mode: the input mode the prompt starts in */
+    sk_save(s);
+    buf = pbufs[pdepth];
+    bsz = PBSZ;
+    gs = 0;
+    ge = PBSZ;
+    pdepth++;
+    sk_state = SK_IDLE;
+    sk_pre = sk_rstart = 0;
+    sk_okpos = -1;
+    sk_okc = sk_okn = sk_rn = sk_abbrev = sk_trigger = 0;
+    skk_mode = mode;
+    msgp = 0;
+    n = strlen(dst);
+    if (n) ins((const uchar *)dst, n);
+    for (;;) {
+        pdraw(prompt);
+        c = getkey();
+        msgp = 0;
+        if (c == K_EOF) break;
+        if (skk_key(c)) continue;
+        if (c == '\r' || c == '\n') {
+            if (tlen() <= max) { ok = 1; break; }
+            continue;
+        }
+        if (c == 7) break;
+        if (c == 8 || c == 0x7f) backspace();
+        else if (c >= 0x20 && c < 0x100) {
+            if (c < 0x80 || !enc) { ch = c; ins(&ch, 1); }
+            else { l = readmb(c); ins(ib, l); }
+        }
+    }
+    if (ok) {
+        movegap(tlen());
+        memcpy(dst, buf, gs);
+        dst[gs] = 0;
+    }
+    pdepth--;
+    sk_load(s);
+    rvalid[rows - 1] = 0;
+    rvalid[trows] = 0;
+    lastm = 0;
+    return ok;
+}
+
 static void sk_register(void)
 {
     char prompt[100], word[60];
@@ -547,7 +669,7 @@ static void sk_register(void)
     prompt[n++] = ' ';
     prompt[n] = 0;
     word[0] = 0;
-    if (askline_s(prompt, word, 58) && word[0]) {
+    if (askline_skk(prompt, word, 58, SK_HIRA) && word[0]) {
         user_add(sk_key, sk_keyn, (const uchar *)word, strlen(word));
         sk_nc = 0;
         sk_cblen = 0;

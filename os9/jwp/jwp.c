@@ -39,7 +39,7 @@
 static const char jwp_ident[] = "jwp " JWP_VERSION " (c) 2026 YUKARI Semiconductor Devices";
 
 #ifndef BUFSZ
-#define BUFSZ   9000       /* text buffer: what fits next to the module in a Level 1 system */
+#define BUFSZ   7000       /* text buffer: what fits next to the module in a Level 1 system */
 #endif
 #define KBSZ    512
 #define ROWMAX  40
@@ -317,7 +317,10 @@ rdydone equ  *
 
 /* ------------------------------------------------------------------- state */
 
-static uchar buf[BUFSZ];          /* gap buffer: text = buf[0..gs) + buf[ge..BUFSZ) */
+static uchar docbuf[BUFSZ];       /* the text of the document */
+static uchar *buf;                /* gap buffer: text = buf[0..gs) + buf[ge..bsz).  A prompt that uses SKK edits its own small buffer (pdepth > 0) */
+static int bsz = BUFSZ;
+static int pdepth;                /* 0: the document; n: the n-th nested prompt with SKK (recursive registration) */
 static int gs, ge;
 static int enc;                   /* 0 single byte, 1 UTF-8, 2 EUC-JP, 3 Shift_JIS */
 static int cols = 80, rows = 24, trows, ewid = 72;
@@ -341,7 +344,7 @@ static unsigned g_hi, g_lo;        /* results of sc_size */
 
 /* ------------------------------------------------------- text / characters */
 
-static int tlen(void) { return gs + BUFSZ - ge; }
+static int tlen(void) { return gs + bsz - ge; }
 
 #define AT(i) ((i) < gs ? buf[(i)] : buf[(i) + (ge - gs)])
 
@@ -498,7 +501,7 @@ static int cinfo(int i, int *w, unsigned *code)
     if (i < gs) {
         p = buf + i;
         rem = gs - i;
-        if (rem < 4 && ge != BUFSZ) {      /* the character may continue behind the gap */
+        if (rem < 4 && ge != bsz) {      /* the character may continue behind the gap */
             rem = tlen() - i;
             if (rem > 4) rem = 4;
             for (k = 0; k < rem; k++) t[k] = AT(i + k);
@@ -506,7 +509,7 @@ static int cinfo(int i, int *w, unsigned *code)
         }
     } else {
         p = buf + i + (ge - gs);
-        rem = BUFSZ - (i + (ge - gs));
+        rem = bsz - (i + (ge - gs));
     }
     return sinfo(p, rem, w, code);
 }
@@ -831,6 +834,7 @@ static int lcn, topdirty, fullre, ed_cnt, ed_p, ed_d;
 static void touch(int p, int d)
 {
     int r;
+    if (pdepth) return;                /* a prompt's own buffer: the layout of the document is not concerned */
     ed_cnt++;
     ed_p = p;
     ed_d = d;
@@ -1177,6 +1181,8 @@ static int readmb(int lead)
 }
 
 /* line input on the message row; returns 1 when accepted */
+static int askline_skk(const char *prompt, char *dst, int max, int mode);
+
 static int askline_s(const char *prompt, char *dst, int max)
 {
     int c, l, w, rem, p;
@@ -1469,7 +1475,7 @@ static void delfwd(void)
 {
     int w, k;
     unsigned c;
-    if (ge < BUFSZ) {
+    if (ge < bsz) {
         w = cinfo(gs, &k, &c);
         touch(gs, -w);
         ge += w;
@@ -1631,6 +1637,8 @@ int main(int argc, char **argv)
     if (ewid > COLMAX) ewid = COLMAX;
     trows = rows - 2;
 
+    buf = docbuf;
+    bsz = BUFSZ;
     gs = 0;
     ge = BUFSZ;
     sc_getstt(0, 0, opts);
@@ -1683,7 +1691,7 @@ int main(int argc, char **argv)
             if (!modified || askyn(M_QUIT)) quit = 1;
             break;
         case 18:                                        /* ^R */
-            if (askline(M_SEARCH, pat, sizeof(pat) - 1)) dosearch();
+            if (enc ? askline_skk(M[M_SEARCH], pat, sizeof(pat) - 1, 0) : askline(M_SEARCH, pat, sizeof(pat) - 1)) dosearch();
             break;
         case 19: dosave(0); break;                      /* ^S */
         case 20: dosearch(); break;                     /* ^T */

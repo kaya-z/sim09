@@ -344,13 +344,13 @@ for level in (1, 2):
     check('copy.txt' in s.scr.line(22), '%s the status line follows the new name' % tag, s.scr.line(22))
     s.close()
 
-    # --- a file bigger than the buffer: Level 1 (9000 bytes) truncates it and refuses to overwrite it, Level 2 (26000) holds it
+    # --- a file bigger than the buffer: Level 1 (7000 bytes) truncates it and refuses to overwrite it, Level 2 (26000) holds it
     big = ('0123456789' * 8 + '\r') * 300       # 24300 bytes
     s = Session(level, files={'huge.txt': big}, args='huge.txt')
     s.run(['\\x13'], wait='保存しました' if level == 2 else '大きすぎます')
     if level == 1:
         check('大きすぎます' in s.scr.line(23), '%s a file that does not fit is reported and ^S refuses to overwrite it' % tag, s.scr.line(23))
-        check('0/9000' in s.scr.line(22), '%s the buffer holds 9000 bytes' % tag, s.scr.line(22))
+        check('0/7000' in s.scr.line(22), '%s the buffer holds 7000 bytes' % tag, s.scr.line(22))
     else:
         check('保存しました' in s.scr.line(23) and '0/24300' in s.scr.line(22), '%s a 24300 byte file fits the Level 2 buffer' % tag, s.scr.line(22) + s.scr.line(23))
     check(s.host('huge.txt') == big.encode(), '%s the file is intact' % tag)
@@ -466,6 +466,22 @@ for level in (1, 2):
     check(result(s) == 'ほげ！\n', '%s a word without candidates is registered (prompt) and inserted' % tag, repr(result(s)))
     check(s.host('skku.dic') == 'ほげ /ほげ！/\r'.encode('utf-8'), '%s the registered word is in the user dictionary' % tag, repr(s.host('skku.dic')))
     s.close()
+    # --- recursive registration: the word of the registration prompt is converted with SKK (the prompt has its own buffer)
+    s = skk_session(level)
+    s.run(['\\x0a', 'Hoge', ' ', 'Kanji', ' ', '\\r', '\\r', '\\x13'], wait='保存しました')
+    check(result(s) == '漢字\n' and s.host('skku.dic') == 'ほげ /漢字/\r'.encode('utf-8'),
+          '%s recursive registration: the word of the registration prompt is converted (Kanji Space), Enter, Enter' % tag, repr((result(s), s.host('skku.dic'))))
+    s.close()
+    s = skk_session(level)
+    s.run(['\\x0a', 'Hoge', ' ', 'Fuga', ' ', 'ふが\\r', '\\r', '\\x13'], wait='保存しました')
+    check(result(s) == 'ふが\n' and s.host('skku.dic') == 'ふが /ふが/\rほげ /ふが/\r'.encode('utf-8'),
+          '%s two levels: a word without candidates inside the registration is registered too' % tag, repr((result(s), s.host('skku.dic'))))
+    s.close()
+    s = skk_session(level)
+    s.run(['\\x0a', 'Hoge', ' ', 'Fuga', ' ', '\\x07', '\\x07', '\\x07', '\\x07', 'Kanji', ' ', '\\r', '\\x13'], wait='保存しました')
+    check(result(s) == '漢字\n' and not os.path.exists(os.path.join(s.v0, 'skku.dic')),
+          '%s ^G cancels the inner registration, the reading of the inner prompt, the outer registration, the reading in the text' % tag, repr(result(s)))
+    s.close()
     s = skk_session(level, user='ほげ /ほげ！/\r')
     s.run(['\\x0a', 'Hoge', ' ', '\\r', '\\x13'], wait='保存しました')
     check(result(s) == 'ほげ！\n', '%s the user dictionary is consulted' % tag, repr(result(s)))
@@ -558,7 +574,7 @@ def skk_fuzz_keys(seed):
     keys = ['\\x0a']
     for _ in range(70):
         keys.append(rnd.choice(pool))
-    return keys + ['\\x07'] * 3
+    return keys + ['\\x07'] * 10
 
 
 for level, seeds in ((1, range(300, 304)), (2, range(304, 306))):

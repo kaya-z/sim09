@@ -29,8 +29,8 @@ jwp: jwp.c msgs.h
 # Level 2 has a 64K address space per process: bigger text buffer
 jwp-l2: jwp.c msgs.h
 	@if command -v $(CMOC) >/dev/null 2>&1; then \
-	    echo "$(CMOC) $(CMOCOPTS) -DBUFSZ=26000 -o jwp-l2 jwp.c"; \
-	    $(CMOC) $(CMOCOPTS) -DBUFSZ=26000 -o jwp-l2 jwp.c || exit 1; \
+	    echo "$(CMOC) $(CMOCOPTS) -DBUFSZ=25000 -o jwp-l2 jwp.c"; \
+	    $(CMOC) $(CMOCOPTS) -DBUFSZ=25000 -o jwp-l2 jwp.c || exit 1; \
 	    python3 ../../tools/os9edition.py jwp-l2 $(JWP_EDITION) || exit 1; \
 	else \
 	    echo "cmoc not found: keeping the prebuilt jwp-l2 module"; test -f jwp-l2; \
