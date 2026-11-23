@@ -185,6 +185,9 @@ int main(void)
             break;
 #ifdef BOARD_FM11
         case FS_MOUNT:                                      /* a = drive, b = 0 mount, 1 umount, 2 is it mounted? */
+#ifdef MK09_V2
+            if (m.b < 2 && fs_uid != 0) { r.op = E_PERM; break; }          /* mount and umount: root only */
+#endif
             if (m.b == 0) r.op = m.a ? fs_mount_drive((u8)m.a) : E_OK;
             else if (m.b == 1) r.op = fs_umount((u8)m.a);
             else { r.op = E_OK; r.a = (m.a == 0) || fs_mounted((u8)m.a); }
@@ -208,6 +211,9 @@ int main(void)
             break;
 #ifdef BOARD_FM11
         case FS_STIME:                                      /* a = year:month, b = day:hour, c = minute:second */
+#ifdef MK09_V2
+            if (fs_uid != 0) { r.op = E_PERM; break; }                      /* the clock: root only */
+#endif
             bsp_set_clock(m.a, m.b, m.c);
             r.op = E_OK;
             break;
