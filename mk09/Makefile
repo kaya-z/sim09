@@ -34,7 +34,7 @@ SIM    ?= ../sim09
 CMOCLIB := $(shell dirname "$$(command -v $(CMOC) 2>/dev/null)" 2>/dev/null)/../share/cmoc/lib
 INCS    := -Itests -Iinclude -Iarch/m6809 -I$(BSPDIR) -Iapps/basic -I$(B)
 CFLAGS  := --lwasm=$(LWASM) --void-target --no-relocate -O2 -fomit-frame-pointer -Dmain=mk_main $(INCS)
-ASFLAGS := -fobj -I$(B) -Iinclude
+ASFLAGS := -fobj -I$(B) -Iinclude -Iarch/m6809
 ifeq ($(BOARD),fm11)
 CFLAGS  += -DBOARD_FM11=1
 ASFLAGS += -DFM11=1
