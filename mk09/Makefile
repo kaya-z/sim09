@@ -119,6 +119,8 @@ $(B)/%.o: %.s $(HDRS)
 
 $(B)/bootrom.bin: boot/$(if $(COCO),bootrom_l2.s,bootrom.s) | $(B)
 	$(LWASM) --format=raw -o $@ $<
+$(B)/l2loader.bin: boot/l2loader.s | $(B)
+	$(LWASM) --format=raw -o $@ $<
 
 # FM-11: the boot ROM of the machine loads 512 bytes from the hard disk (cylinder 0, head 0, sectors 0 and 1) to $0400 and jumps there
 $(B)/ipl_hdd.bin: boot/ipl_fm11_hdd.s $(B)/memmap.inc | $(B)
@@ -330,8 +332,8 @@ endif
 	iconv -f UTF-8 -t $(ICONV_$(CHARSET)) disk/doc/guide.txt > $(TREE)/doc/guide.txt
 	touch $@
 
-$(B)/mk09.img: $(B)/boot.img $(B)/tree.stamp tools/mkdisk.py tools/mkusers.py $(if $(filter fm11,$(BOARD)),$(B)/ipl_hdd.bin)
-	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img $(if $(filter fm11,$(BOARD)),--ipl $(B)/ipl_hdd.bin) --size-mb $(DISK_MB) $(KEEPCASE) $(TREE)
+$(B)/mk09.img: $(B)/boot.img $(B)/tree.stamp tools/mkdisk.py tools/mkusers.py $(if $(COCO),$(B)/bootrom.bin $(B)/l2loader.bin) $(if $(filter fm11,$(BOARD)),$(B)/ipl_hdd.bin)
+	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img $(if $(filter fm11,$(BOARD)),--ipl $(B)/ipl_hdd.bin) --size-mb $(DISK_MB) $(if $(COCO),--l2card $(B)/bootrom.bin $(B)/l2loader.bin) $(KEEPCASE) $(TREE)
 
 # the 2HD floppy disk image of the FM-11 (1021696 bytes, FDD_2HD_256 of the simulator): track 0 side 0 (26 sectors of 128 bytes) holds the
 # IPL, the 3978 sectors of 256 bytes behind it are the MK09 disk: MBR, boot image, a small FAT16 volume

@@ -183,6 +183,7 @@ def main():
     ap.add_argument('--total-blocks', type=int, default=0, help='the size of the whole disk in blocks (instead of --size-mb)')
     ap.add_argument('--small', action='store_true', help='allow a volume with fewer than 4085 clusters (FAT16 layout, MK09 only)')
     ap.add_argument('--keep-case', action='store_true', help='write the names as they are (MK09 2.0: case sensitive names); without it they are made upper case')
+    ap.add_argument('--l2card', nargs=2, metavar=('ROMIMG', 'LOADER'), help='the card of the FPGA board for the machine with the MMU: the loader (boot/l2loader.s, raw) at LSN 2, the ROM image (8KB, boot/bootrom_l2.s) at LSN 8, the system (--boot) at LSN 64')
     ap.add_argument('--owners', help='2.0: a file with lines "pattern uid gid mode(octal)": the owner, group and permissions of the entries (the patterns are relative paths, as fnmatch; the first that fits)')
     ap.add_argument('tree')
     a = ap.parse_args()
@@ -217,9 +218,21 @@ def main():
     disk[0:BLK] = mbr
     if a.boot:
         boot = open(a.boot, 'rb').read()
-        if len(boot) > (PART_START - 1) * BLK:
+        if not a.l2card and len(boot) > (PART_START - 1) * BLK:
             sys.exit('mkdisk: the boot image is too big')
-        disk[2 * 256:2 * 256 + len(boot)] = boot
+        if a.l2card:
+            rom = open(a.l2card[0], 'rb').read()
+            ldr = open(a.l2card[1], 'rb').read()
+            if len(rom) > 32 * 256 or len(ldr) > 253:
+                sys.exit('mkdisk: the ROM image (8KB) or the loader (253 bytes) is too big')
+            disk[2 * 256:2 * 256 + 3 + len(ldr)] = bytes([0x03, 0x00, len(ldr)]) + ldr      # the record: to $0300
+            disk[3 * 256:3 * 256 + 3] = bytes([0x03, 0x00, 0x00])                           # the entry record: $0300
+            disk[8 * 256:8 * 256 + len(rom)] = rom
+            if 64 * 256 + len(boot) > PART_START * BLK:
+                sys.exit('mkdisk: the boot image is too big')
+            disk[64 * 256:64 * 256 + len(boot)] = boot
+        else:
+            disk[2 * 256:2 * 256 + len(boot)] = boot
     disk[PART_START * BLK:] = vol
     open(a.output, 'wb').write(disk)
     used = fs.next - 2

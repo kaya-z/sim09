@@ -1,1 +1,1 @@
-expect "ACIA1 PASS"
+expect ACIA1 PASS

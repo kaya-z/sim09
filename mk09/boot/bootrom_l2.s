@@ -17,7 +17,7 @@
 * that the kernel makes at $0100.
 
 BUF	equ	$0200			sector buffer; no image data goes here
-FIRSTLSN equ	2
+FIRSTLSN equ	64			(the card of the FPGA board: LSN 2 has the loader of the Level 2 machine, 8 the ROM image; the image of the system starts here: tools/mkdisk.py --l2card)
 
 	org	$E000
 	rmb	$FE00-*			(the file is the whole block 7: the code is in the fixed page)
