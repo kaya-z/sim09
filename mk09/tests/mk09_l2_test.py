@@ -75,6 +75,10 @@ check(all(n in out for n in ('sh.mx', 'ls.mx', 'login.mx')), 'ls /bin lists the 
 check(re.search(r'^\s*\d+ (ready|running)', out, re.M) is not None and re.search(r'^\s*7 running', out, re.M) is not None, 'ps lists the programs in the user map', out[-700:])
 check(rc == 0 and out.rstrip().endswith('CPU halted.'), 'shutdown (root) powers the simulator off', out[-200:])
 
+# ---- the current directory belongs to the task (the shell): a program that the shell starts begins in it, a `cd` of another task does not change it
+out, rc = run(ROOT + sh('cd /etc', 'pwd', 'ls', 'cd /bin', 'pwd', 'ls -l sh.mx', prompt='> ') + OFF, )
+check(re.search(r'/etc> ls\s+group\s+passwd', out) is not None and re.search(r'/bin> ls -l sh.mx\s+-rwx', out) is not None, 'cd: the programs that the shell starts begin in its current directory', out[-900:])
+
 # ---- the names are case sensitive
 out, rc = run(ROOT + sh('cp /etc/rc.sh /Aa.txt', 'cp /etc/rc.sh /aA.txt', 'ls /') + OFF)
 check('Aa.txt' in out and 'aA.txt' in out, 'two files that differ only in the case live together')

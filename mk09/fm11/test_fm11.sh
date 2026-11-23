@@ -34,7 +34,7 @@ for L in $LEVELS; do
     run $FD -f0 0xBF 6500 "$(nm cp ETC/RC.SH T.TXT)|$(nm cat T.TXT)|df|"
     check "for FM-11" "L$L 2HD: MK09 boots"
     check "stty sjis" "L$L 2HD: a file is copied and read back"
-    check "47[46] clusters" "L$L 2HD: df sees the volume"
+    check "47[2-6] clusters" "L$L 2HD: df sees the volume"
     run $HD -h0 0x7F 11000 "reboot|${SP}${LG}mem|"
     if [ $L = 1 ]; then check "pages of 256 bytes" "L$L hard disk: reboot comes back, the shell answers"
     else check "physical memory" "L$L hard disk: reboot comes back, the shell answers (mem shows the physical memory)"; fi

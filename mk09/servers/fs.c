@@ -55,6 +55,9 @@ void fsx_now(u16 *date, u16 *time)
 static char path[2 * MAXPATH];          /* the path (or two, for rename) of the request being served */
 static dirent_t de;
 #ifdef MK09_V2
+static u16 cw_cl[NTASK];                 /* the current directory of each task (a task takes over the one of its parent: FS_SETUSER) */
+static char cw_path[NTASK][MAXPATH];
+static u8 cw_cur = 0xFF;                 /* the task whose directory is in fs_core now (0xFF: none) */
 static u8 t_uid[NTASK], t_gid[NTASK];    /* the user of each task (PM sets them with FS_SETUSER); a task that has not been set is root */
 #endif
 
@@ -83,7 +86,16 @@ int main(void)
         r.op = E_NOSYS;
 #ifdef MK09_V2
         fs_uid = fs_gid = 0;
-        if (m.src < NTASK) { fs_uid = t_uid[m.src]; fs_gid = t_gid[m.src]; }
+        if (m.src < NTASK) {
+            fs_uid = t_uid[m.src];
+            fs_gid = t_gid[m.src];
+            if (m.src != cw_cur) {                          /* the current directory of this task */
+                if (cw_cur != 0xFF) fs_cwd_get(&cw_cl[cw_cur], cw_path[cw_cur]);
+                cw_cur = m.src;
+                if (!cw_path[m.src][0]) { cw_cl[m.src] = 0; cw_path[m.src][0] = '/'; cw_path[m.src][1] = 0; }
+                fs_cwd_set(cw_cl[m.src], cw_path[m.src]);
+            }
+        }
 #endif
         if (st != E_OK && m.op != FS_CLOSEALL) {            /* not mounted: try again */
             st = fs_mount();
@@ -223,6 +235,18 @@ int main(void)
             if (m.src != TID_PM || m.a >= NTASK) { r.op = E_PERM; break; }
             t_uid[m.a] = (u8)m.b;
             t_gid[m.a] = (u8)m.c;
+            if (m.d != 0xFF) {                              /* the new task starts in the current directory of m.d (0: the root) */
+                if (cw_cur != 0xFF) fs_cwd_get(&cw_cl[cw_cur], cw_path[cw_cur]);
+                cw_cur = 0xFF;
+                if (m.d && m.d < NTASK && cw_path[m.d][0]) {
+                    cw_cl[m.a] = cw_cl[m.d];
+                    strcpy(cw_path[m.a], cw_path[m.d]);
+                } else {
+                    cw_cl[m.a] = 0;
+                    cw_path[m.a][0] = '/';
+                    cw_path[m.a][1] = 0;
+                }
+            }
             r.op = E_OK;
             break;
         case FS_CHMOD:

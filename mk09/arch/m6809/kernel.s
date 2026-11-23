@@ -25,7 +25,11 @@
 
 KDP	equ	K_DATA/256
 
+	ifdef	MK09_V2
+NTASK	equ	16			2.0: the system 6 and the programs 10 (the sessions of several terminals)
+	else
 NTASK	equ	11
+	endc
 	ifdef	MMU
 	ifdef	COCO
 NPG	equ	8			the blocks of a map (8KB each; the sbc09 machine with the MMU: two maps, the system one and the one of the user)

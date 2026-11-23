@@ -1386,3 +1386,18 @@ u8 fs_chuser(const char *path, u16 uid, u16 gid)
                    gid == 0xFFFF ? (r.ent[21] ? (u8)(r.ent[21] - 1) : 0) : (u8)gid, 0);
 }
 #endif
+
+#ifdef MK09_V2
+/* the current directory of the task that is served (fs.c keeps one for every task and puts it here) */
+void fs_cwd_get(u16 *cl, char *path)
+{
+    *cl = cwd_cl;
+    strcpy(path, cwd_path);
+}
+
+void fs_cwd_set(u16 cl, const char *path)
+{
+    cwd_cl = cl;
+    strcpy(cwd_path, path);
+}
+#endif

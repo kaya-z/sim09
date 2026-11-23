@@ -51,6 +51,8 @@ u8   fs_chown(u8 h, u8 owner);
 #ifdef MK09_V2
 extern u16 fs_setuid;
 extern u8 fs_uid, fs_gid;          /* the user of the request that is served (set by fs.c from the table of the tasks) */
+void fs_cwd_get(u16 *cl, char *path);
+void fs_cwd_set(u16 cl, const char *path);
 u8   fs_chmod(const char *path, u16 mode);
 u8   fs_chuser(const char *path, u16 uid, u16 gid);
 #endif

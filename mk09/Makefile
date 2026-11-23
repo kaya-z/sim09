@@ -150,7 +150,7 @@ MAPOVER := K_CSZ=1060 K_DSZ=02F0 HIGH=PM
 endif
 # the 2.0 version strings are longer: the code slot of PM gets 16 bytes more (V2 builds only)
 ifeq ($(V2),1)
-MAPOVER += TTY_CSZ=0C00 PM_CSZ=0F00 PM_DSZ=0280 FS_CSZ=3700 FS_DSZ=0940
+MAPOVER += K_DSZ=07C0 TTY_CSZ=0C00 PM_CSZ=1100 PM_DSZ=0320 FS_CSZ=3700 FS_DSZ=0D80
 endif
 ifeq ($(KERNEL),asm)
 KERNEL_OBJS := $(B)/kernel_asm.o
@@ -336,7 +336,7 @@ $(B)/mk09.img: $(B)/boot.img $(B)/tree.stamp tools/mkdisk.py tools/mkusers.py $(
 # the 2HD floppy disk image of the FM-11 (1021696 bytes, FDD_2HD_256 of the simulator): track 0 side 0 (26 sectors of 128 bytes) holds the
 # IPL, the 3978 sectors of 256 bytes behind it are the MK09 disk: MBR, boot image, a small FAT16 volume
 $(B)/mk09_disk2hd.img: $(B)/boot.img $(B)/tree.stamp tools/mkdisk.py
-	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img --part-start $(if $(filter 2,$(LEVEL)),56,48) --total-blocks 1989 --spc 4 --small $(KEEPCASE) $(TREE)
+	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img --part-start $(if $(filter 2,$(LEVEL)),$(if $(filter 1,$(V2)),64,56),48) --total-blocks 1989 --spc 4 --small $(KEEPCASE) $(TREE)
 $(B)/mk09_2hd.img: $(B)/mk09_disk2hd.img $(B)/ipl_2hd.bin tools/mk2hd.py
 	$(PYTHON) tools/mk2hd.py -o $@ --ipl $(B)/ipl_2hd.bin $(B)/mk09_disk2hd.img
 

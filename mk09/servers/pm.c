@@ -124,13 +124,17 @@ static u8 fsc(u8 op, u16 a, u16 b)      /* FS request without a buffer */
 }
 
 #ifdef MK09_V2
-static void fs_user(u8 tid, u8 u, u8 g)  /* tell FS the user of a task */
+static u8 sh_last;                      /* the task number of the last shell that ended */
+static u8 cur_parent;                   /* the task whose current directory the new program starts in (0: the root) */
+
+static void fs_user(u8 tid, u8 u, u8 g, u8 cwd)  /* tell FS the user of a task (cwd: the task whose current directory it takes over; 0: the root; 0xFF: keep it) */
 {
     msg_t m;
     m.op = FS_SETUSER;
     m.a = tid;
     m.b = u;
     m.c = g;
+    m.d = cwd;
     mk_call(TID_FS, &m);
 }
 #endif
@@ -196,7 +200,7 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
 #endif
 
 #ifdef MK09_V2
-    fs_user(TID_PM, cur_uid, cur_gid);              /* FS checks r and x for the user who starts the program */
+    fs_user(TID_PM, cur_uid, cur_gid, cur_parent);    /* (and a relative name of the program is looked for in the directory of the one who asks) */              /* FS checks r and x for the user who starts the program */
 #endif
     rm.op = FS_OPEN;                                /* (the path is in the start-up block) */
     rm.a = FO_READ
@@ -209,7 +213,7 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
     st = mk_callg(TID_FS, &rm, GR_READ);
     if (!st) st = rm.op;
 #ifdef MK09_V2
-    fs_user(TID_PM, 0, 0);
+    fs_user(TID_PM, 0, 0, 0xFF);
 #endif
     if (st) return st;
     h = (u8)rm.a;
@@ -306,7 +310,7 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
     t_uid[tid] = cur_uid;
     t_ruid[tid] = cur_ruid;
     t_gid[tid] = cur_gid;
-    fs_user(tid, cur_uid, cur_gid);
+    fs_user(tid, cur_uid, cur_gid, cur_parent);
 #endif
     if (hin != NOH) fsc(FS_CHOWN, hin, tid);
     if (hout != NOH) fsc(FS_CHOWN, hout, tid);
@@ -355,6 +359,7 @@ static void start_shell(void)
         strcpy((char *)sb + SB_ARGS + 11, "-r");
     }
 #ifdef MK09_V2
+    cur_parent = respawn ? sh_last : 0;                 /* (the shell that stepped aside comes back in its directory) */
     cur_uid = cur_ruid = sh_uid;
     cur_gid = sh_gid;
     if (!respawn) cur_uid = cur_ruid = cur_gid = 0;
@@ -385,6 +390,7 @@ static void collect(void)
         if (t == shell_tid) {
 #ifdef MK09_V2
             sh_uid = t_ruid[t];
+            sh_last = t;
             sh_gid = t_gid[t];
 #endif
             shell_tid = 0;
@@ -424,6 +430,7 @@ static void do_spawn(msg_t *m, u8 bg)
     sb[SB_ARGC]++;
 #ifdef MK09_V2
     cur_ruid = t_ruid[m->src];
+    cur_parent = m->src;
     cur_uid = t_uid[m->src];                                    /* the new program is run by the user who asks (PM_EXEC: the task that is replaced) */
     cur_gid = t_gid[m->src];
 #endif
@@ -506,7 +513,7 @@ int main(void)
             if (m.src >= NTASK || t_uid[m.src] != 0) { reply(m.src, E_PERM, 0); break; }
             t_uid[m.src] = t_ruid[m.src] = (u8)m.a;
             t_gid[m.src] = (u8)m.b;
-            fs_user(m.src, (u8)m.a, (u8)m.b);
+            fs_user(m.src, (u8)m.a, (u8)m.b, 0xFF);
             reply(m.src, E_OK, 0);
             break;
         case PM_GETUSER:

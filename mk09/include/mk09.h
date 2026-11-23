@@ -25,7 +25,11 @@
 #define TID_PM      4       /* process manager / init                    */
 #define TID_MM      5       /* memory manager (pages of the transient area) */
 #define TID_USER0   6       /* first id for tasks created by PM          */
+#ifdef MK09_V2
+#define NTASK       16      /* number of task slots (incl. idle): 2.0: the system 6 and the programs 10 */
+#else
 #define NTASK       11      /* number of task slots (incl. idle)         */
+#endif
 
 #define TID_ANY     0xFF    /* receive: from anybody (and notifications) */
 #define TID_HW      0xFE    /* message source of a notification          */
