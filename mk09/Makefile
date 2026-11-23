@@ -272,7 +272,7 @@ $(B)/msgs_$(CHARSET).h: apps/jwp/genmsgs.py | $(B)
 $(B)/msgs.h: $(B)/msgs_$(CHARSET).h
 	cp $< $@
 $(B)/jwp.o: jwp.c skk.c $(B)/msgs.h $(HDRS)
-	$(CMOC) -c --lwasm=$(LWASM) --void-target -O2 $(JWP_OPT) -DBUFSZ=$(JWP_BUF) -Dmain=mk_main $(INCS) -Iapps/jwp -o $@ $<
+	$(CMOC) -c --lwasm=$(LWASM) --void-target -O2 $(JWP_OPT) -DBUFSZ=$(JWP_BUF) -Dmain=mk_main $(filter -DMK09_V2=1 -DMK_MMU=1 -DMMU_COCO=1,$(CFLAGS)) $(INCS) -Iapps/jwp -o $@ $<
 
 # ---- the file tree of the disk ----
 # SKK dictionary for jwp (tools/mkskkdic.py, from the Debian package skkdic: SKK-JISYO.L); SKK_KB

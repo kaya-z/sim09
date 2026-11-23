@@ -119,6 +119,10 @@ check('jwp 1.0' in out, 'jwp -v')
 check(len(re.findall(r'MK09 login: ', out)) >= 2 and out.count('MK09 2.0.0pre') >= 2, 'reboot writes the files and starts the system again (the login comes back)', out[-400:])
 fsck = subprocess.run(['sh', '-c', 'dd if=%s of=%s/v.img bs=512 skip=2048 2>/dev/null; fsck.fat -n %s/v.img' % (disk, work, work)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 check(fsck.returncode == 0, 'fsck.fat: the volume is right after all these runs', fsck.stdout.decode('utf-8', 'replace')[-600:])
+# ---- jwp with its default dictionary (/skk/skk.dic of the card: the paths of the 2.0 system are lower case): Kanji + Space shows the first candidate
+out, rc = run(ROOT + ['send "jwp /tmp/j.txt\\r"', 'expect "jwp"', 'sleep 400', 'send "\\x0a"', 'sleep 400', 'send "Kanji"', 'sleep 400', 'send " "', 'sleep 3000', 'send "\\x13"', 'sleep 1000'] + OFF)
+check('\u25bc\u6f22\u5b57' in out, 'jwp: the default dictionary /skk/skk.dic is found (SKK: Kanji + Space gives the candidate)', out[-300:])
+
 # ---- stage 5: two terminals at the same time (the second ACIA; sim09 -net 1=listen:PORT,raw is the second terminal, a socket of this test)
 import socket, time
 out, rc = run(ROOT + ['send "echo 1 > /etc/ttys\\r"', 'expect "/> "', 'send "cat /etc/ttys\\r"', 'expect "/> "'] + OFF)
