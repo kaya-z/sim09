@@ -33,6 +33,9 @@ def name83(name):
 
 
 def fat_time(t):
+    # MK09_FIXED_TIME=<seconds>: every time stamp is this one (a reproducible image; tools/v1guard.sh)
+    if os.environ.get('MK09_FIXED_TIME'):
+        t = float(os.environ['MK09_FIXED_TIME'])
     tm = time.localtime(t)
     d = ((tm.tm_year - 1980) << 9) | (tm.tm_mon << 5) | tm.tm_mday
     s = (tm.tm_hour << 11) | (tm.tm_min << 5) | (tm.tm_sec // 2)

@@ -22,6 +22,10 @@ BOOTDEV ?= hd
 ifeq ($(BOARD),fm11)
 LEVEL  ?= 2
 endif
+# V2=1: the 2.0 line (docs/V2_PLAN.md, -DMK09_V2); on by default for the builds with an MMU (FM-11 Level 2), V2=0 gives the 1.x system
+ifeq ($(BOARD)$(LEVEL),fm112)
+V2     ?= 1
+endif
 B      ?= build$(if $(filter fm11,$(BOARD)),-fm11-l$(LEVEL)$(if $(filter 2hd,$(BOOTDEV)),-2hd))
 BSPDIR := bsp/$(BOARD)
 MEMMAP := $(if $(filter fm11,$(BOARD)),$(if $(filter 2,$(LEVEL)),memmap_fm11_l2.mk,memmap_fm11.mk),memmap.mk)
@@ -41,6 +45,10 @@ ifeq ($(LEVEL),2)
 CFLAGS  += -DFM11_MMU=1
 ASFLAGS += -DMMU=1
 endif
+endif
+ifeq ($(V2),1)
+CFLAGS  += -DMK09_V2=1
+ASFLAGS += -DMK09_V2=1
 endif
 
 vpath %.c kernel arch/m6809 $(BSPDIR) servers lib apps apps/jwp apps/basic
@@ -128,6 +136,10 @@ $(B)/libmk.a: $(LIBMK_OBJS)
 KERNEL ?= asm
 ifneq ($(KERNEL),asm)
 MAPOVER := K_CSZ=1060 K_DSZ=02F0 HIGH=PM
+endif
+# the 2.0 version strings are longer: the code slot of PM gets 16 bytes more (V2 builds only)
+ifeq ($(V2),1)
+MAPOVER += PM_CSZ=0C00
 endif
 ifeq ($(KERNEL),asm)
 KERNEL_OBJS := $(B)/kernel_asm.o
