@@ -3,6 +3,14 @@
 MK09 (MC6809 マイクロカーネル + TTY/DISK/FS/PM/MM サーバ) を富士通 FM-11 (6809 モード) へ移植したものです。
 元: <https://github.com/kaya-z/sim09/tree/master/mk09> (v1.35 に取り込み済み)。sbc09 ボード向けのビルドは変更なし (`BOARD` 省略時は従来どおり、`build/` が同一バイト列になることを確認済み)。
 
+## MK09 2.0 (開発版 `2.0.0pre`、Level 2 の既定)
+
+`BOARD=fm11` の Level 2 は、2.0 の機能が入ります (`make BOARD=fm11`。Level 1 と 2HD の Level 1 は 1.x のまま、`tools/v1guard.sh` で確かめる)。起動すると `login:` が出ます (`root` / `root`、`user` / `user`)。ファイル名は**小文字が標準で、大文字小文字を区別します** (1.x のディスクは使えません。イメージは作り直す)。`/etc/ttys` に `1` を書いて再起動すると、**RS-232C のポート (i8251 のチャンネル 0、`$FD06/$FD07`) が 2 つ目の端末**になります。詳しくは `docs/MANUAL.md` の 6A、`docs/SPEC.md` の 11A、計画は `docs/V2_PLAN.md`。
+
+* エミュレータでの確認: `fm11/test_fm11.sh "" 2` (37 項目)、`fm11/test_fm11_rs.py` (RS-232C の 2 つ目の端末、pty、8 項目)。
+* 2HD の Level 2 は、ブートイメージが大きくなったので、ボリュームの始まりを 64 ブロックにした (472 クラスタ)。
+* **FM-11 の実機での確認は、まだです** (これが済むまで `2.0.0` には確定しない)。
+
 ## Level 1 と Level 2
 
 | | Level 1 | Level 2 (既定) |
