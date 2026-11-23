@@ -155,7 +155,7 @@ class Session:
         l2opts = []
         if L2:
             subprocess.run([sys.executable, '-X', 'utf8', os.path.join(MK, 'tools', 'mkusers.py'), tree, os.path.join(self.dir, 'owners.txt')], check=True)
-            l2opts = ['--keep-case', '--owners', os.path.join(self.dir, 'owners.txt')]
+            l2opts = ['--keep-case', '--owners', os.path.join(self.dir, 'owners.txt'), '--l2card', os.path.join(build, 'bootrom.bin'), os.path.join(build, 'l2loader.bin')]    # (the system is at LSN 64 of the card)
         subprocess.run([sys.executable, '-X', 'utf8', MKDISK, '-o', self.img, '--boot', os.path.join(build, 'boot.img'),
                         '--size-mb', '16' if any(len(v) > 1000000 for v in (files or {}).values()) else '4', '--spc', '4' if any(len(v) > 1000000 for v in (files or {}).values()) else '1'] + l2opts + [tree], check=True, stdout=subprocess.DEVNULL)
         self.rom = os.path.join(build, 'bootrom.bin')

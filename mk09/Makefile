@@ -320,10 +320,10 @@ ifeq ($(BOARD),fm11)
 	for a in $$($(PYTHON) tools/fitapps.py $(USERPAGES) $(foreach a,$(APPS),$(B)/$(a).mx)); do cp $(B)/$$a.mx $(TREE)/bin/$$a.mx; done
 	if [ ! -f $(TREE)/bin/cc1.mx ] || [ ! -f $(TREE)/bin/cg.mx ]; then rm -f $(TREE)/lib/clib.obj $(TREE)/lib/clib.idx $(TREE)/lib/rt.obj $(TREE)/lib/rt.idx $(TREE)/lib/cc1.msg $(TREE)/lib/start.s; fi
 	if [ ! -f $(TREE)/bin/pas1.mx ]; then rm -f $(TREE)/lib/pas1.msg; fi
-	if [ -f $(TREE)/bin/cc1.mx ] && [ -f $(TREE)/bin/cg.mx ]; then mkdir -p $(TREE)/c; cp disk/c/* $(TREE)/c/; fi
+	if [ -f $(TREE)/bin/cc1.mx ] && [ -f $(TREE)/bin/cg.mx ]; then mkdir -p $(TREE)/c; cp disk/c/* $(TREE)/c/$(if $(filter 1,$(V2)),; mv $(TREE)/c/README.TXT $(TREE)/c/readme.txt); fi
 else
 	for a in $(APPS); do cp $(B)/$$a.mx $(TREE)/bin/$$a.mx; done
-	mkdir -p $(TREE)/c; cp disk/c/* $(TREE)/c/
+	mkdir -p $(TREE)/c; cp disk/c/* $(TREE)/c/$(if $(filter 1,$(V2)),; mv $(TREE)/c/README.TXT $(TREE)/c/readme.txt)
 endif
 	for d in etc doc bas asm inc pas; do if [ -d disk/$$d ] && [ -n "$$(ls disk/$$d)" ]; then cp disk/$$d/* $(TREE)/$$d/; fi; done
 	printf '# /ETC/RC.SH - run by the shell when the system starts\nstty $(CHARSET)\n' > $(TREE)/etc/rc.sh
