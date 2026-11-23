@@ -327,7 +327,7 @@ else
 endif
 	for d in etc doc bas asm inc pas; do if [ -d disk/$$d ] && [ -n "$$(ls disk/$$d)" ]; then cp disk/$$d/* $(TREE)/$$d/; fi; done
 	printf '# /ETC/RC.SH - run by the shell when the system starts\nstty $(CHARSET)\n' > $(TREE)/etc/rc.sh
-	$(if $(filter 1,$(V2)),$(PYTHON) tools/mkusers.py $(TREE) $(B)/owners.txt)
+	$(if $(filter 1,$(V2)),$(PYTHON) tools/mkusers.py $(if $(filter 0,$(FIRSTPW)),--no-expire) $(TREE) $(B)/owners.txt)
 	if [ -n "$(HAVE_SKK)" ]; then cp $(B)/skk_$(CHARSET).dic $(TREE)/skk/skk.dic; fi
 	iconv -f UTF-8 -t $(ICONV_$(CHARSET)) disk/doc/guide.txt > $(TREE)/doc/guide.txt
 	touch $@
@@ -341,6 +341,23 @@ $(B)/mk09_disk2hd.img: $(B)/boot.img $(B)/tree.stamp tools/mkdisk.py
 	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img --part-start $(if $(filter 2,$(LEVEL)),$(if $(filter 1,$(V2)),64,56),48) --total-blocks 1989 --spc 4 --small $(KEEPCASE) $(TREE)
 $(B)/mk09_2hd.img: $(B)/mk09_disk2hd.img $(B)/ipl_2hd.bin tools/mk2hd.py
 	$(PYTHON) tools/mk2hd.py -o $@ --ipl $(B)/ipl_2hd.bin $(B)/mk09_disk2hd.img
+
+# 2.0: the images of the image tests.  The users of the released image must change their passwords at the first login (FIRSTPW=1, the default; tools/mkusers.py);
+# the tests log in as root / root, so they use these images, made from the same tree with the "must change" marks left out (make testimg)
+ifeq ($(V2),1)
+$(B)/tree_t.stamp: $(B)/tree.stamp tools/mkusers.py
+	rm -rf $(B)/tree_t; cp -a $(TREE) $(B)/tree_t
+	$(PYTHON) tools/mkusers.py --no-expire $(B)/tree_t $(B)/owners_t.txt
+	touch $@
+$(B)/mk09_t.img: $(B)/boot.img $(B)/tree_t.stamp tools/mkdisk.py $(if $(COCO),$(B)/bootrom.bin $(B)/l2loader.bin) $(if $(filter fm11,$(BOARD)),$(B)/ipl_hdd.bin)
+	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img $(if $(filter fm11,$(BOARD)),--ipl $(B)/ipl_hdd.bin) --size-mb $(DISK_MB) $(if $(COCO),--l2card $(B)/bootrom.bin $(B)/l2loader.bin) --keep-case --owners $(B)/owners_t.txt $(B)/tree_t
+$(B)/mk09_disk2hd_t.img: $(B)/boot.img $(B)/tree_t.stamp tools/mkdisk.py
+	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img --part-start $(if $(filter 2,$(LEVEL)),64,48) --total-blocks 1989 --spc 4 --small --keep-case --owners $(B)/owners_t.txt $(B)/tree_t
+$(B)/mk09_2hd_t.img: $(B)/mk09_disk2hd_t.img $(B)/ipl_2hd.bin tools/mk2hd.py
+	$(PYTHON) tools/mk2hd.py -o $@ --ipl $(B)/ipl_2hd.bin $(B)/mk09_disk2hd_t.img
+testimg: all $(B)/mk09_t.img $(if $(filter fm11,$(BOARD)),$(if $(filter 2hd,$(BOOTDEV)),$(B)/mk09_2hd_t.img))
+.PHONY: testimg
+endif
 
 DISK_MB ?= 16
 

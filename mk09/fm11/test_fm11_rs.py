@@ -9,7 +9,7 @@ import os, pty, re, select, shutil, subprocess, sys, tempfile, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 MK = os.path.dirname(HERE)
 FM11 = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else '/export/nas/archives/FM-11/emulator/Fm11gtk/fm11'
-IMG = os.path.join(MK, 'build-fm11-l2', 'mk09.img')
+IMG = os.path.join(MK, 'build-fm11-l2', 'mk09_t.img')          # (the image without the "must change" marks of the passwords: make BOARD=fm11 testimg)
 sys.path.insert(0, os.path.join(MK, 'tests'))
 import fatlib
 fails = total = 0

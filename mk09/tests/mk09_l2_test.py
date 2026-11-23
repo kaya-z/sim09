@@ -12,7 +12,8 @@ MK = os.path.dirname(HERE)
 SIM = os.path.join(os.path.dirname(MK), 'sim09')
 BUILD = os.path.join(MK, 'build-sbc09-l2')
 ROM = os.path.join(BUILD, 'bootrom.bin')
-IMG = os.path.join(BUILD, 'mk09.img')
+IMG = os.path.join(BUILD, 'mk09_t.img')            # (the image without the "must change" marks: `make BOARD=sbc09 LEVEL=2 testimg`)
+IMG_REL = os.path.join(BUILD, 'mk09.img')          # (the released image: the first login asks for a new password)
 sys.path.insert(0, HERE)
 import fatlib
 VERBOSE = '-v' in sys.argv
@@ -29,7 +30,7 @@ def check(cond, what, detail=''):
 
 
 if not (os.path.exists(ROM) and os.path.exists(IMG) and os.path.exists(SIM)):
-    print('SKIP: run make BOARD=sbc09 LEVEL=2 in mk09/ (and make in the top directory for sim09) first')
+    print('SKIP: run make BOARD=sbc09 LEVEL=2 testimg in mk09/ (and make in the top directory for sim09) first')
     sys.exit(0)
 work = tempfile.mkdtemp(prefix='mk09l2_')
 disk = os.path.join(work, 'disk.img')
@@ -78,6 +79,16 @@ check(rc == 0 and out.rstrip().endswith('CPU halted.'), 'shutdown (root) powers 
 # ---- the current directory belongs to the task (the shell): a program that the shell starts begins in it, a `cd` of another task does not change it
 out, rc = run(ROOT + sh('cd /etc', 'pwd', 'ls', 'cd /bin', 'pwd', 'ls -l sh.mx', prompt='> ') + OFF, )
 check(re.search(r'/etc> ls\s+group\s+passwd', out) is not None and re.search(r'/bin> ls -l sh.mx\s+-rwx', out) is not None, 'cd: the programs that the shell starts begin in its current directory', out[-900:])
+
+# ---- the released image: the first login asks for a new password (the marks of /etc/shadow), the old one does not work afterwards
+rel = os.path.join(work, 'rel.img')
+shutil.copy(IMG_REL, rel)
+disk_save, disk = disk, rel
+out, rc = run(login('root', 'root') + ['expect "New password: "', 'send "first-pw\\r"', 'expect "Again: "', 'send "first-pw\\r"', 'expect "/> "', 'send "id\\r"', 'expect "/> "', 'send "exit\\r"']
+              + login('root', 'root') + ['expect "Login incorrect"'] + login('root', 'first-pw') + ['expect "/> "', 'send "id\\r"', 'expect "/> "'] + OFF)
+check('The password must be changed.' in out and 'password changed' in out, 'the first login: the password of the image must be changed', out[:600])
+check('Login incorrect' in out and out.count('uid=0(root)') == 2, 'afterwards the old password is refused and the new one works', out[-600:])
+disk = disk_save
 
 # ---- the names are case sensitive
 out, rc = run(ROOT + sh('cp /etc/rc.sh /Aa.txt', 'cp /etc/rc.sh /aA.txt', 'ls /') + OFF)

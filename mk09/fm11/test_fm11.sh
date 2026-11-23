@@ -24,7 +24,9 @@ nm() { if [ "$L" = 2 ]; then echo "$*" | tr 'A-Z' 'a-z'; else echo "$*"; fi; }
 for L in $LEVELS; do
     LG=""; LGF=0                                        # Level 2 (2.0) starts with the login: root, the password root
     if [ $L = 2 ]; then LG="root|root|"; LGF=800; fi
-    HD=build-fm11-l$L/mk09.img; FD=build-fm11-l$L-2hd/mk09_2hd.img
+    # Level 2 (2.0): the images without the "must change" marks of the passwords (make BOARD=fm11 testimg; make BOARD=fm11 BOOTDEV=2hd testimg)
+    T=""; if [ $L = 2 ]; then T="_t"; fi
+    HD=build-fm11-l$L/mk09$T.img; FD=build-fm11-l$L-2hd/mk09_2hd$T.img
     echo "---- Level $L"
     run $HD -h0 0x7F 6500 "$(nm cp ETC/RC.SH T.TXT)|$(nm cat T.TXT)|df|"
     check "for FM-11" "L$L hard disk: MK09 boots, the version says for FM-11"

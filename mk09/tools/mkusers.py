@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 YUKARI Semiconductor Devices
-"""mkusers.py - the users of the disk image of MK09 2.0:  mkusers.py TREE OWNERS
+"""mkusers.py - the users of the disk image of MK09 2.0:  mkusers.py [--no-expire] TREE OWNERS
 
 Writes TREE/etc/passwd, group and shadow, the home directory and /tmp, and OWNERS (the input of mkdisk.py --owners: who owns what).
 The hash of a password is the one of lib/mk_sha256.c: h = SHA-256(salt + password), then COUNT times  h = SHA-256(h + salt + password)
-(COUNT = PW_COUNT of include/pwd.h).  The passwords of the first image are the user names (root: root, user: user); change them with `passwd`.
+(COUNT = PW_COUNT of include/pwd.h).  The passwords of the first image are the user names (root: root, user: user).  They are marked "must change" (the 4th field of /etc/shadow is 1): `login` asks for a new password the first time; --no-expire
+leaves the mark out (the images of the tests).
 """
 import hashlib, os, re, sys
 
@@ -26,7 +27,9 @@ def pwhash(pw, salt, count=COUNT):
 
 
 def main():
-    tree, owners = sys.argv[1], sys.argv[2]
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    expire = '--no-expire' not in sys.argv
+    tree, owners = args[0], args[1]
     etc = os.path.join(tree, 'etc')
     os.makedirs(etc, exist_ok=True)
     os.makedirs(os.path.join(tree, 'tmp'), exist_ok=True)
@@ -41,7 +44,7 @@ def main():
             f.write('%s:%d\n' % (n, g))
     with open(os.path.join(etc, 'shadow'), 'w') as f:
         for n, u, g, home, sh, pw, salt in USERS:
-            f.write('%s:%s:%s\n' % (n, salt, pwhash(pw, salt)))
+            f.write('%s:%s:%s%s\n' % (n, salt, pwhash(pw, salt), ':1' if expire else ''))
     with open(owners, 'w') as f:
         f.write('# pattern uid gid mode\n')
         f.write('etc/shadow 0 0 600\n')

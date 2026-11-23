@@ -25,6 +25,8 @@ int  getgrnam(const char *name, u8 *gid);
 int  getgrgid(u8 gid, char *name);                  /* name[PW_NAME] */
 int  getshadow(const char *name, char *salt, char *hash);   /* salt[9], hash[65] */
 int  getpass(const char *prompt, char *buf, u8 n);  /* read a line without the echo */
+int  pwexpired(const char *name);                   /* 1: the password must be changed at the next login (the 4th field of the line in /etc/shadow is 1) */
+int  pwset(const char *name, const char *pw);       /* a new password (a new salt): /etc/shadow is written again, the "must change" mark goes; root only (0 or a negative error) */
 int  pwcheck(const char *name, const char *pw);     /* 0: the password is right; negative: no such user or wrong */
 const char *unamestr(u8 uid, char *buf);            /* the name of the user, or the number (buf[PW_NAME]) */
 const char *gnamestr(u8 gid, char *buf);

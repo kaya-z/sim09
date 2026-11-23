@@ -7,7 +7,7 @@
 #include "pwd.h"
 #include "pathnames.h"
 
-#define TOOL_VERSION "1.0"
+#define TOOL_VERSION "1.1"
 
 int main(int argc, char **argv)
 {
@@ -28,6 +28,23 @@ int main(int argc, char **argv)
         r = pwcheck(nm, pw);
         memset(pw, 0, sizeof(pw));
         if (r == 0 && getpwnam(nm, &u) == 0) {
+            if (pwexpired(nm)) {                                        /* the first password (the one of the image): it must be changed now */
+                char n1[40], n2[40];
+                u8 tries = 0, done = 0;
+                puts("\nThe password must be changed.");
+                while (tries++ < 3 && !done) {
+                    getpass("New password: ", n1, sizeof(n1));
+                    getpass("Again: ", n2, sizeof(n2));
+                    if (strcmp(n1, n2)) puts("The passwords differ.");
+                    else if (!n1[0] || !strcmp(n1, nm)) puts("Choose a password that is not empty and not the name.");
+                    else if (pwset(nm, n1) < 0) puts("login: cannot write the password.");
+                    else done = 1;
+                }
+                memset(n1, 0, sizeof(n1));
+                memset(n2, 0, sizeof(n2));
+                if (!done) continue;
+                puts("password changed");
+            }
             if (setuser(u.uid, u.gid) < 0) { puts("login: cannot change the user"); continue; }
             if (chdir(u.home) < 0) chdir("/");
             strcpy(blk, u.shell);

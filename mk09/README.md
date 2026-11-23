@@ -48,9 +48,9 @@ make CMOC_BIN=$HOME/cmoc/bin               # build/ にブート ROM とディ�
 ```sh
 make test      # 自動テスト一式 (EUC-JP / Shift_JIS 版も作ります。数分かかります)
 tools/v1guard.sh                                  # 1.x のビルド (64KB 版) が 1.46 と同じバイト列か
-make BOARD=sbc09 LEVEL=2 CMOC_BIN=$HOME/cmoc/bin && tests/mk09_l2_test.py   # 2.0 (sbc09 の MMU 版)
+make BOARD=sbc09 LEVEL=2 testimg CMOC_BIN=$HOME/cmoc/bin && tests/mk09_l2_test.py   # 2.0 (sbc09 の MMU 版。testimg は、パスワードを変えさせる目印のないテスト用のイメージも作る)
 MK09_L2=1 MK09_BUILD=build-sbc09-l2 tests/jwp_test.py                           # jwp (MMU 版)
-fm11/test_fm11.sh "" 2; fm11/test_fm11_rs.py     # 2.0 (FM-11 Level 2 とエミュレータ)
+make BOARD=fm11 testimg; make BOARD=fm11 BOOTDEV=2hd testimg; fm11/test_fm11.sh "" 2; fm11/test_fm11_rs.py     # 2.0 (FM-11 Level 2 とエミュレータ)
 ```
 
 ## ライセンス

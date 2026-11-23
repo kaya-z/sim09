@@ -93,13 +93,71 @@ int getgrgid(u8 gid, char *name)
 
 int getshadow(const char *name, char *salt, char *hash)
 {
-    char *f[3];
-    int k = scan(F_SHADOW, 0, name, f, 3);
+    char *f[4];
+    int k = scan(F_SHADOW, 0, name, f, 4);
     if (k < 0) return k;
     if (k < 3) return -E_FORMAT;
     cp(salt, f[1], 9);
     cp(hash, f[2], 65);
     return 0;
+}
+
+int pwexpired(const char *name)
+{
+    char *f[4];
+    int k = scan(F_SHADOW, 0, name, f, 4);
+    return k >= 4 && f[3][0] == '1';
+}
+
+static char sold[768], snew[800];
+
+/* a new password for a user: a salt from the clock and the uptime, the line of the user in /etc/shadow is made again (without the mark), the file is written as a new
+ * file and takes the place of the old one (FAT has no atomic rewrite) */
+int pwset(const char *name, const char *pw)
+{
+    char salt[9], hex[65];
+    u16 t, d, i, l = (u16)strlen(name), len = 0;
+    int fd, n, r;
+    char *p, *e;
+    if (!pw[0] || strlen(pw) > 32) return -E_INVAL;
+    gettime(&d, &t);
+    t = (u16)(t ^ (mk_ticks() * 31));
+    for (i = 0; i < 4; i++) { salt[i] = "0123456789abcdef"[(t >> (12 - 4 * i)) & 15]; salt[4 + i] = "0123456789abcdef"[((d ^ (t << 3)) >> (12 - 4 * i)) & 15]; }
+    salt[8] = 0;
+    pwhash(pw, salt, PW_COUNT, hex);
+    fd = open(F_SHADOW, FO_READ);
+    if (fd < 0) return fd;
+    n = read(fd, sold, sizeof(sold) - 1);
+    close(fd);
+    if (n < 0) n = 0;
+    sold[n] = 0;
+    for (p = sold; *p; p = e) {                                 /* the lines of the others as they are, the line of the user new */
+        e = p;
+        while (*e && *e != '\n') e++;
+        if (*e) e++;
+        if (!strncmp(p, name, l) && p[l] == ':') continue;
+        if (len + (u16)(e - p) + 100 > sizeof(snew)) return -E_NOSPC;
+        memcpy(snew + len, p, (u16)(e - p));
+        len += (u16)(e - p);
+    }
+    if (len + l + 80 > sizeof(snew)) return -E_NOSPC;
+    memcpy(snew + len, name, l); len += l;
+    snew[len++] = ':';
+    memcpy(snew + len, salt, 8); len += 8;
+    snew[len++] = ':';
+    memcpy(snew + len, hex, 64); len += 64;
+    snew[len++] = '\n';
+    unlink("/etc/shadow.new");
+    fd = open("/etc/shadow.new", FO_WRITE | FO_CREATE | FO_TRUNC);
+    if (fd < 0) return fd;
+    r = write(fd, snew, len);
+    close(fd);
+    if (r != (int)len) { unlink("/etc/shadow.new"); return -E_IO; }
+    chmod("/etc/shadow.new", 0600);
+    chown("/etc/shadow.new", 0, 0);
+    unlink(F_SHADOW);
+    r = rename("/etc/shadow.new", F_SHADOW);
+    return r < 0 ? r : 0;
 }
 
 int pwcheck(const char *name, const char *pw)
