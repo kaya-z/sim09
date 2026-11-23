@@ -174,6 +174,18 @@ _mk_hook
 	rts
 	endc
 
+	ifdef	STUB_mk_rxregl
+	export	_mk_rxregl
+* (2.0: the line, the ring)
+_mk_rxregl
+	ldb	3,s
+	ldx	4,s
+	lda	#SYS_RXREG
+	swi
+	clra
+	rts
+	endc
+
 	ifdef	STUB_mk_rxreg
 	export	_mk_rxreg
 _mk_rxreg

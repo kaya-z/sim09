@@ -27,6 +27,10 @@
 #define ACIA_RDRF       0x01
 #define ACIA_TDRE       0x02
 #define ACIA_CTL        (*(u8 *)(IO_BASE + 0x00))    /* write: $03 master reset, $15 = 8N1 /16 without interrupts, $95 with the receive interrupt */
+#ifdef MMU_COCO
+#define ACIA1_STATUS    (*(u8 *)(IO_BASE + 0x04))   /* the second ACIA: the second terminal (sim09 -net 1=..., the second UART of the FPGA board) */
+#define ACIA1_DATA      (*(u8 *)(IO_BASE + 0x05))
+#endif
 #define POWER_REG       (*(u8 *)(IO_BASE + 0x0F))
 #define TIMER_REG       (*(u8 *)(IO_BASE + 0x30))
 #define RTC_REG(n)      (*(u8 *)(IO_BASE + 0x30 + (n)))

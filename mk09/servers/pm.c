@@ -48,11 +48,38 @@ static u8 iobuf[IOBUF];                 /* the start-up block of the program bei
 static u8 hdr[HDRSIZE];                 /* the header of the program file */
 static u8 waiter[NTASK];                /* task to answer when the program exits */
 static u8 regp[NTASK], regn[NTASK];     /* the pages of a program (first page, number) */
+#ifdef MK09_V2
+/* 2.0: a session for every terminal (line): the shell, the foreground program, the owner of the console, ... of the line cl (the line that is served) */
+typedef struct sess {
+    u8 x_shell;                           /* the shell (0 = not running) */
+    u8 x_fg;                              /* foreground program (0 = none) */
+    u8 x_owner;                           /* the task that TTY lets read the console */
+    u8 x_nproc;                           /* programs running (not counting the shell) */
+    u8 x_respawn;                         /* start the shell again when everything is done */
+    u8 x_uid, x_gid;                        /* the user of the shell (kept when the shell is started again) */
+    u8 x_last;                            /* the task number of the last shell that ended */
+    u8 x_on;                              /* a login runs on this line (the line 0, and the lines of /etc/ttys) */
+} sess_t;
+static sess_t S[NLINE];
+static u8 cl;
+static u8 t_line[NTASK];                /* the line of each task */
+/* (the session of the line cl as a pointer from a function: `t == S[cl].x_shell` is compiled by CMOC with the offset in D and B loaded with t in between) */
+static sess_t *SP(void) { return &S[cl]; }
+#define shell_tid   SP()->x_shell
+#define fg          SP()->x_fg
+#define owner       SP()->x_owner
+#define nproc       SP()->x_nproc
+#define respawn     SP()->x_respawn
+#define sh_uid      SP()->x_uid
+#define sh_gid      SP()->x_gid
+#define sh_last     SP()->x_last
+#else
 static u8 shell_tid;                    /* the shell (0 = not running) */
 static u8 fg;                           /* foreground program (0 = none) */
 static u8 owner;                        /* the task that TTY lets read the console */
 static u8 nproc;                        /* programs running (not counting the shell) */
 static u8 respawn;                      /* start the shell again when everything is done */
+#endif
 
 /* the memory manager is a task of its own (mm.s): PM asks it for the pages of a program and gives them back */
 static int mm_alloc(u8 n, u8 top)                   /* the first page of n pages in a row, or -1 */
@@ -109,7 +136,6 @@ static u8 t_ruid[NTASK];                /* the user who started it (the real one
 static u8 cur_ruid;
 static u8 cur_dmask;
 static u8 cur_uid, cur_gid;             /* the user of the program that is being started */
-static u8 sh_uid, sh_gid;               /* the user of the shell (kept when the shell is started again) */
 #endif
 
 static u8 fsc(u8 op, u16 a, u16 b)      /* FS request without a buffer */
@@ -124,7 +150,6 @@ static u8 fsc(u8 op, u16 a, u16 b)      /* FS request without a buffer */
 }
 
 #ifdef MK09_V2
-static u8 sh_last;                      /* the task number of the last shell that ended */
 static u8 cur_parent;                   /* the task whose current directory the new program starts in (0: the root) */
 
 static void fs_user(u8 tid, u8 u, u8 g, u8 cwd)  /* tell FS the user of a task (cwd: the task whose current directory it takes over; 0: the root; 0xFF: keep it) */
@@ -184,8 +209,32 @@ static void set_owner(void)
     m.op = TTY_IOCTL;
     m.a = TTYC_SETFG;
     m.b = o;
+#ifdef MK09_V2
+    m.c = cl;
+#endif
     mk_call(TID_TTY, &m);
 }
+
+#ifdef MK09_V2
+static void tty_lineon(u8 line)         /* the line is in use: TTY turns its interrupt on */
+{
+    msg_t m;
+    m.op = TTY_IOCTL;
+    m.a = TTYC_LINEON;
+    m.c = line;
+    mk_call(TID_TTY, &m);
+}
+
+static void tty_line(u8 tid, u8 line)   /* the task uses the console of the line */
+{
+    msg_t m;
+    m.op = TTY_IOCTL;
+    m.a = TTYC_SETLINE;
+    m.b = tid;
+    m.c = line;
+    mk_call(TID_TTY, &m);
+}
+#endif
 
 /* ------------------------------------------------------------------ */
 /* start a program; the arguments are in sb[]; 'who' answers when it exits (0: nobody) */
@@ -307,6 +356,8 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
     }
     if (st) goto out;
 #ifdef MK09_V2
+    t_line[tid] = cl;
+    tty_line(tid, cl);
     t_uid[tid] = cur_uid;
     t_ruid[tid] = cur_ruid;
     t_gid[tid] = cur_gid;
@@ -378,7 +429,13 @@ static void start_shell(void)
 static void collect(void)
 {
     u8 t, c, w;
+#ifdef MK09_V2
+    u8 c0 = cl;
+#endif
     while (!mk_treap(&t, &c)) {
+#ifdef MK09_V2
+        cl = t_line[t];
+#endif
         fsc(FS_CLOSEALL, t, 0);
 #ifdef MK_MMU
         if (regn[t]) { mm_free4(pmap[t], pmn[t]); regn[t] = 0; }
@@ -400,13 +457,24 @@ static void collect(void)
             if (w) reply(w, E_OK, c);
         }
     }
+#ifdef MK09_V2
+    for (cl = 0; cl < NLINE; cl++) set_owner();
+    cl = c0;
+#else
     set_owner();
+#endif
 }
 
 static void reap(void)
 {
     collect();
+#ifdef MK09_V2
+    for (cl = 0; cl < NLINE; cl++)
+        if (SP()->x_on && !shell_tid && !nproc) start_shell();
+    cl = 0;
+#else
     if (!shell_tid && !nproc) start_shell();
+#endif
 }
 
 /* PM_SPAWN (bg = 0: the answer comes when the program has exited), PM_SPAWNBG (bg = 1: the answer, the task id, comes at once) and PM_EXEC (bg = 2:
@@ -414,10 +482,17 @@ static void reap(void)
  * the old one is given back first, so that a program can start a bigger one: the stages of the C compiler follow each other like this) */
 static void do_spawn(msg_t *m, u8 bg)
 {
+#ifdef MK09_V2
+    u8 tid, st, i, w = m->src, wasfg, sh;
+#else
     u8 tid, st, i, w = m->src, wasfg = (fg == w);
+#endif
     u16 n = m->c;
 #ifdef MK09_V2
-    u8 sh = (bg == 2 && m->src == shell_tid);                   /* the login starts the shell of the user: the new program is the shell */
+    cl = 0;                                                     /* (not ?: here: CMOC and the types of the two sides) */
+    if (m->src < NTASK) cl = t_line[m->src];                    /* the program runs on the line of the one who asks */
+    wasfg = (fg == w);
+    sh = (bg == 2 && m->src == shell_tid);                      /* the login starts the shell of the user: the new program is the shell */
 #endif
 
     if (n < 2 || n > ARGMAX - SB_ARGS - 1) { reply(m->src, E_INVAL, 0); return; }
@@ -465,7 +540,7 @@ static void do_kill(msg_t *m)
     if (m->a < NTASK && t >= TID_USER0 && regn[t]) {
         st = E_PERM;
 #ifdef MK09_V2
-        if (t != shell_tid && (t_uid[m->src] == 0 || t_uid[m->src] == t_uid[t])) { mk_tkill(t, 143); st = E_OK; }   /* the same user, or root */
+        if (t != S[t_line[t]].x_shell && (t_uid[m->src] == 0 || t_uid[m->src] == t_uid[t])) { mk_tkill(t, 143); st = E_OK; }   /* the same user, or root */
 #else
         if (t != shell_tid) { mk_tkill(t, 143); st = E_OK; }
 #endif
@@ -473,19 +548,57 @@ static void do_kill(msg_t *m)
     reply(m->src, st, 0);
 }
 
+#ifdef MK09_V2
+/* /etc/ttys: the digits in it are the lines (terminals) that get a login besides the line 0 */
+static void read_ttys(void)
+{
+    u8 h, i;
+    S[0].x_on = 1;
+    strcpy((char *)sb + SB_ARGS, PN_TTYS);
+    rm.op = FS_OPEN;
+    rm.a = FO_READ;
+    rm.b = (u16)(sb + SB_ARGS);
+    rm.c = (u16)strlen((char *)sb + SB_ARGS) + 1;
+    if (mk_callg(TID_FS, &rm, GR_READ) || rm.op) return;
+    h = (u8)rm.a;
+    if (!fs_rd(h, hdr, 16)) {
+        for (i = 0; i < (u8)rm.a && i < 16; i++)
+            if (hdr[i] > '0' && hdr[i] < '0' + NLINE) { S[hdr[i] - '0'].x_on = 1; tty_lineon(hdr[i] - '0'); }
+    }
+    fsc(FS_CLOSE, h, 0);
+}
+#endif
+
 int main(void)
 {
     msg_t m;
     u8 c;
+#ifdef MK09_V2
+    u8 i;
+#endif
 
     say("MK09 " MK09_VERSION MK09_FOR ": kernel " MK09_KERNEL_VERSION " TTY DISK FS PM MM\r\n");
     if (fsc(FS_SYNC, 0, 0)) say("MK09: no FAT16 volume\r\n");        /* the first FS call mounts the volume */
+#ifdef MK09_V2
+    read_ttys();
+    for (cl = 0; cl < NLINE; cl++)
+        if (SP()->x_on) start_shell();
+    cl = 0;
+#else
     start_shell();
+#endif
     for (;;) {
         if (mk_recv(TID_ANY, &m)) continue;
         if (m.src == TID_HW) {
             if (m.a & NFY_EXIT) reap();
+#ifdef MK09_V2
+            if ((m.a & NFY_INT) && S[0].x_fg) mk_tkill(S[0].x_fg, 130);
+#if NLINE > 1
+            if ((m.a & NFY_INT1) && S[1].x_fg) mk_tkill(S[1].x_fg, 130);
+#endif
+#else
             if ((m.a & NFY_INT) && fg) mk_tkill(fg, 130);
+#endif
             continue;
         }
         switch (m.op) {
@@ -505,7 +618,12 @@ int main(void)
             c = m.src;
             m.op = MM_INFO;
             if (mk_call(TID_MM, &m)) m.op = E_NOTASK;
+#ifdef MK09_V2
+            m.d = 0;
+            for (i = 0; i < NLINE; i++) m.d += S[i].x_nproc;       /* (not c: it has the task to answer) */
+#else
             m.d = nproc;
+#endif
             mk_reply(c, &m);
             break;
 #ifdef MK09_V2

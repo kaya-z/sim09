@@ -119,5 +119,71 @@ check('jwp 1.0' in out, 'jwp -v')
 check(len(re.findall(r'MK09 login: ', out)) >= 2 and out.count('MK09 2.0.0pre') >= 2, 'reboot writes the files and starts the system again (the login comes back)', out[-400:])
 fsck = subprocess.run(['sh', '-c', 'dd if=%s of=%s/v.img bs=512 skip=2048 2>/dev/null; fsck.fat -n %s/v.img' % (disk, work, work)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 check(fsck.returncode == 0, 'fsck.fat: the volume is right after all these runs', fsck.stdout.decode('utf-8', 'replace')[-600:])
+# ---- stage 5: two terminals at the same time (the second ACIA; sim09 -net 1=listen:PORT,raw is the second terminal, a socket of this test)
+import socket, time
+out, rc = run(ROOT + ['send "echo 1 > /etc/ttys\\r"', 'expect "/> "', 'send "cat /etc/ttys\\r"', 'expect "/> "'] + OFF)
+check('\n1\n' in out.split('cat /etc/ttys')[1], 'the line 1 is switched on in /etc/ttys')
+s0 = socket.socket()
+s0.bind(('127.0.0.1', 0))
+port = s0.getsockname()[1]
+s0.close()
+script = os.path.join(work, 'two.txt')
+open(script, 'w', encoding='utf-8').write('timeout 240000\n' + '\n'.join(ROOT + sh('id', 'pwd') + ['expect "never-printed"']) + '\n')
+sim = subprocess.Popen([SIM, '-2', '-max', '-net', '1=listen:%d,raw' % port, '-rom', ROM, '-0', disk, '-script', script], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       env=dict(os.environ, LC_ALL='C'))
+cli = None
+for _ in range(100):
+    try:
+        cli = socket.create_connection(('127.0.0.1', port), timeout=2)
+        break
+    except OSError:
+        time.sleep(0.2)
+cli.settimeout(1.0)
+buf = b''
+
+
+def talk(send, until, timeout=120):
+    """send to the second terminal, read until the text 'until' has come (the answer, after the sent text)"""
+    global buf
+    if send:
+        cli.sendall(send.encode())
+    t0 = time.time()
+    while until.encode() not in buf and time.time() - t0 < timeout:
+        try:
+            d = cli.recv(4096)
+            if not d:
+                break
+            buf += d
+        except socket.timeout:
+            pass
+    ok = until.encode() in buf
+    r = buf.decode('latin-1').replace('\r', '')
+    buf = buf[buf.index(until.encode()) + len(until):] if ok else b''
+    return ok, r
+
+
+time.sleep(8)
+cli.sendall(b'\r')
+ok, r = talk('', 'login: ')
+check(ok, 'the second terminal gets a login prompt', r)
+ok, r = talk('user\r', 'Password: ')
+ok, r = talk('nu\r', '/home/user> ')   # (the password that the passwd test set)
+check(ok, 'user logs in on the second terminal and the shell starts in the home directory', r[-300:])
+ok, r = talk('id\r', '/home/user> ')
+check('uid=100(user) gid=100(users)' in r, 'id on the second terminal: user', r)
+ok, r = talk('cd /etc\r', '/etc> ')
+ok, r = talk('ls\r', '/etc> ')
+check('passwd' in r and 'shadow' in r, 'cd on the second terminal: a program starts in the directory of its own shell', r)
+ok, r = talk('spin &\r', '/etc> ')
+ok, r = talk('ps\r', '/etc> ')
+check(re.search(r'^\s*\d+ \w+\s+4\s+2000-', r, re.M) is not None, 'ps on the second terminal shows the programs of both terminals', r)
+ok, r = talk('\x03', '/etc> ', 5)
+sim.terminate()
+try:
+    sim_out = sim.communicate(timeout=20)[0].decode('utf-8', 'replace').replace('\r', '')
+except Exception:
+    sim.kill()
+    sim_out = ''
+check('uid=0(root) gid=0(root)' in sim_out and 'uid=100' not in sim_out.split('login: ')[-1] and '/> id' in sim_out, 'the first terminal is still root in the same time (its output has nothing of the second one)', sim_out[-700:])
 print('%d checks, %d failed' % (total, fails))
 sys.exit(1 if fails else 0)

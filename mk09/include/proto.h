@@ -23,7 +23,9 @@
                                else d = cols << 8 | rows */
 #define TTYC_READY   3      /* -> a = bytes that can be read without waiting */
 #define TTYC_FLUSH   4      /* discard the input */
-#define TTYC_SETFG   5      /* b = task id that may read (PM only); the others get E_BUSY; 0 = everybody */
+#define TTYC_SETLINE 7      /* 2.0: PM only: b = task id, c = line: the task uses the console of that line (default 0) */
+#define TTYC_LINEON  8      /* 2.0: PM only: c = line: the line is in use (the kernel turns its receive interrupt on) */
+#define TTYC_SETFG   5      /* b = task id that may read (PM only); the others get E_BUSY; 0 = everybody  (2.0: c = the line) */
 
 #define TM_RAW      0x01    /* no line editing; read returns what is there */
 #define TM_ECHO     0x02    /* echo the input */

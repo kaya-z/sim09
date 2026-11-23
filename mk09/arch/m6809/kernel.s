@@ -170,6 +170,9 @@ sendhint rmb	1			not 0: a task may be blocked in a send (set when one blocks, cl
 sseen	rmb	1			(sc_recv: a task in SEND state was seen)
 hookbits rmb	2
 rxp	rmb	2			the ring of the console server (the bytes; the head and the tail are the two bytes before them) that the receive interrupt fills (0: none yet)
+	ifdef	COCO
+rxp1	rmb	2			2.0: the ring of the second line (the second ACIA, $IOB+4: the second terminal); 0: none yet
+	endc
 rxgot	rmb	1			(rxdrain: characters were moved)
 ticks	rmb	2
 	ifdef	FM11
@@ -407,6 +410,9 @@ irq_entry
 	stu	<frm
 	endc
 	lbsr	rxdrain			the console (the IRQ line is shared with the timer)
+	ifdef	COCO
+	lbsr	rxdrain1		the second terminal
+	endc
 	ifndef	FM11
 	lda	DCTL			the disk: a command has finished and the interrupt is on?
 	anda	#$C0
@@ -758,6 +764,26 @@ rxdrain	clr	<rxgot
 	inc	<rxgot
 	bra	@rx
 @x	rts
+	endc
+	ifdef	COCO
+* rxdrain1: the same for the second line (the second ACIA at ACIA+4)
+rxdrain1	ldu	<rxp1
+	beq	@q1
+@r1	lda	ACIA+4
+	lsra
+	bcc	@q1
+	ldb	-2,u
+	leax	b,u
+	incb
+	andb	#RXQ-1
+	lda	ACIA+5
+	cmpb	-1,u
+	beq	@r1
+	sta	,x
+	stb	-2,u
+	inc	<rxgot
+	bra	@r1
+@q1	rts
 	endc
 
 * copymsg: a message (MSGSZ = 10 bytes) from X to U; D is clobbered
@@ -1356,6 +1382,15 @@ sc_tinfo
 sc_rxreg
 	ldu	<frm
 	ldx	F_X,u
+	ifdef	COCO
+	tst	F_B,u			2.0: B = the line (0 or 1)
+	beq	@l0
+	stx	<rxp1
+	lda	#$95
+	sta	ACIA+4
+	lbra	okret
+@l0
+	endc
 	stx	<rxp
 	ifndef	FM11
 	lda	#$95			8N1 with the receive interrupt

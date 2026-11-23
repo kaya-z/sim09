@@ -34,6 +34,8 @@ def main():
     with open(os.path.join(etc, 'passwd'), 'w') as f:
         for n, u, g, home, sh, _, _ in USERS:
             f.write('%s:%d:%d:%s:%s\n' % (n, u, g, home, sh))
+    with open(os.path.join(etc, 'ttys'), 'w') as f:                        # the lines (terminals) that get a login besides the first one: their numbers
+        f.write('# the terminals besides the first one: write the numbers of their lines here, one digit each\n')
     with open(os.path.join(etc, 'group'), 'w') as f:
         for n, g in GROUPS:
             f.write('%s:%d\n' % (n, g))

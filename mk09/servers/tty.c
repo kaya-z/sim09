@@ -31,6 +31,65 @@
 /* The ring: the kernel (the receive interrupt) is the writer of head, this server the writer of tail; mk_rxreg() tells the kernel where it is. */
 #ifdef MK_MMU
 struct rxring { u8 h, t; u8 b[INQ]; };
+#endif
+#ifdef MK09_V2
+/* 2.0: several lines (terminals): the state of a line is in a table, the macros below name the one that is served now (L).  The ring of the line n is in
+ * the data of the kernel (the interrupt fills it in any map): the line 0 at K_DATA + K_DSZ - 0x90, the line 1 below it. */
+typedef struct tline {
+    struct rxring *rx;
+    u8 on;                          /* the line is in use (the line 0; the others when PM says so) */
+    u8 mode, charset, cols, rows;
+    u8 line[LINEMAX];               /* the line being edited / read */
+    u8 llen, lpos;
+    u8 lready;                      /* the line is complete (llen may be 0: end of file) */
+    u8 esc;                         /* swallowing an escape sequence: 1 after ESC, 2 inside */
+    u8 lastcr;
+    u8 owner;                       /* the only task that may read (set by PM; 0 = everybody) */
+    u8 rd_tid;                      /* client waiting in TTY_READ (0 = none) */
+    u16 rd_len;
+} tline_t;
+static tline_t tl[NLINE];
+static tline_t *L = &tl[0];
+static u8 lineno;                   /* the number of that line */
+static u8 tline_of[NTASK];          /* the line of each task (PM sets it; 0 = the first) */
+static void sel(u8 n) { if (n >= NLINE) n = 0; lineno = n; L = &tl[n]; }
+static struct rxring *tl_ring(u8 i) { return tl[i].rx; }
+static void tl_on(u8 i) { tl[i].on = 1; }
+static u8 tl_is_on(u8 i) { return tl[i].on; }
+static void tl_init(void)           /* (before the macros that name the members of the line) */
+{
+    u8 i;
+    for (i = 0; i < NLINE; i++) {
+        tl[i].rx = (struct rxring *)(K_DATA + K_DSZ - 0x90 - 0x90 * (u16)i);
+        tl[i].on = (i == 0);
+        tl[i].mode = TM_DEFAULT;
+#ifdef BOARD_FM11
+        tl[i].charset = CS_SJIS;
+#else
+        tl[i].charset = CS_UTF8;
+#endif
+        tl[i].cols = 80;
+        tl[i].rows = 24;
+    }
+}
+#define qh  L->rx->h
+#define qt  L->rx->t
+#define inq L->rx->b
+#define mode L->mode
+#define charset L->charset
+#define cols L->cols
+#define rows L->rows
+#define line L->line
+#define llen L->llen
+#define lpos L->lpos
+#define lready L->lready
+#define esc L->esc
+#define lastcr L->lastcr
+#define owner L->owner
+#define rd_tid L->rd_tid
+#define rd_len L->rd_len
+#else
+#ifdef MK_MMU
 #define rxr (*(struct rxring *)(K_DATA + K_DSZ - 0x90))   /* in the data of the kernel (the keyboard interrupt of the kernel fills it, in any map) */
 #else
 static struct { u8 h, t; u8 b[INQ]; } rxr;
@@ -55,6 +114,7 @@ static u8 lastcr;
 static u8 owner;                    /* the only task that may read (set by PM; 0 = everybody) */
 static u8 rd_tid;                   /* client waiting in TTY_READ (0 = none) */
 static u16 rd_len;
+#endif
 
 /* ------------------------------------------------------------------ */
 static void out(u8 c)
@@ -62,6 +122,15 @@ static void out(u8 c)
 #ifdef BOARD_FM11
     bsp_con_put(c);                     /* collected, sent to the display sub system by bsp_con_flush() before the server waits */
 #else
+#ifdef MMU_COCO
+    if (lineno) {                       /* the second terminal (a line that is not in use is not written: its UART may not be there) */
+        if (!tl_is_on(lineno)) return;
+        while (!(ACIA1_STATUS & ACIA_TDRE))
+            ;
+        ACIA1_DATA = c;
+        return;
+    }
+#endif
     while (!(ACIA_STATUS & ACIA_TDRE))
         ;
     ACIA_DATA = c;
@@ -202,7 +271,11 @@ static void edit(u8 c)
                 llen = 1;
                 lready = 1;
             }
+#ifdef MK09_V2
+            mk_notify(TID_PM, lineno ? NFY_INT1 : NFY_INT);
+#else
             mk_notify(TID_PM, NFY_INT);
+#endif
             return;
         }
         break;
@@ -336,8 +409,20 @@ static void do_ioctl(msg_t *m)
         reset_line();
         break;
     case TTYC_SETFG:
+#ifdef MK09_V2
+        if (m->src == TID_PM) { sel((u8)m->c); owner = (u8)m->b; } else r.op = E_PERM;      /* the line is in c */
+#else
         if (m->src == TID_PM) owner = (u8)m->b; else r.op = E_PERM;
+#endif
         break;
+#ifdef MK09_V2
+    case TTYC_LINEON:                   /* PM: the line c is in use */
+        if (m->src == TID_PM && m->c < NLINE) { tl_on((u8)m->c); mk_rxregl((u8)m->c, tl_ring((u8)m->c)->b); } else r.op = E_PERM;
+        break;
+    case TTYC_SETLINE:                  /* PM: the task b uses the line c */
+        if (m->src == TID_PM && m->b < NTASK) tline_of[m->b] = (u8)m->c; else r.op = E_PERM;
+        break;
+#endif
     default:
         r.op = E_INVAL;
     }
@@ -348,22 +433,39 @@ int main(void)
 {
     msg_t m;
     taskinfo_t ti;
+#ifdef MK09_V2
+    u8 i;
+#endif
 
 #ifdef BOARD_FM11
     bsp_con_init();
 #endif
     mk_hook(NFY_TICK);          /* the tick, and NFY_RX of the receive interrupt (the kernel notifies the hook task) */
+#ifdef MK09_V2
+    tl_init();
+    mk_rxregl(0, tl_ring(0)->b);        /* tell the kernel the ring: the receive interrupt is on from here (the other lines when PM says that they are in use) */
+#else
     mk_rxreg(rxr.b);            /* tell the kernel the ring: the receive interrupt is on from here */
+#endif
     for (;;) {
 #ifdef BOARD_FM11
         bsp_con_flush();
 #endif
         if (mk_recv(TID_ANY, &m)) continue;
         if (m.src == TID_HW) {
+#ifdef MK09_V2
+            for (i = 0; i < NLINE; i++) if (tl_is_on(i)) { sel(i); pump(); try_reader(); }
+#else
             pump();
             try_reader();
+#endif
             continue;
         }
+#ifdef MK09_V2
+        i = 0;                                                         /* (not ?: here: CMOC and the types of the two sides) */
+        if (m.src < NTASK) i = tline_of[m.src];
+        sel(i);                                                        /* the console of the task that asks */
+#endif
         switch (m.op) {
         case TTY_WRITE:
             do_write(&m);

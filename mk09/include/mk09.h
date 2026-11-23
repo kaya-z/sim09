@@ -55,6 +55,7 @@ typedef struct msg {
 #define NFY_TICK    0x0001  /* timer tick (to the task that did mk_hook())  */
 #define NFY_EXIT    0x0002  /* a task has exited (to PM)                     */
 #define NFY_INT     0x0004  /* interrupt key (^C) typed on the console (PM)  */
+#define NFY_INT1    0x0040  /* 2.0: the same on the second terminal         */
 #define NFY_DISK    0x0020  /* the disk command is finished (to the disk server) */
 #define NFY_RX      0x0010  /* characters arrived at the console (to the task that did mk_hook()) */
 #define NFY_RX      0x0010  /* characters arrived at the console (to the task that did mk_hook()) */
@@ -113,6 +114,7 @@ u8  mk_self(void);                          /* own task id                    */
 /* privileged calls (tasks started with the PRIV flag: PM, TTY) */
 u8  mk_hook(u16 bits);                      /* get NFY_TICK etc. every tick   */
 #define RX_RING     128                     /* the size of the ring of mk_rxreg(): a power of 2 (the kernel knows the number) */
+u8  mk_rxregl(u8 line, void *buf);          /* 2.0: the same for the line 0 or 1 (the second terminal: the second ACIA of the sbc09) */
 u8  mk_rxreg(void *buf);                    /* { u8 head, tail; u8 buf[RX_RING]; }: buf = the bytes, head and tail are the two bytes before them: the kernel puts the console characters in (and notifies NFY_RX); it turns the receive interrupt on, again after a full ring */
 u16 mk_rxget(u8 *buf, u16 n);               /* up to n console characters that the receive interrupt collected: the number */
 #ifdef MK_MMU
@@ -132,6 +134,13 @@ u16 mk_rxget(u8 *buf, u16 n);               /* up to n console characters that t
 #define UEND    0xF000
 #endif
 #define UBASE   0x2000
+#ifdef MK09_V2
+#ifdef MMU_COCO
+#define NLINE   2                           /* the terminals: the first ACIA and the second ACIA */
+#else
+#define NLINE   1                           /* (the FM-11: the screen and the keyboard; the RS-232C port comes later) */
+#endif
+#endif
 #ifdef MK09_V2
 #define DMASK_USER  0x3A                    /* TTY, FS, PM, MM */
 #define DMASK_DISK  0x04                    /* the disk server too (a file with the permission bit MODE_RAWIO) */

@@ -27,6 +27,7 @@
 #define PN_PAS1_MSG "/lib/pas1.msg"
 #define PN_INC_     "/inc/"
 #define PN_RC_SH    "/etc/rc.sh"
+#define PN_TTYS     "/etc/ttys"
 #define PN_PIPE0    "/tmp/pipe0.tmp"      /* (/tmp is for everybody: a user cannot make files in /) */
 #define PN_PIPE1    "/tmp/pipe1.tmp"
 #define PN_SKK_DIC  "/skk/skk.dic"
@@ -48,6 +49,7 @@
 #define PN_PAS1_MSG "/LIB/PAS1.MSG"
 #define PN_INC_     "/INC/"
 #define PN_RC_SH    "/ETC/RC.SH"
+#define PN_TTYS     "/ETC/TTYS"
 #define PN_PIPE0    "/PIPE0.TMP"
 #define PN_PIPE1    "/PIPE1.TMP"
 #define PN_SKK_DIC  "/SKK/SKK.DIC"
