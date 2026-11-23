@@ -262,6 +262,67 @@ static int big_test(long mb)
     return fails != 0;
 }
 
+#ifdef MK09_V2
+/* 2.0: owner, group and permissions (build with -DMK09_V2; docs/V2_PLAN.md, stage 2a) */
+#define T(c, what) do { if (!(c)) { fprintf(stderr, "perm FAIL: %s\n", what); return 1; } } while (0)
+static int mkfile(const char *path, u8 fl) { u8 h; if (fs_open(path, FO_WRITE | FO_CREATE | fl, 1, &h)) return 1; fs_close(h); return 0; }
+static int try_open(const char *path, u8 fl) { u8 h, st = fs_open(path, fl, 1, &h); if (!st) fs_close(h); return st; }
+static int perm_test(void)
+{
+    u8 h;
+    dirent_t d;
+    int seen = 0;
+    fs_uid = 0; fs_gid = 0;
+    T(!fs_mkdir("/pub"), "root: mkdir /pub");
+    T(!mkfile("/pub/f", 0), "root: create /pub/f");
+    T(!mkfile("/pub/p.mx", FO_EXEC), "root: create /pub/p.mx with x");
+    T(!fs_mkdir("/sec") && !fs_chmod("/sec", 0700), "root: /sec 0700");
+    T(!mkfile("/sec/a", 0), "root: create /sec/a");
+    fs_uid = 100; fs_gid = 10;
+    T(try_open("/pub/f", FO_READ) == E_OK, "user reads a 0644 file of root");
+    T(try_open("/pub/f", FO_WRITE) == E_PERM, "user cannot write it");
+    T(fs_mkdir("/pub/x") == E_PERM, "user cannot make a directory in /pub (root's, 755)");
+    T(fs_remove("/pub/f") == E_PERM, "user cannot remove from /pub");
+    T(fs_chdir("/sec") == E_PERM, "user cannot enter /sec (700)");
+    T(try_open("/sec/a", FO_READ) == E_PERM, "user cannot reach /sec/a");
+    T(try_open("/pub/p.mx", FO_READ | FO_EXEC) == E_OK, "user runs p.mx (755)");
+    T(try_open("/pub/f", FO_READ | FO_EXEC) == E_PERM, "user cannot run f (644)");
+    T(fs_chuser("/pub", 100, 10) == E_PERM, "user cannot chown");
+    fs_uid = 0;
+    T(!fs_chuser("/pub", 100, 10), "root: chown /pub 100:10");
+    fs_uid = 100;
+    T(!fs_mkdir("/pub/x"), "the owner makes /pub/x");
+    T(!fs_chmod("/pub/x", 0700), "the owner chmods /pub/x 0700");
+    T(fs_chmod("/pub/f", 0666) == E_PERM, "the owner of /pub is not the owner of f");
+    T(!mkfile("/pub/x/g", 0), "the owner creates /pub/x/g");
+    T(!fs_chdir("/pub/x"), "the owner enters /pub/x");
+    T(try_open("../f", FO_READ) == E_OK, "a path with .. works");
+    T(try_open("../../sec/a", FO_READ) == E_PERM, "... and does not get round /sec");
+    fs_uid = 101; fs_gid = 11;
+    T(fs_chdir("/pub/x") == E_PERM, "another user cannot enter /pub/x (700)");
+    fs_uid = 100;
+    T(!fs_chmod("/pub/x", 0750), "chmod 0750");
+    fs_uid = 102; fs_gid = 10;
+    T(!fs_chdir("/pub/x"), "a user of the group enters /pub/x (750)");
+    T(try_open("/pub/x/g", FO_READ) == E_OK, "... and reads g (644)");
+    T(try_open("/pub/x/g", FO_WRITE) == E_PERM, "... but g belongs to 100 and is 644");
+    fs_uid = 101; fs_gid = 11;
+    T(try_open("/pub/x/g", FO_READ) == E_PERM, "the others have no x on /pub/x");
+    fs_uid = 0;
+    T(try_open("/sec/a", FO_WRITE) == E_OK, "root writes everywhere");
+    T(try_open("/pub/f", FO_READ | FO_EXEC) == E_PERM, "root does not run a file with no x bit");
+    T(!fs_chdir("/"), "root: cd /");
+    T(!fs_open("/pub", FO_DIR | FO_READ, 1, &h), "root: open /pub");
+    while (fs_readdir(h, &d) == E_OK)
+        if (!strcmp(d.name, "x")) { seen = 1; T(d.uid == 100 && d.gid == 10 && d.mode == 0750, "readdir shows owner, group and mode"); }
+        else if (!strcmp(d.name, "f")) T(d.uid == 0 && d.gid == 0 && d.mode == 0644, "readdir: f is root's 644");
+    fs_close(h);
+    T(seen, "readdir found x");
+    printf("perm: ok\n");
+    return 0;
+}
+#endif
+
 int main(int argc, char **argv)
 {
     u8 st;
@@ -279,6 +340,9 @@ int main(int argc, char **argv)
     else if (!strcmp(argv[2], "mv")) rc = (st = fs_rename(argv[3], argv[4])) ? die("mv", st) : 0;
     else if (!strcmp(argv[2], "big")) rc = big_test(atoi(argv[3]));
     else if (!strcmp(argv[2], "df")) { u8 spc; u16 cl, fr; fs_statfs(&spc, &cl, &fr); printf("spc %u clusters %u free %u\n", spc, cl, fr); }
+#ifdef MK09_V2
+    else if (!strcmp(argv[2], "perm")) rc = perm_test();
+#endif
     else if (!strcmp(argv[2], "random")) rc = random_test(atoi(argv[3]), atoi(argv[4]));
     else { fprintf(stderr, "unknown operation\n"); rc = 2; }
     fs_sync();

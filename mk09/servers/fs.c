@@ -54,6 +54,9 @@ void fsx_now(u16 *date, u16 *time)
 /* fetch the path argument (b = address, c = length incl. NUL) of a request */
 static char path[2 * MAXPATH];          /* the path (or two, for rename) of the request being served */
 static dirent_t de;
+#ifdef MK09_V2
+static u8 t_uid[NTASK], t_gid[NTASK];    /* the user of each task (PM sets them with FS_SETUSER); a task that has not been set is root */
+#endif
 
 static u8 get_path(msg_t *m)
 {
@@ -78,6 +81,10 @@ int main(void)
         if (m.src == TID_HW) continue;
         r.a = r.b = r.c = r.d = 0;
         r.op = E_NOSYS;
+#ifdef MK09_V2
+        fs_uid = fs_gid = 0;
+        if (m.src < NTASK) { fs_uid = t_uid[m.src]; fs_gid = t_gid[m.src]; }
+#endif
         if (st != E_OK && m.op != FS_CLOSEALL) {            /* not mounted: try again */
             st = fs_mount();
             if (st != E_OK) { r.op = st; mk_reply(m.src, &r); continue; }
@@ -167,6 +174,9 @@ int main(void)
             r.op = fs_sync();
             break;
         case FS_CLOSEALL:
+#ifdef MK09_V2
+            if ((u8)m.a < NTASK) t_uid[(u8)m.a] = t_gid[(u8)m.a] = 0;
+#endif
             fs_closeall((u8)m.a);
             r.op = E_OK;
             break;
@@ -197,6 +207,22 @@ int main(void)
         case FS_STIME:                                      /* a = year:month, b = day:hour, c = minute:second */
             bsp_set_clock(m.a, m.b, m.c);
             r.op = E_OK;
+            break;
+#endif
+#ifdef MK09_V2
+        case FS_SETUSER:                                    /* PM: a = tid, b = uid, c = gid */
+            if (m.src != TID_PM || m.a >= NTASK) { r.op = E_PERM; break; }
+            t_uid[m.a] = (u8)m.b;
+            t_gid[m.a] = (u8)m.c;
+            r.op = E_OK;
+            break;
+        case FS_CHMOD:
+            r.op = get_path(&m);
+            if (!r.op) r.op = fs_chmod(path, m.a);
+            break;
+        case FS_CHUSER:
+            r.op = get_path(&m);
+            if (!r.op) r.op = fs_chuser(path, m.a, m.d);
             break;
 #endif
         case FS_CHOWN:

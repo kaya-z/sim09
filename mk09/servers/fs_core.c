@@ -75,6 +75,10 @@ typedef struct res {                /* result of resolving a path */
     u8  name[11];
     u8  ent[32];                    /* the entry (found) */
     dloc_t loc;
+#ifdef MK09_V2
+    u8  du, dg;                     /* owner and group + 1 of the directory dcl (0: no information), */
+    u16 dm;                         /* its permissions */
+#endif
 } res_t;
 
 static cbuf_t cache[NBUF];
@@ -520,6 +524,33 @@ static void size_put(u8 *ent, u16 cl, u16 off)
 }
 
 /* make a directory object result */
+#ifdef MK09_V2
+/* ---- owner, group, permissions (docs/V2_PLAN.md, 2a): bytes 20 = owner, 21 = group + 1 (0: no MK09 information: root, rwxr-xr-x), 14-15 = permissions ---- */
+u8 fs_uid, fs_gid;
+#define MODE_DEF    0x1ED           /* rwxr-xr-x */
+#define MODE_FILE   0x1A4           /* rw-r--r-- */
+/* is the user of the request allowed 'want' (4 read, 2 write, 1 search / execute) by (owner, group + 1, mode)?  root may do all but execute a file with no x bit */
+static u8 perm_ok(u8 ou, u8 og1, u16 mode, u8 isdir, u8 want)
+{
+    u8 c;
+    if (og1 == 0) { ou = 0; og1 = 1; mode = MODE_DEF; }
+    if (fs_uid == 0) return !(want & 1) || isdir || (mode & 0x49);
+    if (fs_uid == ou) c = (u8)(mode >> 6);
+    else if ((u8)(fs_gid + 1) == og1) c = (u8)(mode >> 3);
+    else c = (u8)mode;
+    return (c & want) == want;
+}
+#define EPERM_OK(e, want)   perm_ok((e)[20], (e)[21], rd16((e) + 14), (u8)((e)[11] & FA_DIR), (want))
+#define DPERM_OK(r, want)   perm_ok((r)->du, (r)->dg, (r)->dm, 1, (want))
+/* the owner of a new entry: the user of the request */
+static void set_owner(u8 *e, u8 mode_x)
+{
+    e[20] = fs_uid;
+    e[21] = (u8)(fs_gid + 1);
+    wr16(e + 14, mode_x ? MODE_DEF : MODE_FILE);
+}
+#endif
+
 static void dirobj(res_t *r, u16 cl)
 {
     r->found = 1;
@@ -530,6 +561,9 @@ static void dirobj(res_t *r, u16 cl)
     wr16(r->ent + 26, cl);
 }
 
+#ifdef MK09_V2
+static u8 norm_path(const char *path, char *out);
+#endif
 static u8 resolve(const char *path, res_t *r)
 {
     u16 cur = cwd_cl;
@@ -538,18 +572,37 @@ static u8 resolve(const char *path, res_t *r)
     u8 n, last, st;
     u8 nm[11];
     u8 e[32];
+#ifdef MK09_V2
+    static char np[MAXPATH];            /* the absolute path without . and .. (so that every directory on the way is looked at once) */
+    u8 pu = 0, pg = 0;                  /* owner and group + 1 of the directory that is searched */
+    u16 pm = 0;                         /* its permissions */
+#endif
 
     memset(r, 0, sizeof(res_t));
+#ifdef MK09_V2
+    if (norm_path(path, np)) return E_NAME;
+    p = np;
+    cur = 0;
+#endif
     if (*p == '/') cur = 0;
     for (;;) {
         while (*p == '/') p++;
-        if (*p == 0) { dirobj(r, cur); return E_OK; }
+        if (*p == 0) {
+            dirobj(r, cur);
+#ifdef MK09_V2
+            r->ent[20] = pu; r->ent[21] = pg; wr16(r->ent + 14, pm);
+#endif
+            return E_OK;
+        }
         q = p;
         while (*q && *q != '/') q++;
         n = (u8)(q - p);
         t = q;
         while (*t == '/') t++;
         last = (*t == 0);
+#ifdef MK09_V2
+        if (!perm_ok(pu, pg, pm, 1, 1)) return E_PERM;        /* searching a directory takes x */
+#endif
         if (n == 1 && p[0] == '.') {
             p = q;
             continue;
@@ -570,11 +623,17 @@ static u8 resolve(const char *path, res_t *r)
             r->dcl = cur;
             memcpy(r->name, nm, 11);
             r->found = dir_find(cur, nm, r->ent, &r->loc);
+#ifdef MK09_V2
+            r->du = pu; r->dg = pg; r->dm = pm;
+#endif
             return E_OK;
         }
         if (!dir_find(cur, nm, e, NULL)) return E_NOENT;
         if (!(e[11] & FA_DIR)) return E_NOTDIR;
         cur = ent_cluster(e);
+#ifdef MK09_V2
+        pu = e[20]; pg = e[21]; pm = rd16(e + 14);
+#endif
         p = q;
     }
 }
@@ -735,6 +794,9 @@ u8 fs_open(const char *path, u8 flags, u8 owner, u8 *h)
     if (r.isdirobj || (r.found && (r.ent[11] & FA_DIR))) {
         if (!(flags & FO_DIR) || (flags & (FO_WRITE | FO_CREATE | FO_TRUNC))) return E_ISDIR;
         f->used = 2;
+#ifdef MK09_V2
+        if (!EPERM_OK(r.ent, 4)) return E_PERM;
+#endif
         dir_begin(&f->u.it, ent_cluster(r.ent));
         *h = i;
         return E_OK;
@@ -742,6 +804,9 @@ u8 fs_open(const char *path, u8 flags, u8 owner, u8 *h)
     if (flags & FO_DIR) return E_NOTDIR;
     if (!r.found) {
         if (!(flags & FO_CREATE)) return E_NOENT;
+#ifdef MK09_V2
+        if (!DPERM_OK(&r, 2)) return E_PERM;
+#endif
         memset(e, 0, 32);
         memcpy(e, r.name, 11);
         e[11] = FA_ARCHIVE;
@@ -749,10 +814,17 @@ u8 fs_open(const char *path, u8 flags, u8 owner, u8 *h)
         wr16(e + 14, rd16(e + 22));
         wr16(e + 16, rd16(e + 24));
         wr16(e + 18, rd16(e + 24));
+#ifdef MK09_V2
+        set_owner(e, flags & FO_EXEC);
+#endif
         st = dir_add(r.dcl, e, &f->loc);
         if (st) return st;
     } else {
         if (flags & FO_EXCL) return E_EXIST;
+#ifdef MK09_V2
+        if (((flags & FO_READ) && !EPERM_OK(r.ent, 4)) || ((flags & (FO_WRITE | FO_TRUNC)) && !EPERM_OK(r.ent, 2))
+            || ((flags & FO_EXEC) && !EPERM_OK(r.ent, 1))) return E_PERM;
+#endif
         if ((flags & (FO_WRITE | FO_TRUNC)) && (r.ent[11] & FA_RDONLY)) return E_RO;
         f->loc = r.loc;
         f->first = ent_cluster(r.ent);
@@ -1007,6 +1079,11 @@ u8 fs_readdir(u8 h, dirent_t *d)
         }
         d->date = rd16(e + 24);
         d->time = rd16(e + 22);
+#ifdef MK09_V2
+        d->uid = e[21] ? e[20] : 0;
+        d->gid = e[21] ? (u8)(e[21] - 1) : 0;
+        d->mode = e[21] ? rd16(e + 14) : MODE_DEF;
+#endif
         return E_OK;
     }
     return E_EOF;
@@ -1025,6 +1102,9 @@ u8 fs_mkdir(const char *path)
     st = resolve(path, &r);
     if (st) return st;
     if (r.found) return E_EXIST;
+#ifdef MK09_V2
+    if (!DPERM_OK(&r, 2)) return E_PERM;
+#endif
     cl = alloc_cluster(0);
     if (!cl) return E_NOSPC;
     for (i = 0; i < spc; i++) {
@@ -1049,6 +1129,9 @@ u8 fs_mkdir(const char *path)
     e[11] = FA_DIR;
     now_fields(e);
     wr16(e + 26, cl);
+#ifdef MK09_V2
+    set_owner(e, 1);
+#endif
     st = dir_add(r.dcl, e, NULL);
     if (st) free_chain(cl);
     return st;
@@ -1065,6 +1148,9 @@ u8 fs_remove(const char *path)
     if (st) return st;
     if (r.isdirobj) return E_INVAL;
     if (!r.found) return E_NOENT;
+#ifdef MK09_V2
+    if (!DPERM_OK(&r, 2)) return E_PERM;
+#endif
     if (r.ent[11] & FA_RDONLY) return E_RO;
     if ((r.ent[11] & FA_DIR) && !dir_is_empty(ent_cluster(r.ent))) return E_NOTEMPTY;
     for (i = 0; i < NHANDLE; i++)                   /* open handles of the file */
@@ -1113,6 +1199,9 @@ u8 fs_rename(const char *from, const char *to)
     st = resolve(to, &c);
     if (st) return st;
     if (c.isdirobj || c.found) return E_EXIST;
+#ifdef MK09_V2
+    if (!DPERM_OK(&a, 2) || !DPERM_OK(&c, 2)) return E_PERM;
+#endif
     if ((a.ent[11] & FA_DIR) && is_ancestor(ent_cluster(a.ent), c.dcl)) return E_INVAL;
     memcpy(e, a.ent, 32);
     memcpy(e, c.name, 11);
@@ -1187,6 +1276,9 @@ u8 fs_chdir(const char *path)
     if (st) return st;
     if (!r.found) return E_NOENT;
     if (!(r.ent[11] & FA_DIR)) return E_NOTDIR;
+#ifdef MK09_V2
+    if (!EPERM_OK(r.ent, 1)) return E_PERM;
+#endif
     st = norm_path(path, np);
     if (st) return st;
     cwd_cl = ent_cluster(r.ent);
@@ -1232,3 +1324,47 @@ u8 fs_statfs(u8 *spcp, u16 *clusters, u16 *freec)
     *freec = n;
     return E_OK;
 }
+
+#ifdef MK09_V2
+/* change the owner / group (which & 1) and / or the permissions (which & 2) of an entry; an entry with no MK09 information first becomes root's, rwxr-xr-x */
+static u8 ent_set(const res_t *r, u8 which, u8 u, u8 g, u16 mode)
+{
+    cbuf_t *b = blk_get(r->loc.ca, r->loc.cb, 0);
+    u8 *e;
+    if (!b) return E_IO;
+    e = b->data + ((u16)r->loc.idx << 5);
+    if (e[21] == 0) { e[20] = 0; e[21] = 1; wr16(e + 14, MODE_DEF); }
+    if (which & 1) { e[20] = u; e[21] = (u8)(g + 1); }
+    if (which & 2) wr16(e + 14, mode);
+    return blk_put(b) ? E_IO : E_OK;
+}
+
+u8 fs_chmod(const char *path, u16 mode)
+{
+    res_t r;
+    u8 st;
+    PATHDRV(path, pbuf);
+    NEED_MOUNT;
+    st = resolve(path, &r);
+    if (st) return st;
+    if (r.isdirobj) return E_INVAL;
+    if (!r.found) return E_NOENT;
+    if (fs_uid != 0 && (r.ent[21] == 0 || fs_uid != r.ent[20])) return E_PERM;      /* the owner or root */
+    return ent_set(&r, 2, 0, 0, mode & 0x1FF);
+}
+
+u8 fs_chuser(const char *path, u16 uid, u16 gid)
+{
+    res_t r;
+    u8 st;
+    PATHDRV(path, pbuf);
+    NEED_MOUNT;
+    if (fs_uid != 0) return E_PERM;                                             /* root only */
+    st = resolve(path, &r);
+    if (st) return st;
+    if (r.isdirobj) return E_INVAL;
+    if (!r.found) return E_NOENT;
+    return ent_set(&r, 1, uid == 0xFFFF ? (r.ent[21] ? r.ent[20] : 0) : (u8)uid,
+                   gid == 0xFFFF ? (r.ent[21] ? (u8)(r.ent[21] - 1) : 0) : (u8)gid, 0);
+}
+#endif

@@ -518,6 +518,7 @@ BASIC は 1.3 で作り直しました (YSD9000 の MK09 で先に改良され�
 |---|---|---|
 | 2.0.0pre001 | 2.0.0pre001 | 準備: `MK09_V2`、版の表示、`tools/v1guard.sh`、`tests/v1.sha256`。PM のコードスロットを 16 バイト増やした (版の文字列が長くなったため。V2 のビルドだけ) |
 | 2.0.0pre002 | 2.0.0pre001 | **ファイル名の大文字・小文字を区別する** (段階 1): FS は名前を大文字にしない (`fs_core.c`)。システムのファイル名を `include/pathnames.h` にまとめ、V2 は小文字 (`/bin/sh.mx`、`/etc/rc.sh`、`/lib/clib.obj` ...)。`mkdisk.py --keep-case`。`fatlib.py` に `case` |
+| 2.0.0pre003 | 2.0.0pre001 | **持ち主・グループ・許可 (FS)** (段階 2a): ディレクトリエントリのバイト 20 (持ち主)、21 (グループ + 1。0 は情報なし = root の `rwxr-xr-x`)、14-15 (許可)。`open`、`mkdir`、`remove`、`rename`、`chdir` を検査し、パスは `.` と `..` を除いた絶対パスにして、通る各ディレクトリの `x` を見る。`FS_SETUSER` (PM だけ)、`FS_CHMOD`、`FS_CHUSER`、`FO_EXEC`、`dirent_t` に `uid gid mode`。FS のコードスロットを広げた (V2 のビルドだけ)。ホストのテスト `make fstest-v2` |
 
 ## 17. MK09 の上の開発環境
 

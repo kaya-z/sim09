@@ -141,7 +141,7 @@ MAPOVER := K_CSZ=1060 K_DSZ=02F0 HIGH=PM
 endif
 # the 2.0 version strings are longer: the code slot of PM gets 16 bytes more (V2 builds only)
 ifeq ($(V2),1)
-MAPOVER += PM_CSZ=0C00
+MAPOVER += PM_CSZ=0C00 FS_CSZ=3500 FS_DSZ=0940
 endif
 ifeq ($(KERNEL),asm)
 KERNEL_OBJS := $(B)/kernel_asm.o
@@ -340,6 +340,16 @@ charsets:
 $(B)/fs_host: tests/fs_host.c servers/fs_core.c servers/fs_core.h
 	gcc -DMK_HOST -O1 -Wall -Wno-unused -Iinclude -Iservers -o $@ tests/fs_host.c servers/fs_core.c
 
+# the same with the permissions of 2.0 (-DMK09_V2): the host test of owner, group and mode
+$(B)/fs_host_v2: tests/fs_host.c servers/fs_core.c servers/fs_core.h include/proto.h
+	gcc -DMK_HOST -DMK09_V2 -O1 -Wall -Wno-unused -Iinclude -Iservers -o $@ tests/fs_host.c servers/fs_core.c
+
+fstest-v2: $(B)/fs_host_v2
+	rm -f $(B)/fs_p.img; mkfs.fat -F 16 -S 512 -s 4 -C $(B)/fs_p.img 20000 >/dev/null || exit 1; \
+	$(B)/fs_host_v2 $(B)/fs_p.img perm || exit 1; fsck.fat -n $(B)/fs_p.img >/dev/null || exit 1; \
+	rm -f $(B)/fs_r.img; mkfs.fat -F 16 -S 512 -s 4 -C $(B)/fs_r.img 20000 >/dev/null || exit 1; \
+	$(B)/fs_host_v2 $(B)/fs_r.img random 5 400 || exit 1; fsck.fat -n $(B)/fs_r.img >/dev/null || exit 1; rm -f $(B)/fs_p.img $(B)/fs_r.img; echo "fstest-v2: ok"
+
 fstest: $(B)/fs_host $(B)/mk09.img
 	for seed in 1 2 3; do cp $(B)/mk09.img $(B)/fs_t.img; $(B)/fs_host $(B)/fs_t.img random $$seed 500 || exit 1; \
 	  dd if=$(B)/fs_t.img of=$(B)/fs_v.img bs=512 skip=2048 2>/dev/null; fsck.fat -n $(B)/fs_v.img >/dev/null || exit 1; done; \
@@ -361,4 +371,4 @@ test: all charsets fstest
 clean:
 	rm -rf build build_euc build_sjis
 
-.PHONY: all run clean charsets test fstest
+.PHONY: all run clean charsets test fstest fstest-v2

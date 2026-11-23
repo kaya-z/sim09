@@ -48,6 +48,11 @@ u8   fs_getcwd(char *buf, u16 n);
 u8   fs_sync(void);
 void fs_closeall(u8 owner);
 u8   fs_chown(u8 h, u8 owner);
+#ifdef MK09_V2
+extern u8 fs_uid, fs_gid;          /* the user of the request that is served (set by fs.c from the table of the tasks) */
+u8   fs_chmod(const char *path, u16 mode);
+u8   fs_chuser(const char *path, u16 uid, u16 gid);
+#endif
 #ifdef BOARD_FM11                  /* more than one volume: the floppy disks 1-4 */
 u8   fs_statfs(u8 drive, u8 *spc, u16 *clusters, u16 *freec);
 u8   fs_mount_drive(u8 d);         /* mount the volume of the drive d (0-4) */

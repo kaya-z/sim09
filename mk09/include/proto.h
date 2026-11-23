@@ -67,6 +67,12 @@
 #define FS_TIME     18      /* -> a = date, b = time (FAT format) */
 #define FS_MOUNT    20      /* FM-11: a = drive (1-4), b = 0 mount the volume (then "N:/path" names its files), 1 unmount, 2 ask -> a = 1 if mounted */
 #define FS_STIME    21      /* FM-11: set the clock of the system: a = year (since 1980) << 8 | month, b = day << 8 | hour, c = minute << 8 | second (settime() checks them) */
+#ifdef MK09_V2
+/* 2.0: owner, group and permissions (docs/V2_PLAN.md, stage 2a).  Who asks is found by the task number of the sender (the table of FS, set by PM). */
+#define FS_SETUSER  22      /* PM only: a = tid, b = uid, c = gid (the user of a task; a task that exits is root again) */
+#define FS_CHMOD    23      /* a = mode (9 bits), b = path, c = len (GR_READ): the owner or root */
+#define FS_CHUSER   24      /* a = uid (0xFFFF: not changed), d = gid (0xFFFF: not changed), b = path, c = len (GR_READ): root only */
+#endif
 #define FS_READTL   19      /* like FS_READ, but b = an address in the memory of the new task d (PM, loading a program): no grant, no copy through PM */
 
 #define FO_READ     0x01
@@ -76,6 +82,9 @@
 #define FO_APPEND   0x10
 #define FO_DIR      0x20    /* open a directory (for FS_READDIR) */
 #define FO_EXCL     0x40    /* with FO_CREATE: fail if the file exists */
+#ifdef MK09_V2
+#define FO_EXEC     0x80    /* 2.0: opened to run (x is asked; with FO_CREATE: the new file gets x, for the output of as) */
+#endif
 
 #define FA_RDONLY   0x01
 #define FA_HIDDEN   0x02
@@ -89,6 +98,10 @@ typedef struct dirent {
     u8   attr;
     u16  sizehi, sizelo;
     u16  date, time;        /* FAT format */
+#ifdef MK09_V2
+    u8   uid, gid;          /* the owner and the (primary) group */
+    u16  mode;              /* permissions: rwx for the owner, the group and the others (9 bits) */
+#endif
 } dirent_t;
 
 #define MAXPATH     64
