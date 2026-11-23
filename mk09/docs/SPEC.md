@@ -448,6 +448,20 @@ typedef struct dirent {     /* 22 バイト。FS_READDIR の結果 */
 | 各サーバのリンク | `tools/mklink.py` が `lwlink` の指定を書く。`tools/chkmap.py` が領域に収まるか、スタックの余裕があるか、直接ページの変数が 256 バイト以内かを調べる |
 | `APPS`, `STACK_名前`, `BASE_名前` | プログラムの一覧、スタックの大きさ、ロード番地 |
 
+## 11A. 2.0 の拡張 (`MK09_V2`、MMU のあるビルドだけ)
+
+計画と段階は `docs/V2_PLAN.md`、版の履歴は `docs/DESIGN.md` の 16.3 です。
+
+- **名前**: FS は名前を大文字にしない。システムのファイルの名前は `include/pathnames.h` (2.0 は小文字)。
+- **ディレクトリエントリ**: バイト 20 = 持ち主 (uid)、21 = グループ + 1 (0: MK09 の情報なし = root の `rwxr-xr-x`)、14-15 = 許可 (下位 9 ビット = `rwxrwxrwx`、`01000` = setuid `MODE_SETUID`、`02000` = ディスク直接 `MODE_RAWIO`)。FAT16 では未使用の領域です (`fsck.fat` は通る)。
+- **FS の検査**: `open`、`mkdir`、`remove`、`rename`、`chdir` で、パスを `.` と `..` を除いた絶対パスにして、通る各ディレクトリの `x` を見る。要求を出したタスクの (uid, gid) は FS の表 (`FS_SETUSER`) で決まる。現在のディレクトリはタスクごと。
+- **FS の要求**: `FS_SETUSER` (22: PM だけ。a = tid、b = uid、c = gid、d = 現在のディレクトリを引き継ぐタスク)、`FS_CHMOD` (23)、`FS_CHUSER` (24: root だけ)。`FO_EXEC` (0x80: 実行用に開く、作るときは x をつける)。`dirent_t` に `uid gid mode`。`FS_FSTAT` の d = `0x100 | 持ち主` (setuid) と `0x200` (rawio)。`FS_STIME`、`FS_MOUNT` (mount/umount) は root だけ。
+- **PM の要求**: `PM_SETUSER` (8: root だけ、自分の (実効と本当の) ユーザを変える)、`PM_GETUSER` (9: a = uid、b = gid、c = 本当の uid)。新しいプログラムは、頼んだタスクのユーザで動く (`PM_EXEC` は置き換えられるタスク)。setuid のファイルは持ち主で動く。`kill` は同じユーザか root、`PM_SHUTDOWN` は root。シェルが起こし直されるとき、ユーザと現在のディレクトリを保つ。セッションは端末 (線) ごと。`login` の `PM_EXEC` は、新しいプログラムをその線のシェルにする。
+- **カーネルの送信先の表**: ユーザのタスクは、`T_DMASK` のビットの立つタスクにだけ送れる (`DMASK_USER` = TTY、FS、PM、MM。`MODE_RAWIO` のファイルは DISK も)。`reply` は制限なし。ユーザのタスクの `mk_notify` は `E_PERM`。`mk_tcreate` の `tcreate_t.dmask` で PM が渡す。`NTASK` は 16。
+- **複数の線**: `mk_rxregl(line, ring)` (`SYS_RXREG` の B = 線)。`TTYC_SETLINE` (7: PM。タスクの線)、`TTYC_LINEON` (8: PM。線を使い始める)、`TTYC_SETFG` の c = 線。`NFY_INT` = 線 0、`NFY_INT1` = 線 1 の `^C`。線 1: sbc09 は 2 つ目の ACIA (`$E004/$E005`、L2 は `$FF84/$FF85`)、FM-11 は i8251 のチャンネル 0 (`$FD06/$FD07`)。`/etc/ttys` の数字が、`login` を起こす線。
+- **sbc09 の MMU 版**: 8KB のブロック 8 個、表は 2 つ (システム `$FFA0-A7`、ユーザ `$FFA8-AF`、`$FF91` で選ぶ)。ブロック 0 はカーネル (どの表も同じ)、プログラムは `$2000-$FDFF`、`$FE00-$FFFF` は固定ページ (ベクタと I/O は `$FF80` から)。他タスクのメモリへのコピーは中継バッファ `xbuf` を通し、半分ずつ相手の表に切り替える。カードの配置は LSN 2 = L2 のローダ、LSN 8 = L2 の ROM イメージ、LSN 64 = システム。
+- **ライブラリ**: `getuser`、`getruser`、`setuser`、`chmod`、`chown`、`getpw*`、`getgr*`、`getshadow`、`pwcheck`、`pwhash`、`sha256` (`include/pwd.h`)。
+
 ## 12. 数値の一覧
 
 | 項目 | 値 |

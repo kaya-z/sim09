@@ -39,10 +39,18 @@ make CMOC_BIN=$HOME/cmoc/bin               # build/ にブート ROM とディ�
 `/> ` が出たら `help`、日本語ワープロは `jwp メモ.txt` (`^J` でかな入力、`^Q` で終了)。止めるのは `shutdown`。
 実機は SD カードに `dd if=build/mk09.img of=/dev/sdX bs=512 conv=fsync` (デバイス名を必ず確かめてください)。
 
+## MK09 2.0 (開発版 `2.0.0pre`)
+
+大文字・小文字を区別する名前、アカウント (`login`、`su`、`passwd`、許可)、複数の端末。**MMU のあるビルドだけ**です: FM-11 の Level 2 と、sbc09 の MMU 版 (`make BOARD=sbc09 LEVEL=2 CMOC_BIN=$HOME/cmoc/bin`、`../sim09 -2 -rom build-sbc09-l2/bootrom.bin -0 build-sbc09-l2/mk09.img`。FPGA はカードにこのイメージを書く)。64KB の版は 1.x のままで、`tools/v1guard.sh` が、1.x のビルドが変わっていないことを確かめます。計画と段階は [docs/V2_PLAN.md](docs/V2_PLAN.md)、使い方は [docs/MANUAL.md](docs/MANUAL.md) の 6A、仕様は [docs/SPEC.md](docs/SPEC.md) の 11A、版の履歴は [docs/DESIGN.md](docs/DESIGN.md) の 16.3 です。**FM-11 の実機の確認がまだなので、`2.0.0` には確定していません。**
+
 ## テスト
 
 ```sh
 make test      # 自動テスト一式 (EUC-JP / Shift_JIS 版も作ります。数分かかります)
+tools/v1guard.sh                                  # 1.x のビルド (64KB 版) が 1.46 と同じバイト列か
+make BOARD=sbc09 LEVEL=2 CMOC_BIN=$HOME/cmoc/bin && tests/mk09_l2_test.py   # 2.0 (sbc09 の MMU 版)
+MK09_L2=1 MK09_BUILD=build-sbc09-l2 tests/jwp_test.py                           # jwp (MMU 版)
+fm11/test_fm11.sh "" 2; fm11/test_fm11_rs.py     # 2.0 (FM-11 Level 2 とエミュレータ)
 ```
 
 ## ライセンス
