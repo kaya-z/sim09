@@ -107,6 +107,7 @@ static msg_t rm;                        /* the answer of the last call to FS */
 static u8 t_uid[NTASK], t_gid[NTASK];   /* the user of each task (the effective one: a setuid file changes it) */
 static u8 t_ruid[NTASK];                /* the user who started it (the real one) */
 static u8 cur_ruid;
+static u8 cur_dmask;
 static u8 cur_uid, cur_gid;             /* the user of the program that is being started */
 static u8 sh_uid, sh_gid;               /* the user of the shell (kept when the shell is started again) */
 #endif
@@ -216,7 +217,8 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
     hout = sb[SB_OUT];
     st = fsc(FS_FSTAT, h, 0);
 #ifdef MK09_V2
-    if (!st && rm.d >= 0x100) cur_uid = (u8)rm.d;      /* a file with the setuid bit runs as its owner */
+    if (!st && (rm.d & 0x100)) cur_uid = (u8)rm.d;      /* a file with the setuid bit runs as its owner */
+    cur_dmask = DMASK_USER | ((!st && (rm.d & 0x200)) ? DMASK_DISK : 0);       /* the tasks that the program may send to (the rawio bit: the disk too) */
 #endif
     size = rm.b;
     if (!st && rm.c) st = E_FORMAT;
@@ -250,6 +252,9 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
     if (pg < 0) { st = E_NOMEM; goto out; }
     base = UBASE;
     for (i = 0; i < NMAP; i++) tc.map[i] = 0;
+#ifdef MK09_V2
+    tc.dmask = cur_dmask;
+#endif
     for (i = 1; i < PG0; i++) tc.map[i] = i;                   /* (the pages of the kernel are the same in every map) */
     for (i = 0; i < n4; i++) tc.map[PG0 + i] = pl[i];
 #else

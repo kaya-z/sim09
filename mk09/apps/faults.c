@@ -35,6 +35,12 @@ int main(void)
     printf("pages from MM (not PM): %d\n", mk_call(TID_MM, &m) ? -1 : (int)m.op);
     m.op = MM_INFO;
     printf("memory info from MM: %d\n", mk_call(TID_MM, &m) ? -1 : (int)m.op);
+#ifdef MK09_V2
+    m.op = DISK_SIZE;                               /* 2.0: a program sends to TTY, FS, PM and MM only (a program that has the rawio permission sends to the disk too) */
+    m.d = 0;
+    printf("send to the disk server: %d\n", mk_call(TID_DISK, &m));
+    printf("notify the process manager: %d\n", mk_notify(TID_PM, 1));
+#endif
     fflush();
     {
         asm {

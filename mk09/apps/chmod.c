@@ -14,7 +14,7 @@ int main(int argc, char **argv)
         if (*p < '0' || *p > '7') { puts("chmod: the mode is an octal number"); return 1; }
         mode = (u16)((mode << 3) | (*p - '0'));
     }
-    mode = (u16)((mode & 0x1FF) | ((mode & 04000) ? 01000 : 0));            /* (4755: the setuid bit, as on Unix) */
+    mode = (u16)((mode & 0x1FF) | ((mode & 04000) ? 01000 : 0) | (mode & 02000));      /* (4755: the setuid bit, as on Unix; 2755: the access to the disk, root only) */
     for (i = 2; i < argc; i++) {
         r = chmod(argv[i], mode);
         if (r < 0) { printf("chmod: %s: %s\n", argv[i], strerr_(r)); rc = 1; }

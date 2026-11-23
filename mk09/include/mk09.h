@@ -128,6 +128,10 @@ u16 mk_rxget(u8 *buf, u16 n);               /* up to n console characters that t
 #define UEND    0xF000
 #endif
 #define UBASE   0x2000
+#ifdef MK09_V2
+#define DMASK_USER  0x3A                    /* TTY, FS, PM, MM */
+#define DMASK_DISK  0x04                    /* the disk server too (a file with the permission bit MODE_RAWIO) */
+#endif
 #endif
 /* create a task (state NEW) with memory region [lo, hi), first stack pointer 'top', entry
  * point and one argument (passed in X); returns the new task id in *tid */
@@ -136,6 +140,9 @@ typedef struct tcreate {
     u8  prio;                               /* 0 = most urgent .. 6 */
 #ifdef MK_MMU
     u8  map[NMAP];                          /* the MMU: the physical page (of 4KB; the sbc09: of 8KB) of each logical page of the new task's address space */
+#ifdef MK09_V2
+    u8  dmask;                              /* 2.0: the tasks that the program may send to (bit n = the task n): DMASK_USER, + DMASK_DISK for a program with raw access to the disk */
+#endif
 #endif
 } tcreate_t;
 u8  mk_tcreate(tcreate_t *p, u8 *tid);

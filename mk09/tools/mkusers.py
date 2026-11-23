@@ -44,7 +44,8 @@ def main():
         f.write('# pattern uid gid mode\n')
         f.write('etc/shadow 0 0 600\n')
         f.write('bin/passwd.mx 0 0 1755\nbin/su.mx 0 0 1755\n')
-        for n in ('reboot', 'format', 'mount', 'umount', 'hd', 'runas'):
+        f.write('bin/format.mx 0 0 2700\n')                  # (the only program that sends to the disk server)
+        for n in ('reboot', 'mount', 'umount', 'hd', 'runas'):
             f.write('bin/%s.mx 0 0 700\n' % n)
         f.write('tmp 0 0 777\n')
         f.write('home/user 100 100 755\nhome/user/* 100 100 644\n')

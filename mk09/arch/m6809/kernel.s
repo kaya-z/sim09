@@ -32,7 +32,12 @@ NPG	equ	8			the blocks of a map (8KB each; the sbc09 machine with the MMU: two m
 	else
 NPG	equ	16			the pages of a map (4KB each)
 	endc
-TSZ	equ	59+NPG
+	ifdef	MK09_V2
+NDM	equ	1			2.0: a byte more in the block of a task creation and in the table entry: the tasks that the program may send to (T_DMASK)
+	else
+NDM	equ	0
+	endc
+TSZ	equ	59+NPG+NDM
 	else
 TSZ	equ	36
 	endc
@@ -105,6 +110,9 @@ T_FRM	equ	36
 T_RMSG	equ	48
 T_PEND	equ	58
 T_MAP	equ	59
+	ifdef	MK09_V2
+T_DMASK	equ	59+NPG		bit n: the program may send to the task n (the servers 1-5; set by PM when it creates the task)
+	endc
 	ifndef	COCO
 FM_TASK	equ	$FD90			the map set in use (0-15)
 FM_MMR	equ	$FD80			its 16 registers: the physical page of the logical page 0-15
@@ -174,7 +182,7 @@ tmpw	rmb	2
 tmpw2	rmb	2
 kmsg	rmb	MSGSZ			a message being built (also the taskinfo)
 	ifdef	MMU
-tcb	rmb	11+NPG		the block of a task creation (+ the NPG physical pages of its map)
+tcb	rmb	11+NPG+NDM	the block of a task creation (+ the NPG physical pages of its map, + the send mask)
 	else
 tcb	rmb	11			the block of a task creation
 	endc
@@ -906,6 +914,9 @@ exit	sta	<tmpw2
 @r	rts
 
 * ------------------------------------------------------------------------ system calls
+	ifdef	MK09_V2
+dbit	fcb	$01,$02,$04,$08,$10,$20,$40,$80
+	endc
 sctab	fdb	0
 	fdb	sc_send			1
 	fdb	sc_recv			2
@@ -971,6 +982,22 @@ ipc_send
 	cmpb	<cur
 	lbeq	@notask
 	stb	<dstid
+	ifdef	MK09_V2
+	lda	<cur			2.0: a program sends to the tasks of its mask only (a reply goes to the one who called)
+	cmpa	#TID_USER0
+	blo	@dm
+	lda	<mode
+	cmpa	#2
+	beq	@dm
+	ldy	<curp
+	cmpb	#8
+	lbhs	@perm
+	ldx	#dbit
+	lda	b,x
+	anda	T_DMASK,y
+	lbeq	@perm
+@dm
+	endc
 	lbsr	tp
 	stx	<dstp
 	lda	T_STATE,x
@@ -1042,6 +1069,10 @@ ipc_send
 	ldd	<ubuf
 	std	T_UBUF,y
 	lbra	blocked
+	ifdef	MK09_V2
+@perm	ldb	#E_PERM
+	lbra	errret
+	endc
 @notask	ldb	#E_NOTASK
 	lbra	errret
 @dead	ldb	#E_DEAD
@@ -1148,6 +1179,14 @@ sc_recv	ldu	<frm
 	lbra	errret
 
 sc_notify
+	ifdef	MK09_V2
+	lda	<cur			2.0: a program does not notify
+	cmpa	#TID_USER0
+	blo	@nok
+	ldb	#E_PERM
+	lbra	errret
+@nok
+	endc
 	ldu	<frm
 	ldb	F_B,u
 	ldx	F_X,u
@@ -1438,7 +1477,7 @@ sc_tcreate
 	std	<ubuf
 	ldy	<curp
 	ifdef	MMU
-	ldx	#11+NPG
+	ldx	#11+NPG+NDM
 	else
 	ldx	#11
 	endc
@@ -1447,7 +1486,7 @@ sc_tcreate
 	ldx	<ubuf
 	ldu	#tcb
 	ifdef	MMU
-	ldd	#11+NPG
+	ldd	#11+NPG+NDM
 	else
 	ldd	#11
 	endc
@@ -1534,6 +1573,10 @@ sc_tcreate
 	pshs	x
 	lbsr	mmu_newmap		the map of the new task (tcb+11 ..) into its entry and its map registers
 	puls	x
+	ifdef	MK09_V2
+	lda	tcb+11+NPG		the tasks that the program may send to
+	sta	T_DMASK,x
+	endc
 	endc
 	ldd	<tcb+6			top
 	ldy	<tcb			entry

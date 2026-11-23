@@ -527,7 +527,7 @@ static void size_put(u8 *ent, u16 cl, u16 off)
 #ifdef MK09_V2
 /* ---- owner, group, permissions (docs/V2_PLAN.md, 2a): bytes 20 = owner, 21 = group + 1 (0: no MK09 information: root, rwxr-xr-x), 14-15 = permissions ---- */
 u8 fs_uid, fs_gid;
-u16 fs_setuid;                      /* set by fs_fstat: 0, or 0x100 | the owner when the file has the setuid bit */
+u16 fs_setuid;                      /* set by fs_fstat: 0x100 | the owner when the file has the setuid bit, 0x200 when it has the rawio bit */
 #define MODE_DEF    0x1ED           /* rwxr-xr-x */
 #define MODE_FILE   0x1A4           /* rw-r--r-- */
 /* is the user of the request allowed 'want' (4 read, 2 write, 1 search / execute) by (owner, group + 1, mode)?  root may do all but execute a file with no x bit */
@@ -1049,7 +1049,10 @@ u8 fs_fstat(u8 h, u8 *attr, u16 *shi, u16 *slo)
             u8 *e;
             if (b) {
                 e = b->data + ((u16)f->loc.idx << 5);
-                if (e[21] && (rd16(e + 14) & MODE_SETUID)) fs_setuid = 0x100 | e[20];
+                if (e[21]) {
+                    if (rd16(e + 14) & MODE_SETUID) fs_setuid = 0x100 | e[20];
+                    if (rd16(e + 14) & MODE_RAWIO) fs_setuid |= 0x200;
+                }
             }
         }
 #endif
@@ -1364,7 +1367,8 @@ u8 fs_chmod(const char *path, u16 mode)
     if (r.isdirobj) return E_INVAL;
     if (!r.found) return E_NOENT;
     if (fs_uid != 0 && (r.ent[21] == 0 || fs_uid != r.ent[20])) return E_PERM;      /* the owner or root */
-    return ent_set(&r, 2, 0, 0, mode & 0x3FF);
+    if (fs_uid != 0) mode &= ~MODE_RAWIO;                                       /* (the access to the disk is given by root) */
+    return ent_set(&r, 2, 0, 0, mode & 0x7FF);
 }
 
 u8 fs_chuser(const char *path, u16 uid, u16 gid)

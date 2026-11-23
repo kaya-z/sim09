@@ -107,6 +107,7 @@ check('MMU' in out and 'program area' in out and re.search(r'total\s+440\.0 KB',
 check('pas/hanoi.mx:' in out and ' 15: disk 1 from B to C' in out, 'pc compiles Pascal and the program runs')
 check('fstest: ok' in out, 'fstest: the file system tests of the program pass')
 check('faults: stopped by the system (stack overflow)' in out and 'message outside my memory: 4' in out, 'faults: the kernel checks the memory of the program (the map)')
+check('send to the disk server: 1' in out and 'notify the process manager: 1' in out, 'faults: a program cannot send to the disk server nor notify (the table of the destinations)')
 check(re.search(r'^\s+5 [0-9a-f]{4}-[0-9a-f]{4}\s+\d+', out, re.M) is not None, 'stk lists the stacks of the servers')
 check('\nhi\n' in out, 'a pipe between two programs')
 check(re.search(r'\[\d+\]', out) is not None and re.search(r'^\s*\d+ ready\s+4\s+2000-', out, re.M) is not None, 'a program in the background (spin &) is a task of its own, ps shows it')

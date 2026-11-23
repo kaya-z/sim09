@@ -84,6 +84,7 @@
 #define FO_EXCL     0x40    /* with FO_CREATE: fail if the file exists */
 #ifdef MK09_V2
 #define MODE_SETUID 01000   /* the permission bit: run as the owner of the file */
+#define MODE_RAWIO  02000   /* the permission bit: the program may send to the disk server (set by root; format) */
 #define FO_EXEC     0x80    /* 2.0: opened to run (x is asked; with FO_CREATE: the new file gets x, for the output of as) */
 #endif
 
