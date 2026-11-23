@@ -17,22 +17,26 @@
 
 #include "types.h"
 
+#ifdef MMU_COCO
+#define IO_BASE         0xFF80u            /* the machine with the MMU (sim09 -2, the l2 mode of the FPGA): the I/O registers are in the fixed page */
+#else
 #define IO_BASE         0xE000u
-#define ACIA_STATUS     (*(u8 *)0xE000)
-#define ACIA_DATA       (*(u8 *)0xE001)
+#endif
+#define ACIA_STATUS     (*(u8 *)(IO_BASE + 0x00))
+#define ACIA_DATA       (*(u8 *)(IO_BASE + 0x01))
 #define ACIA_RDRF       0x01
 #define ACIA_TDRE       0x02
-#define ACIA_CTL        (*(u8 *)0xE000)    /* write: $03 master reset, $15 = 8N1 /16 without interrupts, $95 with the receive interrupt */
-#define POWER_REG       (*(u8 *)0xE00F)
-#define TIMER_REG       (*(u8 *)0xE030)
-#define RTC_REG(n)      (*(u8 *)(0xE030 + (n)))
-#define DISK_CMD        (*(u8 *)0xE040)
-#define DISK_DRIVE      (*(u8 *)0xE041)
-#define DISK_LSN_HI     (*(u8 *)0xE042)
-#define DISK_LSN_MID    (*(u8 *)0xE043)
-#define DISK_LSN_LO     (*(u8 *)0xE044)
-#define DISK_DMA        (*(u16 *)0xE045)
-#define DISK_CTL        (*(u8 *)0xE049)    /* bit 0: asynchronous mode (the command returns at once: DISK_CMD reads $FE until it is finished), bit 7: interrupt at the end;
+#define ACIA_CTL        (*(u8 *)(IO_BASE + 0x00))    /* write: $03 master reset, $15 = 8N1 /16 without interrupts, $95 with the receive interrupt */
+#define POWER_REG       (*(u8 *)(IO_BASE + 0x0F))
+#define TIMER_REG       (*(u8 *)(IO_BASE + 0x30))
+#define RTC_REG(n)      (*(u8 *)(IO_BASE + 0x30 + (n)))
+#define DISK_CMD        (*(u8 *)(IO_BASE + 0x40))
+#define DISK_DRIVE      (*(u8 *)(IO_BASE + 0x41))
+#define DISK_LSN_HI     (*(u8 *)(IO_BASE + 0x42))
+#define DISK_LSN_MID    (*(u8 *)(IO_BASE + 0x43))
+#define DISK_LSN_LO     (*(u8 *)(IO_BASE + 0x44))
+#define DISK_DMA        (*(u16 *)(IO_BASE + 0x45))
+#define DISK_CTL        (*(u8 *)(IO_BASE + 0x49))    /* bit 0: asynchronous mode (the command returns at once: DISK_CMD reads $FE until it is finished), bit 7: interrupt at the end;
                                               read: bit 7 finished, bit 6 interrupt on, bit 0 busy.  The kernel switches the interrupt off and notifies the disk server (NFY_DISK). */
 #define DISK_BUSY       0xFE
 

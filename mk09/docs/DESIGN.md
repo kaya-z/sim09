@@ -523,6 +523,7 @@ BASIC は 1.3 で作り直しました (YSD9000 の MK09 で先に改良され�
 | 2.0.0pre005 | 2.0.0pre001 | **ログインとパスワード** (段階 2c): `login` (PM が起動時と各セッションの終わりに root で起動し、成功するとユーザのシェルに置き換わる。PM は、シェルから `PM_EXEC` された新しいプログラムをシェルとする)、`su` (setuid)、`passwd` (setuid。一時ファイルに書いて置き換える)、`id` と `ls -l` が名前を出す、`chown` / `chgrp` が名前を受ける。`/etc/passwd`、`/etc/group`、`/etc/shadow` (600)。ハッシュは塩付き SHA-256 の繰り返し (`lib/mk_sha256.c`、`tools/mkusers.py` が同じ計算。繰り返しは 2 回: 6809 の 2 MHz で SHA-256 が 1 ブロック約 0.3 秒、ログインの待ちが約 1 秒)。実際の PM の `PM_GETUSER` は本当のユーザ (setuid の前) も返す。TTY: 生入力へ切り替える前に打った文字を失わない。`/tmp` (誰でも書ける、シェルのパイプ)。`mkdisk.py --owners`、`tools/mkusers.py` |
 | 2.0.0pre006 | 2.0.0pre001 | **root 専用の操作** (段階 2d): FS が時計の設定 (`FS_STIME`)、`mount`、`umount` を root だけに許す。`reboot`、`format`、`mount`、`umount`、`hd`、`runas` のファイルは root だけが実行できる (700)。`kill` (同じユーザか root)、`PM_SHUTDOWN` (root) は 2b から。ディスクサーバへの直接の要求は、まだ誰でも送れる (段階 4 のカーネルの送信先の表で、一般のプログラムからは送れなくする) |
 | 2.0.0pre007 | 2.0.0pre002 | **カーネルの MMU の操作を切り出した** (段階 3a、動きは変えない): `arch/m6809/mmu_fm11.inc` に `mmuinit`、`memprobe`、`xcopy`、`mmu_select`、`mmu_newmap` をまとめた。ページ数 `NPG` を定数にした。sbc09 の MMU 版は別のファイル (`mmu_coco.inc`) になる |
+| 2.0.0pre008 | 2.0.0pre003 | **sbc09 の MMU 版が起動する** (段階 3b): `make BOARD=sbc09 LEVEL=2` (`build-sbc09-l2`、2.0 だけ)。`memmap_sbc09_l2.mk`、`arch/m6809/mmu_coco.inc` (システムの表とユーザの表、窓はブロック 7)、`boot/bootrom_l2.s` (8KB の ROM イメージ。`sim09 -2 -rom`)、I/O の基準番地 `IOB` / `IO_BASE` (L2 は `$FF80`)。`sim09 -2` で、カーネル、TTY、DISK、FS、PM、MM が動き、FS がボリュームをマウントして PM の起動メッセージが出るところまで (プログラムの起動は 3c)。`tests/mk09_l2_test.py` |
 
 ## 17. MK09 の上の開発環境
 

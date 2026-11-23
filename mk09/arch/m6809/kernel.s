@@ -27,7 +27,11 @@ KDP	equ	K_DATA/256
 
 NTASK	equ	11
 	ifdef	MMU
+	ifdef	COCO
+NPG	equ	8			the blocks of a map (8KB each; the sbc09 machine with the MMU: two maps, the system one and the one of the user)
+	else
 NPG	equ	16			the pages of a map (4KB each)
+	endc
 TSZ	equ	59+NPG
 	else
 TSZ	equ	36
@@ -46,7 +50,12 @@ OP_NOTIFY equ	$FF
 NFY_EXIT equ	2
 NFY_RX	equ	$10
 NFY_DISK equ	$20
-DCTL	equ	$E049			the disk port: control / status of the asynchronous mode
+	ifdef	COCO
+IOB	equ	$FF80			the machine with the MMU (CoCo like, sim09 -2): the I/O registers are in the fixed page
+	else
+IOB	equ	$E000
+	endc
+DCTL	equ	IOB+$49		the disk port: control / status of the asynchronous mode
 TID_DISK equ	2
 
 TS_FREE	equ	0
@@ -96,12 +105,14 @@ T_FRM	equ	36
 T_RMSG	equ	48
 T_PEND	equ	58
 T_MAP	equ	59
+	ifndef	COCO
 FM_TASK	equ	$FD90			the map set in use (0-15)
 FM_MMR	equ	$FD80			its 16 registers: the physical page of the logical page 0-15
 FM_MCFG	equ	$FD93			bit 7 MMU on, bit 6 the window at $7C00-$7FFF, bit 0 boot ROM off
 FM_WIN1	equ	$FD91			the window: physical address bits 19-16
 FM_WIN2	equ	$FD92			and bits 15-8 (the window shows the address (FM_WIN2 * 256 + $7C00 + n))
 WINLOG	equ	$7C00
+	endc
 	endc
 M_SRC	equ	0
 M_B	equ	4
@@ -117,10 +128,10 @@ F_Y	equ	6
 F_U	equ	8
 F_PC	equ	10
 
-TIMER	equ	$E030
-ACIA	equ	$E000			the console: status / control, data at +1
+TIMER	equ	IOB+$30
+ACIA	equ	IOB			the console: status / control, data at +1
 RXQ	equ	128			the size of the ring of the console server (servers/tty.c, RX_RING)
-POWER	equ	$E00F
+POWER	equ	IOB+$0F
 * FM-11 (FM11=1): no ACIA / timer / disk port of the sbc09 board; the console input is the key code of the keyboard
 * ($FD00/$FD01, interrupt flag $FD03 bit 6), the tick is the timer 2 of the MC6840 PTM ($FD38-$FD3F), the console
 * output and the disk are done by the servers (bsp/fm11)
@@ -625,7 +636,11 @@ dispatch
 	lbsr	copymsg
 @r	rts
 
+	ifdef	COCO
+	include	mmu_coco.inc
+	else
 	include	mmu_fm11.inc
+	endc
 	endc
 
 * uok: D = address, X = length, Y = a task.  Carry clear if [D, D+X) is inside the task's region.

@@ -23,12 +23,17 @@ ifeq ($(BOARD),fm11)
 LEVEL  ?= 2
 endif
 # V2=1: the 2.0 line (docs/V2_PLAN.md, -DMK09_V2); on by default for the builds with an MMU (FM-11 Level 2), V2=0 gives the 1.x system
+# BOARD=sbc09 LEVEL=2: the sbc09 machine with the MMU (sim09 -2, the l2 mode of the FPGA; 2.0 only, docs/V2_PLAN.md stage 3); the default is the 64KB system
 ifeq ($(BOARD)$(LEVEL),fm112)
 V2     ?= 1
 endif
-B      ?= build$(if $(filter fm11,$(BOARD)),-fm11-l$(LEVEL)$(if $(filter 2hd,$(BOOTDEV)),-2hd))
+ifeq ($(BOARD)$(LEVEL),sbc092)
+V2     ?= 1
+COCO   := 1
+endif
+B      ?= build$(if $(filter fm11,$(BOARD)),-fm11-l$(LEVEL)$(if $(filter 2hd,$(BOOTDEV)),-2hd))$(if $(COCO),-sbc09-l2)
 BSPDIR := bsp/$(BOARD)
-MEMMAP := $(if $(filter fm11,$(BOARD)),$(if $(filter 2,$(LEVEL)),memmap_fm11_l2.mk,memmap_fm11.mk),memmap.mk)
+MEMMAP := $(if $(filter fm11,$(BOARD)),$(if $(filter 2,$(LEVEL)),memmap_fm11_l2.mk,memmap_fm11.mk),$(if $(COCO),memmap_sbc09_l2.mk,memmap.mk))
 SIM    ?= ../sim09
 
 CMOCLIB := $(shell dirname "$$(command -v $(CMOC) 2>/dev/null)" 2>/dev/null)/../share/cmoc/lib
@@ -46,6 +51,10 @@ CFLAGS  += -DFM11_MMU=1
 ASFLAGS += -DMMU=1
 endif
 endif
+ifdef COCO
+CFLAGS  += -DMMU_COCO=1
+ASFLAGS += -DMMU=1 -DCOCO=1
+endif
 # (2.0: case sensitive names, the image keeps the lower case names of the tree)
 KEEPCASE := $(if $(filter 1,$(V2)),--keep-case --owners $(B)/owners.txt)
 ifeq ($(V2),1)
@@ -59,7 +68,7 @@ vpath %.s arch/m6809 lib apps/basic servers
 # the memory of the programs, in pages of 256 bytes: Level 1: the transient area TPA_BASE .. TPA_END; Level 2: the user area of 13 pages of 4KB ($2000-$EFFF)
 # the address that the programs are linked at (they are relocatable: Level 2 loads every one at $2000 of its own address space)
 APPLINK = $(if $(filter 2,$(LEVEL)),2000,$(TPA_BASE))
-USERPAGES = $(if $(filter 2,$(LEVEL)),208,$(shell printf '%d' $$(( (0x$(TPA_END) - 0x$(TPA_BASE)) / 256 ))))
+USERPAGES = $(if $(COCO),192,$(if $(filter 2,$(LEVEL)),208,$(shell printf '%d' $$(( (0x$(TPA_END) - 0x$(TPA_BASE)) / 256 )))))
 # the addresses of the memory map (computed from the slot sizes in memmap.mk)
 -include $(B)/memmap.gen.mk
 HDRS := $(wildcard include/*.h arch/m6809/*.h $(BSPDIR)/*.h) $(B)/memmap.h $(B)/memmap.inc $(B)/sysnum.inc $(B)/version.inc
@@ -108,7 +117,7 @@ endif
 $(B)/%.o: %.s $(HDRS)
 	$(LWASM) $(ASFLAGS) -o $@ $<
 
-$(B)/bootrom.bin: boot/bootrom.s | $(B)
+$(B)/bootrom.bin: boot/$(if $(COCO),bootrom_l2.s,bootrom.s) | $(B)
 	$(LWASM) --format=raw -o $@ $<
 
 # FM-11: the boot ROM of the machine loads 512 bytes from the hard disk (cylinder 0, head 0, sectors 0 and 1) to $0400 and jumps there
@@ -337,7 +346,7 @@ $(B)/boot.img: $(foreach m,$(SYSMODS),$(B)/$(m).s19) tools/mkimage.py
 	$(PYTHON) tools/mkimage.py -o $@ -e 0x$(if $(KERNEL_START),$(KERNEL_START),$(K_CODE)) $(foreach m,$(SYSMODS),$(B)/$(m).s19)
 
 run: all
-	$(SIM) -rom $(B)/bootrom.bin -0 $(B)/mk09.img
+	$(SIM) $(if $(COCO),-2) -rom $(B)/bootrom.bin -0 $(B)/mk09.img
 
 # the same system for a console in EUC-JP and in Shift_JIS (jwp and its dictionary depend on the character set)
 charsets:
