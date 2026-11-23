@@ -41,6 +41,11 @@ ROMBIN  = ../build/disktest.bin
 ROMBASE = 64512
 ROMAW   = 10
 FREERUN = 0
+else ifeq ($(ROM),acia1test)
+ROMBIN  = ../build/acia1test.bin
+ROMBASE = 64512
+ROMAW   = 10
+FREERUN = 0
 else ifeq ($(ROM),v09)
 ROMBIN  = $(ROOT)/os9/v09.rom
 ROMBASE = 32768

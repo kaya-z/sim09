@@ -20,6 +20,8 @@ module tn9k_top (
     input  wire        sys_resetn,              // S1
     input  wire        uart_rx,
     output wire        uart_tx,
+    input  wire        uart1_rx,             // the second UART (the second ACIA at $E004/05): the second terminal of MK09 2.0, 3.3 V logic levels
+    output wire        uart1_tx,
     output wire [5:0]  led,
     output wire        sd_clk,
     output wire        sd_mosi,
@@ -104,7 +106,7 @@ module tn9k_top (
         .RTC_YEAR(`RTC_YEAR), .RTC_MONTH(`RTC_MONTH), .RTC_DAY(`RTC_DAY),
         .RTC_HOUR(`RTC_HOUR), .RTC_MIN(`RTC_MIN), .RTC_SEC(`RTC_SEC), .KANJI(`KANJI_LOAD)
     ) soc (
-        .clk(clk), .resetn(resetn), .rxd(uart_rx), .txd(uart_tx_soc),
+        .clk(clk), .resetn(resetn), .rxd(uart_rx), .txd(uart_tx_soc), .rxd1(uart1_rx), .txd1(uart1_tx),
         .sd_clk(sd_clk), .sd_mosi(sd_mosi), .sd_miso(sd_miso), .sd_cs(sd_cs),
         .ps_rd(ps_rd), .ps_wr(ps_wr), .ps_addr(ps_addr), .ps_din(ps_din), .ps_bw(ps_bw),
         .ps_dout(ps_dout), .ps_busy(ps_busy),

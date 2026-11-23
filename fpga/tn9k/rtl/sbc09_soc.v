@@ -8,6 +8,7 @@
 //             cleared (byte by byte) after every reset, like the memory of the simulator
 //   ROM       a read-only image in block RAM, from ROM_BASE up to $FFFF, over the RAM
 //   $E000/01  console ACIA on the UART (acia_uart.v); its interrupt request is on the IRQ line (with the timer)
+//   $E004/05  the second ACIA on a second UART (rxd1 / txd1): the second terminal of MK09 2.0 (the same offsets at $FF84/85 in the Level 2 mode)
 //   $E00F     power control: $A5 stops the machine (until the reset button), $A6 restarts the whole board (reboot)
 //   $E030-36  timer and clock (timer_rtc.v)
 //   $E040-47  disk port on the microSD card (sd_disk.v)
@@ -55,6 +56,8 @@ module sbc09_soc #(
     input  wire        resetn,
     input  wire        rxd,
     output wire        txd,
+    input  wire        rxd1,                // the second UART (the second ACIA at $E004/05)
+    output wire        txd1,
     output wire        sd_clk,
     output wire        sd_mosi,
     input  wire        sd_miso,
@@ -126,12 +129,13 @@ module sbc09_soc #(
     reg         nreset_cpu;
     wire        timer_irq;
     wire        acia_irq;               // the console ACIA (the guests use its receive interrupt; OS-9 the transmit interrupt too)
+    wire        acia1_irq;              // the second ACIA
     wire        disk_irq;               // an asynchronous disk command has finished (and the guest asked for the interrupt)
 
     mc6809i #(.ILLEGAL_INSTRUCTIONS("GHOST")) cpu (
         .D(cpu_d_in), .DOut(cpu_d_out), .ADDR(cpu_a), .RnW(cpu_rnw),
         .E(e), .Q(q), .BS(cpu_bs), .BA(cpu_ba),
-        .nIRQ(FREERUN ? ~(acia_irq | disk_irq) : ~(timer_irq | acia_irq | disk_irq)), .nFIRQ(FREERUN ? ~timer_irq : 1'b1), .nNMI(1'b1),
+        .nIRQ(FREERUN ? ~(acia_irq | acia1_irq | disk_irq) : ~(timer_irq | acia_irq | acia1_irq | disk_irq)), .nFIRQ(FREERUN ? ~timer_irq : 1'b1), .nNMI(1'b1),
         .AVMA(cpu_avma), .BUSY(), .LIC(cpu_lic),
         .nHALT(1'b1), .nRESET(nreset_cpu), .nDMABREQ(1'b1),
         .RegData(dbg_regs)
@@ -174,6 +178,8 @@ module sbc09_soc #(
     reg       pwroff;
     reg       osrun;                // the boot ROM wrote $A4 to the power register: the OS has been started (LED4)
     reg       acia_pend;            // a character for a busy transmitter: the CPU waits
+    reg       acia1_pend;           // the same for the second ACIA
+    wire      acia1_tx_full;
     // The byte read from the PSRAM lands in rd_reg on the clock where mem_pend falls.  The core takes its
     // inputs when E falls, so the stall is held for six more clocks (89 ns): the data has to run through the ALU
     // (the carry chain, 49 ns in the timing report) of the core before that (on the board this was a wrong result of ADDB with an operand
@@ -182,7 +188,7 @@ module sbc09_soc #(
     // (a disk command holds the CPU, unless the guest asked for the asynchronous mode: then the CPU goes on and the disk transfers with the PSRAM master 3)
     wire      disk_hold = disk_busy & ~d_arun;
     always @(posedge clk) settle <= {settle[4:0], mem_pend | disk_hold};
-    wire      stall = mem_pend | disk_hold | pwroff | acia_pend | (|settle);
+    wire      stall = mem_pend | disk_hold | pwroff | acia_pend | acia1_pend | (|settle);
 
     always @(posedge clk) begin
         ecyc   <= 1'b0;
@@ -342,7 +348,7 @@ module sbc09_soc #(
     // Level 1: the registers are at $E000 (the page $E000-$E1FF); Level 2: at $FF80 (the same offsets), in the fixed page.
     wire        in_io  = l2 ? (a[15:7] == 9'h1ff) : (a[15:9] == 7'b1110000);
     wire [8:0]  off    = l2 ? {2'b00, a[6:0]} : a[8:0];
-    reg io_acia, io_power, io_timer, io_disk, io_dctl, io_hit, io_quiet, rom_sel, io_mmu, io_map, io_ta, io_modr;
+    reg io_acia, io_acia1, io_power, io_timer, io_disk, io_dctl, io_hit, io_quiet, rom_sel, io_mmu, io_map, io_ta, io_modr;
     // Level 2: the registers of the clock are in the fixed page, and the OS reads the time with F$Move, i.e. through another
     // window of the same physical page ($7FFB1-B6).  In the simulator the registers live in that RAM; here a read of that
     // physical address gives the registers of the clock too.  (pa is declared below: it is the physical address of a.)
@@ -353,15 +359,16 @@ module sbc09_soc #(
         io_ta    <= ta;
         io_modr  <= in_io && off == 9'h00e;                        // the mode register
         io_acia  <= in_io && off[8:1] == 8'd0;                   // $E000, $E001
+        io_acia1 <= in_io && off[8:1] == 8'd2;                   // $E004, $E005: the second ACIA
         io_power <= in_io && off == 9'h00f;
         io_timer <= in_io && off >= 9'h030 && off <= 9'h036;
         io_disk  <= in_io && off >= 9'h040 && off <= 9'h047;
         io_dctl  <= in_io && off == 9'h049;                      // the control / status of the asynchronous mode of the disk
         io_mmu   <= l2 && in_io && off == 9'h011;            // the task register
         io_map   <= l2 && in_io && off >= 9'h020 && off <= 9'h02f;   // the system map, the user map
-        io_hit   <= (in_io && ((off[8:1] == 8'd0) || off == 9'h00f || off == 9'h00e || (off >= 9'h030 && off <= 9'h036) || (off >= 9'h040 && off <= 9'h049)
+        io_hit   <= (in_io && ((off[8:1] == 8'd0) || (off[8:1] == 8'd2) || off == 9'h00f || off == 9'h00e || (off >= 9'h030 && off <= 9'h036) || (off >= 9'h040 && off <= 9'h049)
                               || (l2 && (off == 9'h011 || (off >= 9'h020 && off <= 9'h02f))))) || ta;
-        io_quiet <= !l2 && in_io && off < 9'h080 && !((off[8:1] == 8'd0) || off == 9'h00f || off == 9'h00e || (off >= 9'h030 && off <= 9'h036) || (off >= 9'h040 && off <= 9'h049));
+        io_quiet <= !l2 && in_io && off < 9'h080 && !((off[8:1] == 8'd0) || (off[8:1] == 8'd2) || off == 9'h00f || off == 9'h00e || (off >= 9'h030 && off <= 9'h036) || (off >= 9'h040 && off <= 9'h049));
         rom_sel  <= !l2 && (a >= ROM_BASE);
     end
 
@@ -386,6 +393,13 @@ module sbc09_soc #(
     wire [7:0] timer_rdata;
     reg        acia_rd;                 // a clock after the read: rd_reg has taken the character by then
     always @(posedge clk) acia_rd <= acc2 && vma_pend && cpu_rnw && io_acia && off[0];
+    wire [7:0] acia1_status, acia1_rdata;
+    reg        acia1_rd;
+    always @(posedge clk) acia1_rd <= acc2 && vma_pend && cpu_rnw && io_acia1 && off[0];
+    reg  [7:0] acia1_byte;
+    reg        acia1_cwr;
+    reg  [7:0] acia1_cbyte;
+    wire       acia1_wr = acia1_pend && !acia1_tx_full;
     reg        disk_rd;                 // a clock after the read of $E040, the result of the disk command
     always @(posedge clk) disk_rd <= acc2 && vma_pend && cpu_rnw && io_disk && off[2:0] == 3'd0;
     reg  [7:0] acia_byte;
@@ -402,6 +416,13 @@ module sbc09_soc #(
         .rd_data(acia_rd), .wr_data(acia_wr | st_wr), .wdata(st_wr ? st_byte : acia_byte),
         .wr_ctl(acia_cwr), .cdata(acia_cbyte),
         .tx_full(acia_tx_full), .status(acia_status), .rdata(acia_rdata), .irq(acia_irq)
+    );
+
+    acia_uart #(.BAUD_DIV(BAUD_DIV)) acia1 (                  // the second ACIA: a UART of its own, no screen
+        .clk(clk), .rst(rst), .rxd(rxd1), .txd(txd1),
+        .rd_data(acia1_rd), .wr_data(acia1_wr), .wdata(acia1_byte),
+        .wr_ctl(acia1_cwr), .cdata(acia1_cbyte),
+        .tx_full(acia1_tx_full), .status(acia1_status), .rdata(acia1_rdata), .irq(acia1_irq)
     );
 
     reg rt_ecyc = 1'b0;
@@ -444,6 +465,7 @@ module sbc09_soc #(
     always @(*) begin
         io_rdata = 8'h00;
         if (io_acia)       io_rdata = off[0] ? acia_rdata : acia_status;
+        else if (io_acia1) io_rdata = off[0] ? acia1_rdata : acia1_status;
         else if (io_timer || io_ta) io_rdata = timer_rdata;
         else if (io_mmu)   io_rdata = tr_raw;
         else if (io_map)   io_rdata = off[3] ? map_u[off[2:0]] : map_s[off[2:0]];
@@ -472,6 +494,7 @@ module sbc09_soc #(
     always @(posedge clk) begin
         dgo  <= 1'b0;
         acia_cwr <= 1'b0;
+        acia1_cwr <= 1'b0;
         go_req <= 1'b0;
         reboot_req <= 1'b0;
         c_rd <= 1'b0;
@@ -480,7 +503,7 @@ module sbc09_soc #(
         if (disk_busy_d && !disk_busy) begin e040 <= disk_result; if (d_arun) d_done <= 1'b1; end
         if (disk_rd) d_done <= 1'b0;                                    // the guest has read the result
         if (rst) begin
-            mem_pend <= 1'b0; mp_wait <= 1'b0; vma_pend <= 1'b1; pwroff <= 1'b0; osrun <= 1'b0; acia_pend <= 1'b0;
+            mem_pend <= 1'b0; mp_wait <= 1'b0; vma_pend <= 1'b1; pwroff <= 1'b0; osrun <= 1'b0; acia_pend <= 1'b0; acia1_pend <= 1'b0;
             for (mk = 0; mk < 8; mk = mk + 1) begin map_s[mk] <= 8'hff; map_u[mk] <= 8'hff; end
             map_s[7] <= 8'h3f; tr <= 1'b0; tr_raw <= 8'hff; l2 <= 1'b0;
             rd_reg <= 8'h00; e040 <= 8'h00; d_drive <= 0; d_lsn2 <= 0; d_lsn1 <= 0; d_lsn0 <= 0;
@@ -500,6 +523,7 @@ module sbc09_soc #(
                             if (io_power && cpu_d_out == 8'ha6) reboot_req <= 1'b1;                                   // reboot: the whole board starts again
                             if (io_modr) begin
                                 acia_cwr <= 1'b1; acia_cbyte <= 8'h03;       // a new machine mode: the ACIA interrupts are off
+                                acia1_cwr <= 1'b1; acia1_cbyte <= 8'h03;
                                 d_async <= 1'b0; d_ien <= 1'b0;               // ... and the disk is synchronous
                                 if (cpu_d_out == 8'ha2 && !l2) begin           // to the Level 2 mode: the identity map for the blocks 0-6
                                     l2 <= 1'b1; tr <= 1'b0; tr_raw <= 8'hff;
@@ -518,6 +542,14 @@ module sbc09_soc #(
                             if (io_acia && off[0]) begin
                                 acia_pend <= 1'b1;                  // the guest does not look at TDRE: wait for it here
                                 acia_byte <= cpu_d_out;
+                            end
+                            if (io_acia1 && off[0]) begin
+                                acia1_pend <= 1'b1;
+                                acia1_byte <= cpu_d_out;
+                            end
+                            if (io_acia1 && !off[0]) begin
+                                acia1_cwr <= 1'b1;
+                                acia1_cbyte <= cpu_d_out;
                             end
                             if (io_acia && !off[0]) begin
                                 acia_cwr <= 1'b1;                   // the control register: interrupt enables, master reset
@@ -560,6 +592,7 @@ module sbc09_soc #(
                     default: d_47 <= c_wdata;
                 endcase
             if (acia_wr) acia_pend <= 1'b0;
+            if (acia1_wr) acia1_pend <= 1'b0;
             if (mem_pend) begin
                 if (mp_wait) mp_wait <= 1'b0;                          // the request is on its way
                 else if (!ps_busy_m) begin

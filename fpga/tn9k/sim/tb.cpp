@@ -330,7 +330,7 @@ int main(int argc, char **argv)
     Uart u;
     size_t step = 0; size_t scan = 0; long waituntil = -1;
     int rc = 0; bool powered_off = false; long off_clk = -1;
-    top->resetn = 0; top->rxd = 1; top->sd_miso = 1; top->fl_miso = 1; top->clk = 0;
+    top->resetn = 0; top->rxd = 1; top->rxd1 = 1; top->sd_miso = 1; top->fl_miso = 1; top->clk = 0;
     for (int i = 0; i < 8; i++) { top->clk = 0; top->eval(); top->clk = 1; top->eval(); }
     top->resetn = 1;
     long clk = 0;
@@ -375,6 +375,7 @@ int main(int argc, char **argv)
         top->sd_miso = sd.step(top->sd_clk, top->sd_cs, top->sd_mosi);
         u.rx(top->txd, !quiet);
         u.tx(); top->rxd = u.line;
+        top->rxd1 = top->txd1;                          // the second UART is wired to itself (a loop back: scripts/acia1test.s)
         if (!(top->led & 0x20)) {                       // power off: the UART goes on for a while, it holds up to 16 characters
             if (off_clk < 0) { off_clk = clk; fprintf(stderr, "\n[power off at clk %ld, led %02x]\n", clk, (~top->led) & 0x3f); }
             if (clk >= off_clk + 200000) { rc = 0; powered_off = true; break; }

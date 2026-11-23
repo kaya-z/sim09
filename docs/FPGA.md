@@ -69,6 +69,17 @@ sudo dd if=os9/WORK.dsk of=/dev/sdX bs=512 seek=262144 conv=fsync
 ただし FUZIX は `shutdown` で止めてください (ファイルシステムを閉じてから `Halted.` を出し、電源制御レジスタ `$E00F` に
 `$A5` を書くと LED5 が点いて CPU が止まります)。
 
+## 2 つ目の ACIA (MK09 2.0 の 2 つ目の端末)
+
+`$E004/$E005` (Level 2 のモードでは `$FF84/$FF85`) に、**2 つ目の ACIA と UART** があります。シミュレータの 2 つ目以降の ACIA (`-net 1=...`) と同じ番地です。
+
+* 1 つ目と同じ `acia_uart.v` (6850 風、8N1 の 115200、受信 FIFO 256 文字、送信 FIFO 15 文字、状態の bit7 = 割り込み要求) を 1 つ増やしたものです。割り込み要求は IRQ 線に束ねます。HDMI の画面には出ません (出力は UART の端子だけ)。
+* 端子: `uart1_tx` = ピン 32、`uart1_rx` = ピン 31 (3.3V のロジック。USB シリアルのアダプタをつなぐ)。`constraints/tn9k.cst` (全ビルド共通) にあります。**ピン 31 と 32 は、どの変種 (HDMI、LCD、SPI LCD) も使っていないピンです。最初の試験の前に、ボードの回路図で確かめてください。**
+* 使うのは MK09 2.0 (`/etc/ttys` に `1` と書く) だけです。OS-9 と FUZIX は使いません (書き込まないので割り込みも出ません)。
+* **Verilator の確認**: `cd fpga/tn9k/sim && make ROM=acia1test && build/acia1test/obj/Vsim_top -s acia1_test.txt` (`scripts/acia1test.s`: 2 つ目の UART の TX と RX をテストベンチで結び、16 バイトを送って読み戻し、制御レジスタ `$95` で割り込み要求 (bit7) が立ち、マスタリセット `$03` で下がることを確かめる。`ACIA1 PASS 0` と出る)。FUZIX の起動 (`make run`) も通ります。
+* **Gowin の合成と配置配線** (`HDMI=1 fpga/tn9k/scripts/build.sh fuzix`、2026-11-23): ピン 31 (`uart1_rx`) と 32 (`uart1_tx`) は、ツールが受け付けた (バンク 2、IOB15[A]/[B]、LVCMOS33)。タイミングは通る (`clk81` の制約 67.5 MHz に対して Fmax 68.19 MHz、最悪のスラック +0.150 ns)。資源は Logic 8076/8640 (94%)、BSRAM 17/26 (66%)。
+* **実機の確認は未実施です** (Tang Nano 9K と USB シリアルのアダプタ、ピンが header に出ているかの確認が要ります)。
+
 ## OS-9 Level 2 (MMU、2MB): 同じビットストリーム
 
 **`fuzix` のビットストリームのまま、OS-9 Level 2 が動きます** (2026-10-16)。シミュレータの `sim09 -2` (CoCo 3 風の機械) を、FPGA の**もう 1 つのモード**として持っています。

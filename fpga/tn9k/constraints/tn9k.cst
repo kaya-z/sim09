@@ -12,6 +12,13 @@ IO_PORT "uart_tx" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
 IO_LOC "uart_rx" 18;
 IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 
+// the second UART (the second ACIA at $E004/05, the second terminal of MK09 2.0): two pins of the header, 3.3 V logic levels (a USB serial adapter)
+// NOTE: the pins 31 and 32 are not used by any of the variants (HDMI, LCD, SPI LCD); confirm them against the schematic of the board before the first test
+IO_LOC "uart1_tx" 32;
+IO_PORT "uart1_tx" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_LOC "uart1_rx" 31;
+IO_PORT "uart1_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+
 // LEDs (low = on)
 IO_LOC "led[5]" 16;
 IO_PORT "led[5]" PULL_MODE=UP DRIVE=8;
