@@ -527,6 +527,7 @@ static void size_put(u8 *ent, u16 cl, u16 off)
 #ifdef MK09_V2
 /* ---- owner, group, permissions (docs/V2_PLAN.md, 2a): bytes 20 = owner, 21 = group + 1 (0: no MK09 information: root, rwxr-xr-x), 14-15 = permissions ---- */
 u8 fs_uid, fs_gid;
+u16 fs_setuid;                      /* set by fs_fstat: 0, or 0x100 | the owner when the file has the setuid bit */
 #define MODE_DEF    0x1ED           /* rwxr-xr-x */
 #define MODE_FILE   0x1A4           /* rw-r--r-- */
 /* is the user of the request allowed 'want' (4 read, 2 write, 1 search / execute) by (owner, group + 1, mode)?  root may do all but execute a file with no x bit */
@@ -815,7 +816,7 @@ u8 fs_open(const char *path, u8 flags, u8 owner, u8 *h)
         wr16(e + 16, rd16(e + 24));
         wr16(e + 18, rd16(e + 24));
 #ifdef MK09_V2
-        set_owner(e, flags & FO_EXEC);
+        set_owner(e, (flags & FO_EXEC) || (e[8] == 'm' && e[9] == 'x' && e[10] == ' '));      /* (a new .mx file can be run: cp, as, ...) */
 #endif
         st = dir_add(r.dcl, e, &f->loc);
         if (st) return st;
@@ -1035,10 +1036,23 @@ u8 fs_fstat(u8 h, u8 *attr, u16 *shi, u16 *slo)
     fs_select(DRVOF(f));
     *attr = FA_ARCHIVE;
     *shi = *slo = 0;
+#ifdef MK09_V2
+    fs_setuid = 0;
+#endif
     if (f->used == 2) {
         *attr = FA_DIR;
     } else {
         pos_join(f->scl, f->soff, shi, slo);
+#ifdef MK09_V2
+        {                                           /* a file with the setuid bit: fs_setuid = 0x100 | the owner */
+            cbuf_t *b = blk_get(f->loc.ca, f->loc.cb, 0);
+            u8 *e;
+            if (b) {
+                e = b->data + ((u16)f->loc.idx << 5);
+                if (e[21] && (rd16(e + 14) & MODE_SETUID)) fs_setuid = 0x100 | e[20];
+            }
+        }
+#endif
     }
     return E_OK;
 }
@@ -1350,7 +1364,7 @@ u8 fs_chmod(const char *path, u16 mode)
     if (r.isdirobj) return E_INVAL;
     if (!r.found) return E_NOENT;
     if (fs_uid != 0 && (r.ent[21] == 0 || fs_uid != r.ent[20])) return E_PERM;      /* the owner or root */
-    return ent_set(&r, 2, 0, 0, mode & 0x1FF);
+    return ent_set(&r, 2, 0, 0, mode & 0x3FF);
 }
 
 u8 fs_chuser(const char *path, u16 uid, u16 gid)

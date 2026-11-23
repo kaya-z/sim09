@@ -128,6 +128,9 @@ int main(void)
             break;
         case FS_FSTAT:
             r.op = fs_fstat((u8)m.a, &attr, &shi, &slo);
+#ifdef MK09_V2
+            r.d = fs_setuid;
+#endif
             r.a = attr;
             r.b = slo;
             r.c = shi;

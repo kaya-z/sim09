@@ -46,6 +46,14 @@ for L in $LEVELS; do
         run $HD -h0 0x7F 7000 "cp etc/rc.sh Aa.txt|cp etc/rc.sh aA.txt|ls|"
         check "Aa.txt" "L2 names: Aa.txt is made"
         check "aA.txt" "L2 names: aA.txt is a different file"
+        # 2.0: users (PM keeps the user of every task, FS checks the permissions): root, then user 100 group 10 through runas
+        run $HD -h0 0x7F 9000 "id|mkdir /pub|chmod 700 /pub|runas 100 10 id|runas 100 10 ls /pub|ls /pub|"
+        check "uid=0 gid=0" "L2 users: the shell is root"
+        check "uid=100 gid=10" "L2 users: runas changes the user of the program"
+        check "not allowed" "L2 users: user 100 cannot read the directory of root (700)"
+        run $HD -h0 0x7F 9000 "chmod 4755 /bin/id.mx|runas 100 10 id|chmod 700 /bin/id.mx|runas 100 10 id|"
+        check "uid=0 gid=10" "L2 users: a setuid root file runs as root"
+        check "runas: error 1" "L2 users: a file of root with 700 cannot be run by another user (E_PERM, said by the shell)"
     fi
     run $HD -h0 0x7F 7000 "basic|PRINT 6*7|"
     check " 42" "L$L basic runs"

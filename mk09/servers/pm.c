@@ -104,6 +104,12 @@ static void mm_free4(u8 *list, u8 n)
 
 static msg_t rm;                        /* the answer of the last call to FS */
 
+#ifdef MK09_V2
+static u8 t_uid[NTASK], t_gid[NTASK];   /* the user of each task */
+static u8 cur_uid, cur_gid;             /* the user of the program that is being started */
+static u8 sh_uid, sh_gid;               /* the user of the shell (kept when the shell is started again) */
+#endif
+
 static u8 fsc(u8 op, u16 a, u16 b)      /* FS request without a buffer */
 {
     u8 st;
@@ -114,6 +120,18 @@ static u8 fsc(u8 op, u16 a, u16 b)      /* FS request without a buffer */
     if (st) return st;
     return rm.op;
 }
+
+#ifdef MK09_V2
+static void fs_user(u8 tid, u8 u, u8 g)  /* tell FS the user of a task */
+{
+    msg_t m;
+    m.op = FS_SETUSER;
+    m.a = tid;
+    m.b = u;
+    m.c = g;
+    mk_call(TID_FS, &m);
+}
+#endif
 
 static u8 fs_rd(u8 h, void *buf, u16 n)  /* FS_READ into buf */
 {
@@ -175,17 +193,30 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
     u8 n4, pl[13];
 #endif
 
+#ifdef MK09_V2
+    fs_user(TID_PM, cur_uid, cur_gid);              /* FS checks r and x for the user who starts the program */
+#endif
     rm.op = FS_OPEN;                                /* (the path is in the start-up block) */
-    rm.a = FO_READ;
+    rm.a = FO_READ
+#ifdef MK09_V2
+        | FO_EXEC
+#endif
+        ;
     rm.b = (u16)(sb + SB_ARGS);
     rm.c = (u16)strlen((char *)sb + SB_ARGS) + 1;
     st = mk_callg(TID_FS, &rm, GR_READ);
     if (!st) st = rm.op;
+#ifdef MK09_V2
+    fs_user(TID_PM, 0, 0);
+#endif
     if (st) return st;
     h = (u8)rm.a;
     hin = sb[SB_IN];
     hout = sb[SB_OUT];
     st = fsc(FS_FSTAT, h, 0);
+#ifdef MK09_V2
+    if (!st && rm.d >= 0x100) cur_uid = (u8)rm.d;      /* a file with the setuid bit runs as its owner */
+#endif
     size = rm.b;
     if (!st && rm.c) st = E_FORMAT;
     if (!st) st = fs_rd(h, hdr, HDRSIZE);
@@ -265,6 +296,11 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
         if (!st && rm.a != size - HDRSIZE) st = E_FORMAT;
     }
     if (st) goto out;
+#ifdef MK09_V2
+    t_uid[tid] = cur_uid;
+    t_gid[tid] = cur_gid;
+    fs_user(tid, cur_uid, cur_gid);
+#endif
     if (hin != NOH) fsc(FS_CHOWN, hin, tid);
     if (hout != NOH) fsc(FS_CHOWN, hout, tid);
     st = mk_tstart(tid);
@@ -308,6 +344,10 @@ static void start_shell(void)
         sb[SB_ARGC] = 2;
         strcpy((char *)sb + SB_ARGS + 11, "-r");
     }
+#ifdef MK09_V2
+    cur_uid = sh_uid;
+    cur_gid = sh_gid;
+#endif
     st = start_program(0, 1, &tid);
     if (st) {
         say(PN_NO_SH);
@@ -332,6 +372,10 @@ static void collect(void)
         w = waiter[t];
         waiter[t] = 0;
         if (t == shell_tid) {
+#ifdef MK09_V2
+            sh_uid = t_uid[t];
+            sh_gid = t_gid[t];
+#endif
             shell_tid = 0;
         } else {
             if (nproc) nproc--;
@@ -364,6 +408,10 @@ static void do_spawn(msg_t *m, u8 bg)
     for (i = SB_ARGS; i < SB_ARGS + n; i++)                     /* count the arguments */
         if (sb[i] == 0 && sb[i + 1] != 0) sb[SB_ARGC]++;
     sb[SB_ARGC]++;
+#ifdef MK09_V2
+    cur_uid = t_uid[m->src];                                    /* the new program is run by the user who asks (PM_EXEC: the task that is replaced) */
+    cur_gid = t_gid[m->src];
+#endif
     if (bg == 2) {
         w = waiter[w];
         if (sb[SB_IN] != NOH) fsc(FS_CHOWN, sb[SB_IN], TID_PM);     /* (the files of the redirection must not be closed with the old program) */
@@ -388,7 +436,11 @@ static void do_kill(msg_t *m)
     u8 t = (u8)m->a, st = E_NOTASK;
     if (m->a < NTASK && t >= TID_USER0 && regn[t]) {
         st = E_PERM;
+#ifdef MK09_V2
+        if (t != shell_tid && (t_uid[m->src] == 0 || t_uid[m->src] == t_uid[t])) { mk_tkill(t, 143); st = E_OK; }   /* the same user, or root */
+#else
         if (t != shell_tid) { mk_tkill(t, 143); st = E_OK; }
+#endif
     }
     reply(m->src, st, 0);
 }
@@ -428,7 +480,26 @@ int main(void)
             m.d = nproc;
             mk_reply(c, &m);
             break;
+#ifdef MK09_V2
+        case PM_SETUSER:                                /* root changes the user of the task that asks */
+            if (m.src >= NTASK || t_uid[m.src] != 0) { reply(m.src, E_PERM, 0); break; }
+            t_uid[m.src] = (u8)m.a;
+            t_gid[m.src] = (u8)m.b;
+            fs_user(m.src, (u8)m.a, (u8)m.b);
+            reply(m.src, E_OK, 0);
+            break;
+        case PM_GETUSER:
+            c = m.src;
+            m.a = t_uid[c];
+            m.b = t_gid[c];
+            m.op = E_OK;
+            mk_reply(c, &m);
+            break;
+#endif
         case PM_SHUTDOWN:
+#ifdef MK09_V2
+            if (t_uid[m.src] != 0) { reply(m.src, E_PERM, 0); break; }      /* only root stops the machine */
+#endif
             fsc(FS_SYNC, 0, 0);
             say("CPU halted.\r\n");
             mk_power();

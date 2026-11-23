@@ -141,7 +141,7 @@ MAPOVER := K_CSZ=1060 K_DSZ=02F0 HIGH=PM
 endif
 # the 2.0 version strings are longer: the code slot of PM gets 16 bytes more (V2 builds only)
 ifeq ($(V2),1)
-MAPOVER += PM_CSZ=0C00 FS_CSZ=3500 FS_DSZ=0940
+MAPOVER += PM_CSZ=0E00 PM_DSZ=0280 FS_CSZ=3500 FS_DSZ=0940
 endif
 ifeq ($(KERNEL),asm)
 KERNEL_OBJS := $(B)/kernel_asm.o
@@ -208,6 +208,10 @@ endif
 ifeq ($(BOOTDEV),2hd)
 APPS      := sh as cpp cc1 cg cc pas0 pas1 pmsg pc ls cat echo stty cp mv rm mkdir date df ps hd wc more grep kill mem reboot basic time dhry format mount umount
 SKKJISYO  :=
+endif
+# 2.0: the programs of the users and the permissions (V2 builds only)
+ifeq ($(V2),1)
+APPS      += id chmod chown runas
 endif
 STACK_sh  := 640
 STACK_jwp := 1200

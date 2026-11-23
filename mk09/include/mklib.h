@@ -59,6 +59,12 @@ int  tty_flush(void);
 int  spawn(const char *block, u16 len, u16 in_h, u16 out_h);  /* "prog\0arg\0...\0\0"; returns the exit code */
 int  spawn_bg(const char *block, u16 len, u16 in_h, u16 out_h);  /* the same, but returns the task id at once */
 int  exec(const char *block, u16 len);                        /* this program is replaced by the one in block (does not return unless it fails) */
+#ifdef MK09_V2
+int  getuser(u8 *uid, u8 *gid);                                 /* 2.0: the user and the group of this program */
+int  setuser(u8 uid, u8 gid);                                   /* change the user of this program (root only) */
+int  chmod(const char *path, u16 mode);                         /* the permissions (9 bits + 01000 setuid); the owner or root */
+int  chown(const char *path, u16 uid, u16 gid);                 /* the owner and the group (0xFFFF: not changed); root only */
+#endif
 int  kill(u8 tid);                                            /* stop a program started by PM (not the shell) */
 int  meminfo(u16 *total, u16 *freep, u16 *largest, u16 *procs);  /* pages of 256 bytes; programs running */
 int  gettime(u16 *date, u16 *time);                           /* FAT format */
