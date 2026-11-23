@@ -114,6 +114,8 @@ class Screen:
         return [self.line(r) for r in range(self.rows)]
 
 
+# MK09_L2=1 (with MK09_BUILD=build-sbc09-l2): the 2.0 system on the machine with the MMU: sim09 -2, the login first, case sensitive names, the users of tools/mkusers.py
+L2 = bool(os.environ.get('MK09_L2'))
 BUILDS = {'utf8': os.path.join(MK, os.environ.get('MK09_BUILD', 'build')), 'euc': os.path.join(MK, 'build_euc'), 'sjis': os.path.join(MK, 'build_sjis')}
 MKDISK = os.path.join(MK, 'tools', 'mkdisk.py')
 
@@ -127,7 +129,7 @@ def _charsets():
     return [(k, c) for k, c in (('euc', 'euc_jp'), ('sjis', 'cp932')) if os.path.exists(os.path.join(BUILDS[k], 'tree', 'bin', 'jwp.mx'))]
 
 
-CHARSETS = _charsets()
+CHARSETS = [] if L2 else _charsets()      # (the EUC and Shift_JIS builds are 1.x builds)
 if not CHARSETS:
     print('SKIP the EUC-JP / Shift_JIS runs (make charsets builds them)')
 
@@ -143,15 +145,19 @@ class Session:
         os.makedirs(os.path.join(tree, 'bin'))
         os.makedirs(os.path.join(tree, 'etc'))
         for f in os.listdir(os.path.join(build, 'tree', 'bin')):
-            if f in ('sh.mx', 'ls.mx', 'cat.mx', 'jwp.mx', 'echo.mx'):
+            if f in ('sh.mx', 'ls.mx', 'cat.mx', 'jwp.mx', 'echo.mx') or (L2 and f == 'login.mx'):
                 shutil.copy(os.path.join(build, 'tree', 'bin', f), os.path.join(tree, 'bin', f))
         shutil.copy(os.path.join(build, 'tree', 'etc', 'rc.sh'), os.path.join(tree, 'etc', 'rc.sh'))
         for name, data in (files or {}).items():
             with open(os.path.join(tree, name), 'wb') as f:
                 f.write(data if isinstance(data, bytes) else data.encode('utf-8'))
         self.img = os.path.join(self.dir, 'disk.img')
+        l2opts = []
+        if L2:
+            subprocess.run([sys.executable, '-X', 'utf8', os.path.join(MK, 'tools', 'mkusers.py'), tree, os.path.join(self.dir, 'owners.txt')], check=True)
+            l2opts = ['--keep-case', '--owners', os.path.join(self.dir, 'owners.txt')]
         subprocess.run([sys.executable, '-X', 'utf8', MKDISK, '-o', self.img, '--boot', os.path.join(build, 'boot.img'),
-                        '--size-mb', '16' if any(len(v) > 1000000 for v in (files or {}).values()) else '4', '--spc', '4' if any(len(v) > 1000000 for v in (files or {}).values()) else '1', tree], check=True, stdout=subprocess.DEVNULL)
+                        '--size-mb', '16' if any(len(v) > 1000000 for v in (files or {}).values()) else '4', '--spc', '4' if any(len(v) > 1000000 for v in (files or {}).values()) else '1'] + l2opts + [tree], check=True, stdout=subprocess.DEVNULL)
         self.rom = os.path.join(build, 'bootrom.bin')
         self.args = args
 
@@ -160,7 +166,10 @@ class Session:
         tail: extra script lines appended after jwp ended."""
         script = os.path.join(self.dir, 'script.txt')
         with open(script, 'w', encoding='utf-8') as f:
-            f.write('timeout 60000\nexpect "> "\n')
+            f.write('timeout 60000\n')
+            if L2:
+                f.write('expect "login: "\nsend "root\\r"\nexpect "Password: "\nsend "root\\r"\n')
+            f.write('expect "> "\n')
             f.write('send "jwp %s\\r"\n' % self.args)
             f.write('expect "桁 "\nsleep 400\n')
             for k in keys:
@@ -174,7 +183,7 @@ class Session:
             for t in tail:
                 f.write(t + '\n')
             f.write('quit\n')
-        cmd = [SIM, '-max', '-rom', self.rom, '-0', self.img, '-kanji', self.kanji, '-script', script]
+        cmd = [SIM] + (['-2'] if L2 else []) + ['-max', '-rom', self.rom, '-0', self.img, '-kanji', self.kanji, '-script', script]
         env = dict(os.environ, LC_ALL='C')
         p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, env=env)
         self.rc = p.returncode
@@ -190,7 +199,7 @@ class Session:
 
     def host(self, name):
         import fatlib
-        data = fatlib.Volume(self.img).read('/' + name)
+        data = fatlib.Volume(self.img, L2).read('/' + name)
         if data is None:
             raise FileNotFoundError(name)
         return data

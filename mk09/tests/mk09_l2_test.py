@@ -101,5 +101,18 @@ check('su: wrong password' in out and 'uid=0(root) gid=0(root)' in out.split('su
 out, rc = run(ROOT + sh('passwd user')[:1] + ['expect "New password: "', 'send "nu\\r"', 'expect "Again: "', 'send "nu\\r"', 'expect "/> "', 'send "exit\\r"']
               + login('user', 'nu') + ['expect "/home/user> "'] + sh('id') + OFF)
 check('password changed' in out and 'uid=100(user)' in out.split('password changed')[1], 'passwd: root sets the password of user, user logs in with it', out[-900:])
+# ---- 3d: the other programs and the memory
+out, rc = run(ROOT + sh('mem', 'pc pas/hanoi.pas', 'pas/hanoi 3', 'fstest', 'faults', 'stk', 'echo hi | cat', 'spin &', 'ps', 'jwp -v') + ['send "reboot\\r"', 'expect "login: "'])
+check('MMU' in out and 'program area' in out and re.search(r'total\s+440\.0 KB', out) is not None, 'mem shows the map of the machine with the MMU and the memory of the programs', out[-1500:])
+check('pas/hanoi.mx:' in out and ' 15: disk 1 from B to C' in out, 'pc compiles Pascal and the program runs')
+check('fstest: ok' in out, 'fstest: the file system tests of the program pass')
+check('faults: stopped by the system (stack overflow)' in out and 'message outside my memory: 4' in out, 'faults: the kernel checks the memory of the program (the map)')
+check(re.search(r'^\s+5 [0-9a-f]{4}-[0-9a-f]{4}\s+\d+', out, re.M) is not None, 'stk lists the stacks of the servers')
+check('\nhi\n' in out, 'a pipe between two programs')
+check(re.search(r'\[\d+\]', out) is not None and re.search(r'^\s*\d+ ready\s+4\s+2000-', out, re.M) is not None, 'a program in the background (spin &) is a task of its own, ps shows it')
+check('jwp 1.0' in out, 'jwp -v')
+check(len(re.findall(r'MK09 login: ', out)) >= 2 and out.count('MK09 2.0.0pre') >= 2, 'reboot writes the files and starts the system again (the login comes back)', out[-400:])
+fsck = subprocess.run(['sh', '-c', 'dd if=%s of=%s/v.img bs=512 skip=2048 2>/dev/null; fsck.fat -n %s/v.img' % (disk, work, work)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+check(fsck.returncode == 0, 'fsck.fat: the volume is right after all these runs', fsck.stdout.decode('utf-8', 'replace')[-600:])
 print('%d checks, %d failed' % (total, fails))
 sys.exit(1 if fails else 0)

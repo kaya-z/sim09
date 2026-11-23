@@ -525,6 +525,7 @@ BASIC は 1.3 で作り直しました (YSD9000 の MK09 で先に改良され�
 | 2.0.0pre007 | 2.0.0pre002 | **カーネルの MMU の操作を切り出した** (段階 3a、動きは変えない): `arch/m6809/mmu_fm11.inc` に `mmuinit`、`memprobe`、`xcopy`、`mmu_select`、`mmu_newmap` をまとめた。ページ数 `NPG` を定数にした。sbc09 の MMU 版は別のファイル (`mmu_coco.inc`) になる |
 | 2.0.0pre008 | 2.0.0pre003 | **sbc09 の MMU 版が起動する** (段階 3b): `make BOARD=sbc09 LEVEL=2` (`build-sbc09-l2`、2.0 だけ)。`memmap_sbc09_l2.mk`、`arch/m6809/mmu_coco.inc` (システムの表とユーザの表、窓はブロック 7)、`boot/bootrom_l2.s` (8KB の ROM イメージ。`sim09 -2 -rom`)、I/O の基準番地 `IOB` / `IO_BASE` (L2 は `$FF80`)。`sim09 -2` で、カーネル、TTY、DISK、FS、PM、MM が動き、FS がボリュームをマウントして PM の起動メッセージが出るところまで (プログラムの起動は 3c)。`tests/mk09_l2_test.py` |
 | 2.0.0pre009 | 2.0.0pre004 | **sbc09 の MMU 版でプログラムが動く** (段階 3c): ログインからシェル、`dhry`、BASIC、C コンパイラ (`PM_EXEC` で段が続く)、アカウント (許可、`su`、`passwd`) が `sim09 -2` で動く。他タスクのメモリへの窓はやめた (固定ページ `$FE00-$FFFF` が窓の末尾を隠すため): `xcopy` は中継バッファ `xbuf` を通し、半分ずつ相手のタスクの写像に切り替えてコピーする。プログラムの領域は `$2000-$FDFF` (7 ブロック = 約 56KB)。`mk09.h` に `NMAP PGSH PG0 NUP UEND` (MM と PM が 4KB / 8KB のページを共通のコードで扱う)、`MK_MMU`。時計の設定は FS 経由 (root だけ)。`tests/mk09_l2_test.py` (19 項目) |
+| 2.0.0pre010 | 2.0.0pre004 | **sbc09 の MMU 版: アプリを全部動かす** (段階 3d): `mem` (MMU の地図)、`reboot` (電源レジスタ `$FF8F` に `$A6`)。`pc`、`fstest`、`faults`、`stk`、パイプ、バックグラウンド、`jwp` (SKK 辞書を含む `jwp_test.py` 53 項目が `MK09_L2=1 MK09_BUILD=build-sbc09-l2` で通る) が動く。`tests/mk09_l2_test.py` (29 項目) |
 
 ## 17. MK09 の上の開発環境
 

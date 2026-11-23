@@ -77,6 +77,16 @@ int main(int argc, char **argv)
     line("kernel (the same in every map)", 0x0000, 0x1FFF);
     line("program area (code, data, stack: up to 52KB)", 0x2000, 0xEFFF);
     return 0;
+#elif defined(MMU_COCO)
+    puts("logical map of the system (the servers see the memory as it is: the blocks of 8KB 0-7 are the physical blocks 0-7):");
+    line("vectors, boot buffer (the boot buffer is free)", 0x0000, SYS_BASE - 1);
+    line("kernel (code, data, the ring of the console)", K_CODE, K_DATA + K_DSZ - 1);
+    line("system code (TTY, DISK, FS)", K_DATA + K_DSZ, TPA_BASE - 1);
+    line("system data, stacks, code of PM/MM (high)", DATA_BASE, 0xFDFF);
+    puts("logical map of a program (every program has its own):");
+    line("kernel (the same in every map)", 0x0000, 0x1FFF);
+    line("program area (code, data, stack: up to 56KB)", 0x2000, 0xFDFF);
+    puts("                         ($FE00-$FFFF: the vectors and the I/O registers)");
 #else
     puts("memory map (RAM 64KB):");
     line("vectors, boot buffer (the boot buffer is free)", 0x0000, SYS_BASE - 1);

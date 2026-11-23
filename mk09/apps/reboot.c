@@ -35,6 +35,15 @@ static const u8 routine[] = {
 };
 #endif
 
+#ifdef MMU_COCO
+/* the machine with the MMU: the power register ($FF8F) takes $A6 as "start again as at power on" (the RTL and sim09) */
+int main(void)
+{
+    sync();
+    *(volatile u8 *)0xFF8F = 0xA6;
+    return 0;
+}
+#else
 int main(void)
 {
     u8 i;
@@ -44,3 +53,4 @@ int main(void)
     ((void (*)(void))0x0200)();
     return 0;
 }
+#endif
