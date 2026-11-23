@@ -19,15 +19,17 @@ run() {   # image, drive option, dipsw, frames, keys
     cp "$1" $W/d.img; : > $W/t.txt
     "$FM11" --headless "$4" $W/s.ppm $2 $W/d.img --dipsw "$3" --keyat 3000 --keygap 14 --keys "$5" --text $W/t.txt --mute 2>/dev/null
 }
+# the file names: Level 1 has the upper case names of 1.x, Level 2 is the 2.0 system with case sensitive (lower case) names
+nm() { if [ "$L" = 2 ]; then echo "$*" | tr 'A-Z' 'a-z'; else echo "$*"; fi; }
 for L in $LEVELS; do
     HD=build-fm11-l$L/mk09.img; FD=build-fm11-l$L-2hd/mk09_2hd.img
     echo "---- Level $L"
-    run $HD -h0 0x7F 6500 "cp ETC/RC.SH T.TXT|cat T.TXT|df|"
+    run $HD -h0 0x7F 6500 "$(nm cp ETC/RC.SH T.TXT)|$(nm cat T.TXT)|df|"
     check "for FM-11" "L$L hard disk: MK09 boots, the version says for FM-11"
     check "Level $L" "L$L hard disk: the banner names the level"
     check "stty sjis" "L$L hard disk: a file is copied and read back"
     check "8167 clusters" "L$L hard disk: df sees the volume"
-    run $FD -f0 0xBF 6500 "cp ETC/RC.SH T.TXT|cat T.TXT|df|"
+    run $FD -f0 0xBF 6500 "$(nm cp ETC/RC.SH T.TXT)|$(nm cat T.TXT)|df|"
     check "for FM-11" "L$L 2HD: MK09 boots"
     check "stty sjis" "L$L 2HD: a file is copied and read back"
     check "47[46] clusters" "L$L 2HD: df sees the volume"
@@ -40,6 +42,11 @@ for L in $LEVELS; do
     check "bad date or time" "L$L date -s: a bad date is refused"
     run $HD -h0 0x7F 16000 "date -s 2028-12-31 23:59:58|dhry 400|${SP20}date|"       # (dhry runs a second or two: the clock goes on over the end of the year)
     check "2029-01-01 00:00:" "L$L date: the clock runs on (the end of the year, the calendar)"
+    if [ $L = 2 ]; then   # 2.0: the names are case sensitive, two files that differ only in the case live together
+        run $HD -h0 0x7F 7000 "cp etc/rc.sh Aa.txt|cp etc/rc.sh aA.txt|ls|"
+        check "Aa.txt" "L2 names: Aa.txt is made"
+        check "aA.txt" "L2 names: aA.txt is a different file"
+    fi
     run $HD -h0 0x7F 7000 "basic|PRINT 6*7|"
     check " 42" "L$L basic runs"
     if [ $L = 2 ]; then   # the installed RAM is found at the start (the simulator: --mem KB)
@@ -53,15 +60,15 @@ for L in $LEVELS; do
         run $HD -h0 0x7F 5000 "cc|"
         check "not found" "L1: cc (it needs cc1: 160 pages) is not in the image"
     else
-        run $HD -h0 0x7F 60000 "cc ASM/HELLO.C|${SP60}ASM/HELLO|"
+        run $HD -h0 0x7F 60000 "$(nm cc ASM/HELLO.C)|${SP60}$(nm ASM/HELLO)|"
         check "hello from C" "L2: the C compiler compiles a program (cc1: 160 pages) and it runs"
     fi
     # format + mount: a blank floppy in the 2HD drive (the system drive 0 is the hard disk, the floppy is drive 1)
     cp $HD $W/d.img; : > $W/blank.d88; : > $W/t.txt
     "$FM11" --headless 60000 $W/s.ppm -h0 $W/d.img -f0 $W/blank.d88 --dipsw 0x7F --keyat 3000 --keygap 40 \
-        --keys "format -y 1 T|${SP60}mount 1|${SP20}cp ETC/RC.SH 1:/R.TXT|${SP20}mkdir 1:/D|${SP20}mv 1:/R.TXT 1:/D/R2.TXT|${SP20}ls 1:/D|${SP20}df 1|${SP20}umount 1|" --text $W/t.txt --mute 2>/dev/null
+        --keys "format -y 1 T|${SP60}mount 1|${SP20}$(nm cp ETC/RC.SH 1:/R.TXT)|${SP20}$(nm mkdir 1:/D)|${SP20}$(nm mv 1:/R.TXT 1:/D/R2.TXT)|${SP20}$(nm ls 1:/D)|${SP20}df 1|${SP20}umount 1|" --text $W/t.txt --mute 2>/dev/null
     check "973 clusters, 971 free" "L$L format + mount + cp + mkdir: the floppy is formatted, files and a directory are written (df 1)"
-    check "R2.TXT" "L$L mount: mkdir and mv on the floppy, ls shows the file"
+    check "$(nm R2.TXT)" "L$L mount: mkdir and mv on the floppy, ls shows the file"
     check "drive 1 is free" "L$L umount: the drive is released"
 done
 [ $fail = 0 ] && echo "fm11 test: PASS" || { echo "fm11 test: FAIL"; exit 1; }

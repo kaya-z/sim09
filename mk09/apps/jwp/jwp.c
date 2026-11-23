@@ -34,6 +34,7 @@
 #include "mklib.h"
 #include "mkstr.h"
 #include "msgs.h"
+#include "pathnames.h"
 
 /* The version: shown by `jwp -v` and kept in the program as a string.  Keep it equal to JWP_VERSION of os9/jwp/jwp.c. */
 #define JWP_VERSION   "1.0"

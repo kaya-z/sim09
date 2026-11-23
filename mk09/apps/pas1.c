@@ -68,7 +68,7 @@ static void err(msgt msg)
         cleanup();
         utoa_(line, ln, 10);
         utoa_(msgno, mn, 10);
-        av[0] = "pas1"; av[1] = ";"; av[2] = "pmsg"; av[3] = "/LIB/PAS1.MSG"; av[4] = fname; av[5] = ln; av[6] = mn;
+        av[0] = "pas1"; av[1] = ";"; av[2] = "pmsg"; av[3] = PN_PAS1_MSG; av[4] = fname; av[5] = ln; av[6] = mn;
         run_tail(7, av, 1);
     }
 #else

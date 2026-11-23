@@ -28,6 +28,7 @@ typedef int8_t s8;
 #define CC_BUF 64            /* (cg and pas0 have room for a bigger one: -DCC_BUF=256, fewer reads) */
 #endif
 #endif
+#include "pathnames.h"
 
 #ifdef CC_HOST
 typedef struct { FILE *f; } rfile;
@@ -137,9 +138,9 @@ static int run_tail(int argc, char **argv, int at)
         char blk[ARGMAX];
         u16 len;
         int i;
-        strcpy(blk, "/BIN/");
+        strcpy(blk, PN_BIN);
         strcat(blk, argv[at + 1]);
-        strcat(blk, ".MX");
+        strcat(blk, PN_EXT_MX);
         len = (u16)strlen(blk) + 1;
         for (i = at + 2; i < argc; i++) {
             u16 l = (u16)strlen(argv[i]) + 1;

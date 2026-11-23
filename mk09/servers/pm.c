@@ -29,6 +29,7 @@
 #include "mkstr.h"
 #include "memmap.h"
 #include "version.h"
+#include "pathnames.h"
 #include "mm.h"
 
 #define HDRSIZE     16
@@ -302,14 +303,14 @@ static void start_shell(void)
     u8 st;
     sb_new(NOH, NOH);
     sb[SB_ARGC] = 1;
-    strcpy((char *)sb + SB_ARGS, "/BIN/SH.MX");
+    strcpy((char *)sb + SB_ARGS, PN_SH_MX);
     if (respawn) {
         sb[SB_ARGC] = 2;
         strcpy((char *)sb + SB_ARGS + 11, "-r");
     }
     st = start_program(0, 1, &tid);
     if (st) {
-        say("MK09: no SH.MX\r\n");
+        say(PN_NO_SH);
         mk_sleep(250);
     } else {
         respawn = 0;

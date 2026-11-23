@@ -19,6 +19,7 @@ import argparse, os, struct, sys, time
 
 BLK = 512
 PART_START = 2048          # (--part-start)
+KEEP_CASE = False          # (--keep-case: 2.0, the names are written as they are, they are case sensitive)
 SMALL = False              # (--small: fewer than 4085 clusters allowed, for the 2HD floppy of the FM-11)
 
 
@@ -29,6 +30,8 @@ def name83(name):
     for ch in name:
         if ch in '"*+,/:;<=>?[\\]| ' or ord(ch) < 33:
             sys.exit('mkdisk: bad character in name %r' % name)
+    if KEEP_CASE:
+        return (base.ljust(8) + ext.ljust(3)).encode('latin-1')
     return (base.upper().ljust(8) + ext.upper().ljust(3)).encode('latin-1')
 
 
@@ -166,9 +169,11 @@ def main():
     ap.add_argument('--part-start', type=int, default=2048, help='first block of the volume (the boot image is in front of it)')
     ap.add_argument('--total-blocks', type=int, default=0, help='the size of the whole disk in blocks (instead of --size-mb)')
     ap.add_argument('--small', action='store_true', help='allow a volume with fewer than 4085 clusters (FAT16 layout, MK09 only)')
+    ap.add_argument('--keep-case', action='store_true', help='write the names as they are (MK09 2.0: case sensitive names); without it they are made upper case')
     ap.add_argument('tree')
     a = ap.parse_args()
-    global PART_START, SMALL
+    global PART_START, SMALL, KEEP_CASE
+    KEEP_CASE = a.keep_case
     PART_START = a.part_start
     SMALL = a.small
     vblocks = min(int(a.size_mb * 1024 * 1024) // BLK, 65524 * 64 + 600)

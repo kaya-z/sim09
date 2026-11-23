@@ -151,7 +151,7 @@ static u8 push_file(const char *name, u8 unit)
     if (cur + 1 >= MAXINC) err("files are nested too deep");
     for (k = 0; k < 3; k++) {
         path[0] = 0;
-        if (k == 0) strcpy(path, srcdir); else if (k == 2) strcpy(path, "/LIB/");
+        if (k == 0) strcpy(path, srcdir); else if (k == 2) strcpy(path, PN_LIB_);
         strcat(path, name);
         if (!strchr(name, '.')) strcat(path, ".pas");
         for (j = 0; j <= cur; j++) if (ieq(fs[j].name, path)) break;       /* (a file that is being read is not read again: crt.pas that uses crt) */

@@ -42,10 +42,10 @@ $(eval $(call tool,cc1,--add-os9-stack-space=8000))
 # the library: made by the PC builds of cpp, cc1, cg and as (-DAS_OBJ), as for MK09 (mk09/Makefile), with -DOS9 (clib.c) and rt9.s (the system calls of OS-9)
 $(B)/host_%: $(APPS)/%.c $(APPS)/ccio.h
 	@mkdir -p $(B)
-	$(GCC) -DCC_HOST -O1 -w -I$(APPS) -o $@ $<
+	$(GCC) -DCC_HOST -O1 -w -I$(APPS) -I$(MK)/include -o $@ $<
 $(B)/as_obj: $(APPS)/as.c $(APPS)/as_text.h
 	@mkdir -p $(B)
-	$(GCC) -DAS_HOST -DAS_OBJ -O1 -w -I$(APPS) -o $@ $<
+	$(GCC) -DAS_HOST -DAS_OBJ -O1 -w -I$(APPS) -I$(MK)/include -o $@ $<
 $(B)/clib9.s: $(MK)/lib/cc/clib.c $(MK)/lib/cc/fp.c $(MK)/lib/cc/fpio.c $(B)/host_cpp $(B)/host_cc1 $(B)/host_cg
 	cd $(B) && ./host_cpp -DOS9 -I../$(MK)/lib/cc ../$(MK)/lib/cc/clib.c -o clib9.i && ./host_cc1 clib9.i -o clib9.ir && ./host_cg -pl clib9.ir -o clib9.s
 $(B)/rt9.s: $(MK)/lib/cc/rt.s $(MK)/lib/cc/rt9.s

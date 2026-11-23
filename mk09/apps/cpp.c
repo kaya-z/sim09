@@ -537,7 +537,7 @@ static void include(const char *s, const char *curdir)
         if (!r_open_probe(path)) found = 1;
     }
     for (i = 0; !found && i <= nidirs; i++) {
-        strcpy(path, i == 0 ? "/INC/" : idirs[i - 1]);
+        strcpy(path, i == 0 ? PN_INC_ : idirs[i - 1]);
         if (i > 0) { u16 l = (u16)strlen(path); if (l && path[l - 1] != '/') strcat(path, "/"); }
         strcat(path, name);
         if (!r_open_probe(path)) found = 1;

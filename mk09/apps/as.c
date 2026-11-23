@@ -40,6 +40,7 @@ typedef int8_t s8;
 #include "mklib.h"
 #include "mkstr.h"
 #endif
+#include "pathnames.h"
 
 /* as -9 makes an OS-9 module (os9/pascal): in the build for OS-9 (-DOS9) and in the PC build (-DAS_HOST); not in the build for MK09, which has no room for it */
 #if defined(OS9) || defined(AS_HOST)
@@ -1120,14 +1121,14 @@ static int obj_open(u8 f)
     char path[200];
     const char *d = getenv("AS_LIB");
     if (objfp[f]) return 0;
-    snprintf(path, sizeof(path), "%s/%s", d ? d : "/LIB", f ? "RT.OBJ" : "CLIB.OBJ");
+    snprintf(path, sizeof(path), "%s/%s", d ? d : PN_LIB, f ? PN_RT_OBJ : PN_CLIB_OBJ);
     objfp[f] = fopen(path, "rb");
     return objfp[f] ? 0 : -1;
 }
 static void obj_seek(u8 f, u16 hi, u16 lo) { fseek(objfp[f], ((long)hi << 16) | lo, SEEK_SET); }
 static int obj_read(u8 f, u8 *b, int n) { return (int)fread(b, 1, n, objfp[f]); }
 #else
-static const char *objname[2] = { "/LIB/CLIB.OBJ", "/LIB/RT.OBJ" };
+static const char *objname[2] = { PN_LIB_ PN_CLIB_OBJ, PN_LIB_ PN_RT_OBJ };
 static int objfd[2] = { -1, -1 };
 static int obj_open(u8 f)
 {
@@ -1391,9 +1392,9 @@ static int run_tail(int argc, char **argv, int at)
     u16 len;
     int i;
     if (at + 1 >= argc) return 0;
-    strcpy(blk, "/BIN/");
+    strcpy(blk, PN_BIN);
     strcat(blk, argv[at + 1]);
-    strcat(blk, ".MX");
+    strcat(blk, PN_EXT_MX);
     len = (u16)strlen(blk) + 1;
     for (i = at + 2; i < argc; i++) {
         u16 l = (u16)strlen(argv[i]) + 1;

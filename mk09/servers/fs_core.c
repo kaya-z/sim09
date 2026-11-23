@@ -459,7 +459,9 @@ static u8 to_name11(const char *p, u8 n, u8 *name)
             continue;
         }
         if (!name_char_ok(c)) return E_NAME;
+#ifndef MK09_V2                         /* 2.0: the names are case sensitive (lower case is the basic form) */
         if (c >= 'a' && c <= 'z') c -= 32;
+#endif
         if (k >= (ext ? 11 : 8)) return E_NAME;
         name[k++] = c;
     }
@@ -1158,7 +1160,9 @@ static u8 norm_path(const char *path, char *out)
             tmp[n++] = '/';
             for (i = 0; i < len; i++) {
                 char c = p[i];
+#ifndef MK09_V2
                 if (c >= 'a' && c <= 'z') c -= 32;
+#endif
                 tmp[n++] = c;
             }
         }

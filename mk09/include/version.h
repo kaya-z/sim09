@@ -125,7 +125,7 @@
 
 #ifdef MK09_V2
 /* the 2.0 line (docs/V2_PLAN.md): only the builds with an MMU (FM-11 Level 2, later the sbc09 MMU build); the 1.x builds below are frozen */
-#define MK09_VERSION    "2.0.0pre001"     /* the system version */
+#define MK09_VERSION    "2.0.0pre002"     /* the system version */
 #define MK09_KERNEL_VERSION "2.0.0pre001" /* the kernel version */
 #else
 #define MK09_VERSION    "1.46"            /* the system version */

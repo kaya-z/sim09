@@ -19,6 +19,7 @@
 #include "mkstr.h"
 #include "mk09.h"
 #include "version.h"
+#include "pathnames.h"
 #define TOOL_VERSION "1.0"
 
 extern u8 mk_in_h, mk_out_h;                    /* the handles of the redirected standard input / output (0xFF: the console) */
@@ -38,11 +39,11 @@ static int find_program(const char *name)       /* the same search as the shell 
     if (strlen(name) > MAXPATH - 8) return 0;
     strcpy(path, name);
     if (strchr(name, '/') && exists(path)) return 1;
-    strcat(path, ".MX");
+    strcat(path, PN_EXT_MX);
     if (exists(path) || strchr(name, '/')) return exists(path);
-    strcpy(path, "/BIN/");
+    strcpy(path, PN_BIN);
     strcat(path, name);
-    strcat(path, ".MX");
+    strcat(path, PN_EXT_MX);
     return exists(path);
 }
 

@@ -7,7 +7,8 @@ BLK = 512
 
 
 class Volume:
-    def __init__(self, path):
+    def __init__(self, path, case=False):
+        self.case = case          # True: the names are case sensitive (MK09 2.0 images, names as they are)
         self.data = open(path, 'rb').read()
         mbr = self.data[:BLK]
         assert mbr[510:512] == b'\x55\xAA'
@@ -60,7 +61,7 @@ class Volume:
 
     def find(self, path):
         cl, ent = 0, None
-        up = ''.join(c.upper() if c < '\x80' else c for c in path)      # (only ASCII is case insensitive)
+        up = path if self.case else ''.join(c.upper() if c < '\x80' else c for c in path)      # (1.x: only ASCII is case insensitive)
         parts = [p for p in up.split('/') if p]
         for i, p in enumerate(parts):
             for name, attr, c, size in self.entries(cl):

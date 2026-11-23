@@ -1200,7 +1200,7 @@ static void prescan(void)
 #define NNAME   260
 #define POOL    3800
 #define NLIB    2
-static char *idxs[NLIB] = { "/LIB/CLIB.IDX", "/LIB/RT.IDX" };
+static char *idxs[NLIB] = { PN_LIB_ PN_CLIB_IDX, PN_LIB_ PN_RT_IDX };
 static char pool[POOL];
 static u16 plen;
 static char *names[NNAME];
@@ -1394,13 +1394,13 @@ static void link_library(const char *tmp, const char *dst)
 #ifdef CC_HOST
     if (getenv("CC_LIB")) {                 /* (on the PC the library is in a directory of the PC) */
         static char p2[200], p3[200], p4[200];
-                strcpy(p3, getenv("CC_LIB")); strcat(p3, "/CLIB.IDX"); idxs[0] = p3;
-        strcpy(p4, getenv("CC_LIB")); strcat(p4, "/RT.IDX"); idxs[1] = p4;
-        strcpy(p2, getenv("CC_LIB")); strcat(p2, "/START.S");
+                strcpy(p3, getenv("CC_LIB")); strcat(p3, "/" PN_CLIB_IDX); idxs[0] = p3;
+        strcpy(p4, getenv("CC_LIB")); strcat(p4, "/" PN_RT_IDX); idxs[1] = p4;
+        strcpy(p2, getenv("CC_LIB")); strcat(p2, "/" PN_START_S);
         copy_text(&w, p2);
     } else
 #endif
-    copy_text(&w, "/LIB/START.S");
+    copy_text(&w, PN_LIB_ PN_START_S);
     copy_text(&w, tmp);
     for (pass = 0; pass < 8; pass++) {
         changed = 0;

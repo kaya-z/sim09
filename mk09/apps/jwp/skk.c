@@ -60,8 +60,8 @@ static int sk_keyn;
 static char sk_msg[200];
 static const uchar *kpunct;
 static const char *mk_pre, *mk_sel;
-static char dict_name[64] = "/SKK/SKK.DIC";
-static char user_name[64] = "/SKK/USER.DIC";
+static char dict_name[64] = PN_SKK_DIC;
+static char user_name[64] = PN_USER_DIC;
 
 /* ------------------------------------------------------------- dictionary files */
 

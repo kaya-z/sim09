@@ -91,7 +91,7 @@ static void err(msgt msg)
         u8 n = 1;
         char nb[7];
         putstr(fname); putchar(':'); utoa_(line, nb, 10); putstr(nb); putstr(": ");
-        if (!r_open(&r, "/LIB/CC1.MSG")) {
+        if (!r_open(&r, PN_CC1_MSG)) {
             while (n < msg && (c = r_getc(&r)) >= 0) if (c == '\n') n++;
             while ((c = r_getc(&r)) >= 0 && c != '\n') putchar(c);
             r_close(&r);

@@ -46,6 +46,8 @@ CFLAGS  += -DFM11_MMU=1
 ASFLAGS += -DMMU=1
 endif
 endif
+# (2.0: case sensitive names, the image keeps the lower case names of the tree)
+KEEPCASE := $(if $(filter 1,$(V2)),--keep-case)
 ifeq ($(V2),1)
 CFLAGS  += -DMK09_V2=1
 ASFLAGS += -DMK09_V2=1
@@ -280,14 +282,14 @@ $(B)/pas1.o: $(B)/pas1_t.c apps/ccio.h $(HDRS)
 
 # the library as blocks that are assembled once, by the PC build of as with -DAS_OBJ (tools/mkobj.py): OBJ and an index for cg to link
 $(B)/as_obj: apps/as.c apps/as_text.h | $(B)
-	gcc -DAS_HOST -DAS_OBJ -O1 -w -Iapps -o $@ $<
+	gcc -DAS_HOST -DAS_OBJ -O1 -w -Iapps -Iinclude -o $@ $<
 $(B)/clib.obj $(B)/clib.idx: $(B)/clib.s $(B)/as_obj tools/mkobj.py
 	$(PYTHON) tools/mkobj.py $(B)/as_obj $(B)/clib.s $(B)/clib.obj $(B)/clib.idx
 $(B)/rt.obj $(B)/rt.idx: lib/cc/rt.s $(B)/as_obj tools/mkobj.py
 	$(PYTHON) tools/mkobj.py $(B)/as_obj lib/cc/rt.s $(B)/rt.obj $(B)/rt.idx
 
 $(B)/host_%: apps/%.c apps/ccio.h | $(B)
-	gcc -DCC_HOST -O1 -w -Iapps -o $@ $<
+	gcc -DCC_HOST -O1 -w -Iapps -Iinclude -o $@ $<
 $(B)/clib.s: lib/cc/clib.c $(B)/host_cpp $(B)/host_cc1 $(B)/host_cg
 	cd $(B) && ./host_cpp ../lib/cc/clib.c -o clib.i && ./host_cc1 clib.i -o clib.ir && ./host_cg -pl clib.ir -o clib.s
 
@@ -312,12 +314,12 @@ endif
 	touch $@
 
 $(B)/mk09.img: $(B)/boot.img $(B)/tree.stamp tools/mkdisk.py $(if $(filter fm11,$(BOARD)),$(B)/ipl_hdd.bin)
-	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img $(if $(filter fm11,$(BOARD)),--ipl $(B)/ipl_hdd.bin) --size-mb $(DISK_MB) $(TREE)
+	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img $(if $(filter fm11,$(BOARD)),--ipl $(B)/ipl_hdd.bin) --size-mb $(DISK_MB) $(KEEPCASE) $(TREE)
 
 # the 2HD floppy disk image of the FM-11 (1021696 bytes, FDD_2HD_256 of the simulator): track 0 side 0 (26 sectors of 128 bytes) holds the
 # IPL, the 3978 sectors of 256 bytes behind it are the MK09 disk: MBR, boot image, a small FAT16 volume
 $(B)/mk09_disk2hd.img: $(B)/boot.img $(B)/tree.stamp tools/mkdisk.py
-	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img --part-start $(if $(filter 2,$(LEVEL)),56,48) --total-blocks 1989 --spc 4 --small $(TREE)
+	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img --part-start $(if $(filter 2,$(LEVEL)),56,48) --total-blocks 1989 --spc 4 --small $(KEEPCASE) $(TREE)
 $(B)/mk09_2hd.img: $(B)/mk09_disk2hd.img $(B)/ipl_2hd.bin tools/mk2hd.py
 	$(PYTHON) tools/mk2hd.py -o $@ --ipl $(B)/ipl_2hd.bin $(B)/mk09_disk2hd.img
 

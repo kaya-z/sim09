@@ -17,6 +17,7 @@
 #include "mklib.h"
 #include "mkstr.h"
 #include "version.h"
+#include "pathnames.h"
 #ifdef FM11_MMU
 #include "mk09.h"
 #include "proto.h"
@@ -99,11 +100,11 @@ static int find_program(const char *name)
     if (strlen(name) > MAXPATH - 8) return 0;
     strcpy(path, name);
     if (strchr(name, '/') && exists(path)) return 1;
-    strcat(path, ".MX");
+    strcat(path, PN_EXT_MX);
     if (exists(path) || strchr(name, '/')) return exists(path);
-    strcpy(path, "/BIN/");
+    strcpy(path, PN_BIN);
     strcat(path, name);
-    strcat(path, ".MX");
+    strcat(path, PN_EXT_MX);
     return exists(path);
 }
 
@@ -159,7 +160,7 @@ static int execute(char *s);
 
 /* a | b | c: every stage runs to its end, the next one reads what it wrote (two files in turn).  (The pipes of the YSD9000 port of MK09.) */
 #define MAXSTAGE    4
-static const char pipef[2][12] = { "/PIPE0.TMP", "/PIPE1.TMP" };
+static const char pipef[2][12] = { PN_PIPE0, PN_PIPE1 };
 
 static char *find_bar(char *s)
 {
@@ -318,7 +319,7 @@ int main(int argc, char **argv)
         putstr("\n");
         puts(" TTY + DISK + FS(FAT16) + PM  /  type help\n"
              " (c) 2026 YUKARI Semiconductor Devices\n");
-        do_source("/ETC/RC.SH");
+        do_source(PN_RC_SH);
     }
     for (;;) {
         getcwd(cwd, sizeof(cwd));
