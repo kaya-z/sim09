@@ -138,7 +138,7 @@ u16 mk_rxget(u8 *buf, u16 n);               /* up to n console characters that t
 #ifdef MMU_COCO
 #define NLINE   2                           /* the terminals: the first ACIA and the second ACIA */
 #else
-#define NLINE   1                           /* (the FM-11: the screen and the keyboard; the RS-232C port comes later) */
+#define NLINE   2                           /* the FM-11: the screen with the keyboard, and the RS-232C port (the channel 0 of the i8251) */
 #endif
 #endif
 #ifdef MK09_V2

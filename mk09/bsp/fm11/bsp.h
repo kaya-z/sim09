@@ -34,6 +34,10 @@
 #define FM_IO(a)    (*(u8 *)(a))
 
 /* console output (console server) */
+#ifdef MK09_V2
+#define FM_RS_DATA      (*(volatile u8 *)0xFD06)     /* the RS-232C port (i8251, channel 0): the second terminal; data */
+#define FM_RS_STAT      (*(volatile u8 *)0xFD07)     /* status (read): bit 0 TxRDY, bit 1 RxRDY */
+#endif
 void bsp_con_put(u8 c);
 void bsp_con_flush(void);
 void bsp_con_init(void);       /* graphic display and palette on (the kanji are drawn into the graphic planes), kanji mode of the console */

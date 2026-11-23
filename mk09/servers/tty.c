@@ -120,6 +120,15 @@ static u16 rd_len;
 static void out(u8 c)
 {
 #ifdef BOARD_FM11
+#ifdef MK09_V2
+    if (lineno) {                       /* the second terminal: the RS-232C port (a line that is not in use is not written) */
+        if (!tl_is_on(lineno)) return;
+        while (!(FM_RS_STAT & 1))
+            ;
+        FM_RS_DATA = c;
+        return;
+    }
+#endif
     bsp_con_put(c);                     /* collected, sent to the display sub system by bsp_con_flush() before the server waits */
 #else
 #ifdef MMU_COCO

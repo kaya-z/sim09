@@ -150,7 +150,7 @@ MAPOVER := K_CSZ=1060 K_DSZ=02F0 HIGH=PM
 endif
 # the 2.0 version strings are longer: the code slot of PM gets 16 bytes more (V2 builds only)
 ifeq ($(V2),1)
-MAPOVER += K_DSZ=07C0 TTY_CSZ=1000 PM_CSZ=1300 PM_DSZ=0320 TTY_DSZ=0300 FS_CSZ=3700 FS_DSZ=0D80
+MAPOVER += K_DSZ=07F0 TTY_CSZ=1000 PM_CSZ=1300 PM_DSZ=0320 TTY_DSZ=0300 FS_CSZ=3700 FS_DSZ=0D80
 endif
 ifeq ($(KERNEL),asm)
 KERNEL_OBJS := $(B)/kernel_asm.o

@@ -25,6 +25,16 @@
 
 KDP	equ	K_DATA/256
 
+* 2.0: LINE1 = the second terminal (a second line): the second ACIA of the sbc09 with the MMU, the RS-232C port (i8251, channel 0) of the FM-11
+	ifdef	COCO
+LINE1	equ	1
+	endc
+	ifdef	FM11
+	ifdef	MK09_V2
+LINE1	equ	1
+	endc
+	endc
+
 	ifdef	MK09_V2
 NTASK	equ	16			2.0: the system 6 and the programs 10 (the sessions of several terminals)
 	else
@@ -170,7 +180,7 @@ sendhint rmb	1			not 0: a task may be blocked in a send (set when one blocks, cl
 sseen	rmb	1			(sc_recv: a task in SEND state was seen)
 hookbits rmb	2
 rxp	rmb	2			the ring of the console server (the bytes; the head and the tail are the two bytes before them) that the receive interrupt fills (0: none yet)
-	ifdef	COCO
+	ifdef	LINE1
 rxp1	rmb	2			2.0: the ring of the second line (the second ACIA, $IOB+4: the second terminal); 0: none yet
 	endc
 rxgot	rmb	1			(rxdrain: characters were moved)
@@ -410,7 +420,7 @@ irq_entry
 	stu	<frm
 	endc
 	lbsr	rxdrain			the console (the IRQ line is shared with the timer)
-	ifdef	COCO
+	ifdef	LINE1
 	lbsr	rxdrain1		the second terminal
 	endc
 	ifndef	FM11
@@ -765,8 +775,29 @@ rxdrain	clr	<rxgot
 	bra	@rx
 @x	rts
 	endc
-	ifdef	COCO
-* rxdrain1: the same for the second line (the second ACIA at ACIA+4)
+	ifdef	LINE1
+* rxdrain1: the same for the second line
+	ifdef	FM11
+FM_RSDT	equ	$FD06			the RS-232C port, channel 0 (i8251): data
+FM_RSCS	equ	$FD07			command / mode (write), status (read): bit 0 TxRDY, bit 1 RxRDY
+rxdrain1	ldu	<rxp1
+	beq	@q1
+@r1	lda	FM_RSCS
+	bita	#2			a character?
+	beq	@q1
+	ldb	-2,u
+	leax	b,u
+	incb
+	andb	#RXQ-1
+	lda	FM_RSDT			(reading it takes the character)
+	cmpb	-1,u
+	beq	@r1
+	sta	,x
+	stb	-2,u
+	inc	<rxgot
+	bra	@r1
+@q1	rts
+	else
 rxdrain1	ldu	<rxp1
 	beq	@q1
 @r1	lda	ACIA+4
@@ -784,6 +815,7 @@ rxdrain1	ldu	<rxp1
 	inc	<rxgot
 	bra	@r1
 @q1	rts
+	endc
 	endc
 
 * copymsg: a message (MSGSZ = 10 bytes) from X to U; D is clobbered
@@ -1382,12 +1414,26 @@ sc_tinfo
 sc_rxreg
 	ldu	<frm
 	ldx	F_X,u
-	ifdef	COCO
+	ifdef	LINE1
 	tst	F_B,u			2.0: B = the line (0 or 1)
 	beq	@l0
 	stx	<rxp1
+	ifdef	FM11
+	clr	FM_RSCS			the i8251 of the RS-232C port: the sync characters and the reset (0, 0, 0, $40, as the chip wants it), then the mode and the command
+	clr	FM_RSCS
+	clr	FM_RSCS
+	lda	#$40
+	sta	FM_RSCS
+	lda	#$4E			mode: 1 stop bit, 8 bits, no parity, x16
+	sta	FM_RSCS
+	lda	#$27			command: RTS, receive on, DTR, transmit on
+	sta	FM_RSCS
+	lda	#$94			the interrupt mask: the keyboard / PTM as before, and the receive interrupt of the RS-232C
+	sta	FM_IMSK
+	else
 	lda	#$95
 	sta	ACIA+4
+	endc
 	lbra	okret
 @l0
 	endc
