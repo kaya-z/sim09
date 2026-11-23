@@ -47,7 +47,7 @@ ASFLAGS += -DMMU=1
 endif
 endif
 # (2.0: case sensitive names, the image keeps the lower case names of the tree)
-KEEPCASE := $(if $(filter 1,$(V2)),--keep-case)
+KEEPCASE := $(if $(filter 1,$(V2)),--keep-case --owners $(B)/owners.txt)
 ifeq ($(V2),1)
 CFLAGS  += -DMK09_V2=1
 ASFLAGS += -DMK09_V2=1
@@ -141,7 +141,7 @@ MAPOVER := K_CSZ=1060 K_DSZ=02F0 HIGH=PM
 endif
 # the 2.0 version strings are longer: the code slot of PM gets 16 bytes more (V2 builds only)
 ifeq ($(V2),1)
-MAPOVER += PM_CSZ=0E00 PM_DSZ=0280 FS_CSZ=3500 FS_DSZ=0940
+MAPOVER += TTY_CSZ=0C00 PM_CSZ=0F00 PM_DSZ=0280 FS_CSZ=3500 FS_DSZ=0940
 endif
 ifeq ($(KERNEL),asm)
 KERNEL_OBJS := $(B)/kernel_asm.o
@@ -211,9 +211,12 @@ SKKJISYO  :=
 endif
 # 2.0: the programs of the users and the permissions (V2 builds only)
 ifeq ($(V2),1)
-APPS      += id chmod chown runas
+APPS      += id chmod chown chgrp runas login su passwd
 endif
 STACK_sh  := 640
+STACK_login := 1500
+STACK_su := 1500
+STACK_passwd := 1500
 STACK_jwp := 1200
 STACK_basic ?= 1500
 STACK_as := 700
@@ -313,11 +316,12 @@ else
 endif
 	for d in etc doc bas asm inc pas; do if [ -d disk/$$d ] && [ -n "$$(ls disk/$$d)" ]; then cp disk/$$d/* $(TREE)/$$d/; fi; done
 	printf '# /ETC/RC.SH - run by the shell when the system starts\nstty $(CHARSET)\n' > $(TREE)/etc/rc.sh
+	$(if $(filter 1,$(V2)),$(PYTHON) tools/mkusers.py $(TREE) $(B)/owners.txt)
 	if [ -n "$(HAVE_SKK)" ]; then cp $(B)/skk_$(CHARSET).dic $(TREE)/skk/skk.dic; fi
 	iconv -f UTF-8 -t $(ICONV_$(CHARSET)) disk/doc/guide.txt > $(TREE)/doc/guide.txt
 	touch $@
 
-$(B)/mk09.img: $(B)/boot.img $(B)/tree.stamp tools/mkdisk.py $(if $(filter fm11,$(BOARD)),$(B)/ipl_hdd.bin)
+$(B)/mk09.img: $(B)/boot.img $(B)/tree.stamp tools/mkdisk.py tools/mkusers.py $(if $(filter fm11,$(BOARD)),$(B)/ipl_hdd.bin)
 	$(PYTHON) tools/mkdisk.py -o $@ --boot $(B)/boot.img $(if $(filter fm11,$(BOARD)),--ipl $(B)/ipl_hdd.bin) --size-mb $(DISK_MB) $(KEEPCASE) $(TREE)
 
 # the 2HD floppy disk image of the FM-11 (1021696 bytes, FDD_2HD_256 of the simulator): track 0 side 0 (26 sectors of 128 bytes) holds the

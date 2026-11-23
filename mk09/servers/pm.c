@@ -105,7 +105,9 @@ static void mm_free4(u8 *list, u8 n)
 static msg_t rm;                        /* the answer of the last call to FS */
 
 #ifdef MK09_V2
-static u8 t_uid[NTASK], t_gid[NTASK];   /* the user of each task */
+static u8 t_uid[NTASK], t_gid[NTASK];   /* the user of each task (the effective one: a setuid file changes it) */
+static u8 t_ruid[NTASK];                /* the user who started it (the real one) */
+static u8 cur_ruid;
 static u8 cur_uid, cur_gid;             /* the user of the program that is being started */
 static u8 sh_uid, sh_gid;               /* the user of the shell (kept when the shell is started again) */
 #endif
@@ -298,6 +300,7 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
     if (st) goto out;
 #ifdef MK09_V2
     t_uid[tid] = cur_uid;
+    t_ruid[tid] = cur_ruid;
     t_gid[tid] = cur_gid;
     fs_user(tid, cur_uid, cur_gid);
 #endif
@@ -340,13 +343,17 @@ static void start_shell(void)
     sb_new(NOH, NOH);
     sb[SB_ARGC] = 1;
     strcpy((char *)sb + SB_ARGS, PN_SH_MX);
+#ifdef MK09_V2
+    if (!respawn) strcpy((char *)sb + SB_ARGS, PN_LOGIN_MX);       /* a new session starts with the login (root); the shell that stepped aside comes back as it was */
+#endif
     if (respawn) {
         sb[SB_ARGC] = 2;
         strcpy((char *)sb + SB_ARGS + 11, "-r");
     }
 #ifdef MK09_V2
-    cur_uid = sh_uid;
+    cur_uid = cur_ruid = sh_uid;
     cur_gid = sh_gid;
+    if (!respawn) cur_uid = cur_ruid = cur_gid = 0;
 #endif
     st = start_program(0, 1, &tid);
     if (st) {
@@ -373,7 +380,7 @@ static void collect(void)
         waiter[t] = 0;
         if (t == shell_tid) {
 #ifdef MK09_V2
-            sh_uid = t_uid[t];
+            sh_uid = t_ruid[t];
             sh_gid = t_gid[t];
 #endif
             shell_tid = 0;
@@ -399,6 +406,9 @@ static void do_spawn(msg_t *m, u8 bg)
 {
     u8 tid, st, i, w = m->src, wasfg = (fg == w);
     u16 n = m->c;
+#ifdef MK09_V2
+    u8 sh = (bg == 2 && m->src == shell_tid);                   /* the login starts the shell of the user: the new program is the shell */
+#endif
 
     if (n < 2 || n > ARGMAX - SB_ARGS - 1) { reply(m->src, E_INVAL, 0); return; }
     sb_new((m->a == NOHANDLE) ? NOH : (u8)m->a, (m->d == NOHANDLE) ? NOH : (u8)m->d);
@@ -409,6 +419,7 @@ static void do_spawn(msg_t *m, u8 bg)
         if (sb[i] == 0 && sb[i + 1] != 0) sb[SB_ARGC]++;
     sb[SB_ARGC]++;
 #ifdef MK09_V2
+    cur_ruid = t_ruid[m->src];
     cur_uid = t_uid[m->src];                                    /* the new program is run by the user who asks (PM_EXEC: the task that is replaced) */
     cur_gid = t_gid[m->src];
 #endif
@@ -420,7 +431,13 @@ static void do_spawn(msg_t *m, u8 bg)
         mk_tkill(m->src, 0);
         collect();
     }
+#ifdef MK09_V2
+    st = start_program(bg == 1 ? 0 : w, sh, &tid);
+    if (st && sh) { start_shell(); return; }                    /* (the login starts again) */
+    if (!st && sh) { set_owner(); return; }
+#else
     st = start_program(bg == 1 ? 0 : w, 0, &tid);
+#endif
     if (st && !w) say("\r\nbg: cannot start\r\n");        /* (nobody waits for it: a stage of  pc &  that does not fit in the memory) */
     if (st) { reply(w, st, 0); return; }
     if (bg == 1) {
@@ -483,7 +500,7 @@ int main(void)
 #ifdef MK09_V2
         case PM_SETUSER:                                /* root changes the user of the task that asks */
             if (m.src >= NTASK || t_uid[m.src] != 0) { reply(m.src, E_PERM, 0); break; }
-            t_uid[m.src] = (u8)m.a;
+            t_uid[m.src] = t_ruid[m.src] = (u8)m.a;
             t_gid[m.src] = (u8)m.b;
             fs_user(m.src, (u8)m.a, (u8)m.b);
             reply(m.src, E_OK, 0);
@@ -492,6 +509,7 @@ int main(void)
             c = m.src;
             m.a = t_uid[c];
             m.b = t_gid[c];
+            m.c = t_ruid[c];
             m.op = E_OK;
             mk_reply(c, &m);
             break;

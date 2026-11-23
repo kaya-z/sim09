@@ -4,6 +4,9 @@
 #include "types.h"
 #include "mklib.h"
 #include "mkstr.h"
+#ifdef MK09_V2
+#include "pwd.h"
+#endif
 
 static u8 longfmt, all;
 
@@ -24,6 +27,17 @@ static void show(const dirent_t *d)
             while (n) sz[k++] = t[--n];
             sz[k] = 0;
         }
+#ifdef MK09_V2
+        {                                               /* 2.0: the permissions, the owner and the group */
+            char m[11], nu[PW_NAME], ng[PW_NAME];
+            u8 i;
+            for (i = 0; i < 9; i++) m[1 + i] = (d->mode & (0x100 >> i)) ? "rwxrwxrwx"[i] : '-';
+            m[0] = (d->attr & FA_DIR) ? 'd' : '-';
+            if (d->mode & 01000) m[3] = (d->mode & 0100) ? 's' : 'S';
+            m[10] = 0;
+            printf("%s %-6s %-6s ", m, unamestr(d->uid, nu), gnamestr(d->gid, ng));
+        }
+#endif
         printf("%-13s %9s %04d-%02d-%02d %02d:%02d\n", d->name, sz, 1980 + (dt >> 9), (dt >> 5) & 15, dt & 31,
                tm >> 11, (tm >> 5) & 63);
     } else {
@@ -40,6 +54,22 @@ static int list(const char *p)
     if (r < 0) { printf("ls: %s: %s\n", p, strerr_(r)); return 1; }
     if (!(st.attr & FA_DIR)) {
         char *s = strrchr(p, '/');
+#ifdef MK09_V2
+        {                                               /* 2.0: the entry of the directory has the owner and the permissions */
+            char dir[MAXPATH];
+            const char *base = s ? s + 1 : p;
+            u8 n = s ? (u8)(s - p) : 0;
+            if (n >= MAXPATH) n = MAXPATH - 1;
+            memcpy(dir, p, n);
+            if (n == 0) { dir[0] = s ? '/' : '.'; n = 1; }
+            dir[n] = 0;
+            fd = open(dir, FO_DIR | FO_READ);
+            if (fd >= 0) {
+                while (readdir(fd, &d) > 0) if (!strcmp(d.name, base)) { close(fd); show(&d); return 0; }
+                close(fd);
+            }
+        }
+#endif
         memset(&d, 0, sizeof(d));
         strcpy(d.name, s ? s + 1 : p);
         d.attr = st.attr;

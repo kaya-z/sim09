@@ -19,6 +19,7 @@ import argparse, os, struct, sys, time
 
 BLK = 512
 PART_START = 2048          # (--part-start)
+OWNERS = []                # (--owners: [(pattern, uid, gid, mode)] of the entries that are not root's rwxr-xr-x)
 KEEP_CASE = False          # (--keep-case: 2.0, the names are written as they are, they are case sensitive)
 SMALL = False              # (--small: fewer than 4085 clusters allowed, for the 2HD floppy of the FM-11)
 
@@ -96,7 +97,19 @@ class Fat16:
     def add_dir(self, entries, ent):
         entries.append(ent)
 
-    def build_dir(self, path, parent_cl, self_cl):
+    def owned(self, ent, rel):
+        """2.0: owner (byte 20), group + 1 (byte 21) and permissions (bytes 14-15) of an entry, by the first pattern of --owners that fits"""
+        import fnmatch
+        for pat, uid, gid, mode in OWNERS:
+            if fnmatch.fnmatch(rel, pat):
+                b = bytearray(ent)
+                b[14:16] = struct.pack('<H', mode)
+                b[20] = uid
+                b[21] = gid + 1
+                return bytes(b)
+        return ent
+
+    def build_dir(self, path, parent_cl, self_cl, rel=''):
         """returns the directory content (bytes) with entries for the files and subdirs of path"""
         ents = []
         if self_cl:
@@ -109,13 +122,13 @@ class Fat16:
                 # clusters of the directory first, then its content
                 sub_bytes_len = None
                 cl = self.alloc(1)           # placeholder: a directory grows beyond one cluster rarely;
-                content = self.build_dir(full, self_cl, cl)
+                content = self.build_dir(full, self_cl, cl, rel + nm + '/')
                 need = (len(content) + self.spc * BLK - 1) // (self.spc * BLK)
                 if need > 1:
                     # extend the chain contiguously (nothing was allocated after 'cl' except subdirs...)
                     sys.exit('mkdisk: directory %s too big' % full)
                 self.write_clusters(cl, content.ljust(self.spc * BLK, b'\0'))
-                ents.append(self.entry(n83, 0x10, cl, 0, os.stat(full).st_mtime))
+                ents.append(self.owned(self.entry(n83, 0x10, cl, 0, os.stat(full).st_mtime), rel + nm))
             else:
                 data = open(full, 'rb').read()
                 first = 0
@@ -123,7 +136,7 @@ class Fat16:
                     n = (len(data) + self.spc * BLK - 1) // (self.spc * BLK)
                     first = self.alloc(n)
                     self.write_clusters(first, data)
-                ents.append(self.entry(n83, 0x20, first, len(data), os.stat(full).st_mtime))
+                ents.append(self.owned(self.entry(n83, 0x20, first, len(data), os.stat(full).st_mtime), rel + nm))
         return b''.join(ents)
 
     def finish(self, tree):
@@ -170,10 +183,16 @@ def main():
     ap.add_argument('--total-blocks', type=int, default=0, help='the size of the whole disk in blocks (instead of --size-mb)')
     ap.add_argument('--small', action='store_true', help='allow a volume with fewer than 4085 clusters (FAT16 layout, MK09 only)')
     ap.add_argument('--keep-case', action='store_true', help='write the names as they are (MK09 2.0: case sensitive names); without it they are made upper case')
+    ap.add_argument('--owners', help='2.0: a file with lines "pattern uid gid mode(octal)": the owner, group and permissions of the entries (the patterns are relative paths, as fnmatch; the first that fits)')
     ap.add_argument('tree')
     a = ap.parse_args()
     global PART_START, SMALL, KEEP_CASE
     KEEP_CASE = a.keep_case
+    if a.owners:
+        for ln in open(a.owners):
+            f = ln.split()
+            if len(f) == 4 and not f[0].startswith('#'):
+                OWNERS.append((f[0], int(f[1]), int(f[2]), int(f[3], 8)))
     PART_START = a.part_start
     SMALL = a.small
     vblocks = min(int(a.size_mb * 1024 * 1024) // BLK, 65524 * 64 + 600)

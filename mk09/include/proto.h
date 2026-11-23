@@ -127,7 +127,7 @@ typedef struct dirent {
 /* 2.0: users (docs/V2_PLAN.md, stage 2b).  A program is started with the user of the task that asks (PM_EXEC: of the task it replaces); a file with the
  * setuid bit (mode 01000) runs as the owner of the file.  The shell that is started again keeps the user. */
 #define PM_SETUSER  8       /* a = uid, b = gid: change the user of the task that asks; root only (login, su) */
-#define PM_GETUSER  9       /* -> a = uid, b = gid of the task that asks */
+#define PM_GETUSER  9       /* -> a = uid (the effective one), b = gid, c = the real uid (who started the program) of the task that asks */
 #endif
 
 /* ---- MM: memory manager (a task of its own, TID_MM) -------------------- */

@@ -245,6 +245,18 @@ static void try_reader(void)
     if (!rd_tid) return;
     pump();
     if (mode & TM_RAW) {
+#ifdef MK09_V2
+        if (llen > lpos) {              /* 2.0: what was typed before the program asked for raw input (a password) is read first, not lost */
+            n = llen - lpos;
+            if (n > rd_len) n = rd_len;
+            if (mk_copyto(rd_tid, 0, line + lpos, n)) n = 0;
+            lpos += (u8)n;
+            if (lpos >= llen) reset_line();
+            reply(rd_tid, E_OK, n);
+            rd_tid = 0;
+            return;
+        }
+#endif
         n = qcount();
         if (!n) {
             if (mode & TM_NOWAIT) { reply(rd_tid, E_OK, 0); rd_tid = 0; }
@@ -309,7 +321,11 @@ static void do_ioctl(msg_t *m)
         mode = (u8)m->b;
         if (m->c != 0xFFFF && m->c <= CS_SJIS) charset = (u8)m->c;
         if (m->d != 0xFFFF) { cols = (u8)(m->d >> 8); rows = (u8)m->d; }
+#ifdef MK09_V2
+        if (oldraw && !(mode & TM_RAW)) reset_line();         /* (from cooked to raw the line that is being typed stays) */
+#else
         if (oldraw != (mode & TM_RAW)) reset_line();
+#endif
         break;
     case TTYC_READY:
         pump();

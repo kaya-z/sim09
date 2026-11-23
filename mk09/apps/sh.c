@@ -160,7 +160,11 @@ static int execute(char *s);
 
 /* a | b | c: every stage runs to its end, the next one reads what it wrote (two files in turn).  (The pipes of the YSD9000 port of MK09.) */
 #define MAXSTAGE    4
+#ifdef MK09_V2
+static const char pipef[2][16] = { PN_PIPE0, PN_PIPE1 };
+#else
 static const char pipef[2][12] = { PN_PIPE0, PN_PIPE1 };
+#endif
 
 static char *find_bar(char *s)
 {
