@@ -209,7 +209,7 @@ int main(void)
             r.a = date;
             r.op = E_OK;
             break;
-#ifdef BOARD_FM11
+#if defined(BOARD_FM11) || defined(MMU_COCO)
         case FS_STIME:                                      /* a = year:month, b = day:hour, c = minute:second */
 #ifdef MK09_V2
             if (fs_uid != 0) { r.op = E_PERM; break; }                      /* the clock: root only */

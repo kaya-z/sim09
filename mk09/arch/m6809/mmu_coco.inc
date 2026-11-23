@@ -2,19 +2,18 @@
 *
 * Eight blocks of 8KB.  There are two maps only: the system map ($FFA0-$FFA7: the servers and the idle task) and the user map ($FFA8-$FFAF: the program
 * that runs), chosen by bit 0 of the task register $FF91.  The registers are written by software (an interrupt does not change the map).  So
-*   - the servers run in the system map, which is the identity (the logical block n is the physical block n) for the blocks 0-6,
+*   - the servers run in the system map, which is the identity (the logical block n is the physical block n),
 *   - the user map is loaded from T_MAP of the task each time a program is dispatched (mmu_select),
-*   - the block 0 is the kernel in every map (the kernel code and data, the ring of the console, the vector table), and $FE00-$FFFF is the fixed page,
-*   - the block 7 ($E000-$FDFF) is the window: the kernel puts a physical block of another task there (xcopy).
-* Same calls as mmu_fm11.inc (see there): mmuinit, mmu_select, mmu_newmap, xcopy.
+*   - the block 0 is the kernel in every map (the kernel code and data, the ring of the console, the vector table), and $FE00-$FFFF is the fixed page
+*     (the vectors, the I/O registers): a program has the logical addresses $2000-$FDFF.
+* There is no window onto the memory of another task: the kernel copies through xbuf (in the block 0, in every map) and selects the map of the other task
+* for one half of the copy (xcopy).  Same calls as mmu_fm11.inc (see there): mmuinit, mmu_select, mmu_newmap, xcopy.
 CO_TASK	equ	$FF91			bit 0: 0 = the system map, 1 = the user map
 CO_SYS	equ	$FFA0			the registers of the system map (the physical block of the logical block 0-7)
 CO_USR	equ	$FFA8			the registers of the user map
-WINLOG	equ	$E000			the window (the logical block 7)
-NWIN	equ	7
+NBLK	equ	8
 
-* mmuinit: the system map is the identity for the blocks 0-6; the entries T_MAP of the servers (tasks 0-5) too (the memory of a server is reached through the
-* window by its physical block).  The map in force is the system one.
+* mmuinit: the system map is the identity; the entries T_MAP of the servers (tasks 0-5) too.  The map in force is the system one.
 mmuinit	clr	CO_TASK
 	ldx	#CO_SYS
 	ldu	#CO_USR
@@ -22,12 +21,8 @@ mmuinit	clr	CO_TASK
 @m	sta	,x+
 	sta	,u+
 	inca
-	cmpa	#NWIN
+	cmpa	#NBLK
 	blo	@m
-	clrb				(block 7: the window; it shows the physical block 7 until it is used)
-	lda	#NWIN
-	sta	CO_SYS+NWIN
-	sta	CO_USR+NWIN
 	clrb
 @t	pshs	b
 	lda	#TSZ
@@ -47,8 +42,7 @@ mmuinit	clr	CO_TASK
 
 * mmu_select: Y = the task that runs (<cur): a server runs in the system map; a program in the user map, which is loaded from its T_MAP
 mmu_select
-	lda	<cur
-	cmpa	#TID_USER0
+mmu_map	cmpy	#tasks+TID_USER0*TSZ	(Y = the entry of a task: the map of the task is put in force)
 	blo	@sys
 	leax	T_MAP,y
 	ldu	#CO_USR
@@ -76,59 +70,43 @@ mmu_newmap
 	bne	@mp
 	rts
 
-* xcopy: copy xn bytes between the caller's memory (xc) and the memory of the task xp (xa, a logical address in its map): xm = GR_READ: from the
-* other task, GR_WRITE: to it.  The other memory is reached through the window (the block 7 of the map in force), at most to the end of a block at a time.
+* xcopy: copy xn bytes between the caller's memory (xc, in the map in force) and the memory of the task xp (xa, a logical address in its map): xm = GR_READ: from the
+* other task, GR_WRITE: to it.  256 bytes at most at a time, through xbuf: the map of the other task is in force for one half of the copy.
 xcopy	ldd	xn
 	lbeq	@done
-	lda	xa			the block of the other task's address
-	lsra
-	lsra
-	lsra
-	lsra
-	lsra
-	ldx	xp
-	leax	T_MAP,x
-	lda	a,x			A = its physical block
-	ldx	#CO_SYS+NWIN		the window register of the map in force
-	ldb	CO_TASK
-	andb	#1
-	beq	@w
-	ldx	#CO_USR+NWIN
-@w	ldb	,x			(what it was)
-	pshs	b,x
-	sta	,x			the window shows the block
-	ldd	xa
-	anda	#$1F
-	ora	#WINLOG/256		the address in the window
-	std	xbuf			(xp is needed again: the address in the window is kept in xbuf)
-	ldd	xa
-	anda	#$1F
-	pshs	d			(the offset in the block)
-	ldd	#$2000
-	subd	,s++			the bytes left in the block
-	cmpd	xn
-	bls	@ok
-	ldd	xn
-@ok	pshs	d			(the count)
+	cmpd	#256
+	bls	@c
+	ldd	#256
+@c	pshs	d			(the bytes of this round)
 	lda	xm
 	cmpa	#GR_WRITE
 	beq	@wr
-	ldx	xbuf			from the other task: the window to the caller's memory
+	ldy	xp			from the other task: its memory to xbuf, then xbuf to the caller's memory
+	lbsr	mmu_map
+	ldx	xa
+	ldu	#xbuf
+	ldd	,s
+	lbsr	copy
+	ldy	<curp
+	lbsr	mmu_map
+	ldx	#xbuf
 	ldu	xc
 	ldd	,s
 	lbsr	copy
 	bra	@adv
-@wr	ldx	xc			to the other task: the caller's memory to the window
-	ldu	xbuf
+@wr	ldx	xc			to the other task: the caller's memory to xbuf, then xbuf to its memory
+	ldu	#xbuf
 	ldd	,s
 	lbsr	copy
-@adv	puls	d			the count
-	std	<tmpw2
-	ldb	,s+
-	ldx	,s++
-	stb	,x			(the window as it was)
-	ldd	<tmpw2
-	pshs	d
+	ldy	xp
+	lbsr	mmu_map
+	ldx	#xbuf
+	ldu	xa
+	ldd	,s
+	lbsr	copy
+	ldy	<curp
+	lbsr	mmu_map
+@adv	ldd	,s
 	addd	xa
 	std	xa
 	ldd	,s

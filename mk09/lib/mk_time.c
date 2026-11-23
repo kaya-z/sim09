@@ -18,7 +18,7 @@ int settime(u16 date, u16 time)
     u8 y = date >> 9, mo = (date >> 5) & 15, d = date & 31, mi = (time >> 5) & 63, sec = (time & 31) << 1, len = (u8)(30 + ((mo ^ (mo >> 3)) & 1));
     if (mo == 2) len = (y & 3) ? 28 : 29;
     if (mo < 1 || mo > 12 || d < 1 || d > len || (time >> 11) > 23 || mi > 59 || sec > 58) return -E_INVAL;
-#ifdef BOARD_FM11
+#if defined(BOARD_FM11) || defined(MMU_COCO)         /* (the clock is set by FS: root only) */
     m.op = FS_STIME;
     m.a = ((u16)y << 8) | mo;
     m.b = ((u16)d << 8) | (time >> 11);

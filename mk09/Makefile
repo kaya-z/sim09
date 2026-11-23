@@ -47,12 +47,12 @@ ifeq ($(BOOTDEV),2hd)
 CFLAGS  += -DFM11_2HD=1
 endif
 ifeq ($(LEVEL),2)
-CFLAGS  += -DFM11_MMU=1
+CFLAGS  += -DFM11_MMU=1 -DMK_MMU=1
 ASFLAGS += -DMMU=1
 endif
 endif
 ifdef COCO
-CFLAGS  += -DMMU_COCO=1
+CFLAGS  += -DMMU_COCO=1 -DMK_MMU=1
 ASFLAGS += -DMMU=1 -DCOCO=1
 endif
 # (2.0: case sensitive names, the image keeps the lower case names of the tree)

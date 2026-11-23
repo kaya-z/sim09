@@ -111,13 +111,31 @@ u8  mk_hook(u16 bits);                      /* get NFY_TICK etc. every tick   */
 #define RX_RING     128                     /* the size of the ring of mk_rxreg(): a power of 2 (the kernel knows the number) */
 u8  mk_rxreg(void *buf);                    /* { u8 head, tail; u8 buf[RX_RING]; }: buf = the bytes, head and tail are the two bytes before them: the kernel puts the console characters in (and notifies NFY_RX); it turns the receive interrupt on, again after a full ring */
 u16 mk_rxget(u8 *buf, u16 n);               /* up to n console characters that the receive interrupt collected: the number */
+#ifdef MK_MMU
+/* the pages of the address space of a program: the FM-11 Level 2 has 16 pages of 4KB (the pages 0 and 1 are the kernel, the programs have $2000-$EFFF), the sbc09 with
+ * the MMU 8 pages of 8KB (the page 0 is the kernel, the programs have $2000-$FDFF) */
+#ifdef MMU_COCO
+#define NMAP    8
+#define PGSH    5                           /* a page is (1 << PGSH) units of 256 bytes */
+#define PG0     1                           /* the first page of a program in the map */
+#define NUP     7                           /* the pages of a program */
+#define UEND    0xFE00                      /* ($FE00-$FFFF is the fixed page: the vectors and the I/O registers) */
+#else
+#define NMAP    16
+#define PGSH    4
+#define PG0     2
+#define NUP     13
+#define UEND    0xF000
+#endif
+#define UBASE   0x2000
+#endif
 /* create a task (state NEW) with memory region [lo, hi), first stack pointer 'top', entry
  * point and one argument (passed in X); returns the new task id in *tid */
 typedef struct tcreate {
     u16 entry, lo, hi, top, arg;
     u8  prio;                               /* 0 = most urgent .. 6 */
-#ifdef FM11_MMU
-    u8  map[16];                            /* Level 2 (MMU): the physical page (of 4KB) of each logical page of the new task's address space */
+#ifdef MK_MMU
+    u8  map[NMAP];                          /* the MMU: the physical page (of 4KB; the sbc09: of 8KB) of each logical page of the new task's address space */
 #endif
 } tcreate_t;
 u8  mk_tcreate(tcreate_t *p, u8 *tid);

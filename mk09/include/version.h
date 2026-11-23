@@ -125,8 +125,8 @@
 
 #ifdef MK09_V2
 /* the 2.0 line (docs/V2_PLAN.md): only the builds with an MMU (FM-11 Level 2, later the sbc09 MMU build); the 1.x builds below are frozen */
-#define MK09_VERSION    "2.0.0pre008"     /* the system version */
-#define MK09_KERNEL_VERSION "2.0.0pre003" /* the kernel version */
+#define MK09_VERSION    "2.0.0pre009"     /* the system version */
+#define MK09_KERNEL_VERSION "2.0.0pre004" /* the kernel version */
 #else
 #define MK09_VERSION    "1.46"            /* the system version */
 #define MK09_KERNEL_VERSION "1.12"        /* the kernel version */
@@ -140,7 +140,11 @@
 #endif
 #else
 #define MK09_FOR        ""
+#ifdef MMU_COCO
+#define MK09_MEM        "MMU: 8KB pages"
+#else
 #define MK09_MEM        "64KB flat, no MMU"
+#endif
 #endif
 #define MX_VERSION      2           /* version of the MX executable format (docs/SPEC.md) */
 

@@ -35,9 +35,8 @@
 #define HDRSIZE     16
 #define IOBUF       128             /* (the start-up block, ARGMAX = 128, is in the first part of it; the bigger the chunk, the fewer reads when a program is loaded) */
 #define NOH         0xFF
-#ifdef FM11_MMU
-#define UBASE       0x2000          /* Level 2: every program has its own address space, the program area is $2000-$EFFF of it */
-#define UEND        0xF000
+#ifdef MK_MMU
+/* (the MMU: every program has its own address space, the program area is UBASE .. UEND of it: mk09.h) */
 #define TPA_SIZE    (UEND - UBASE)
 #else
 #define TPA_SIZE    (TPA_END - TPA_BASE)
@@ -75,9 +74,9 @@ static void mm_free(u8 first, u8 n)
     mk_call(TID_MM, &m);
 }
 
-#ifdef FM11_MMU
+#ifdef MK_MMU
 /* Level 2: MM hands out physical pages of 4KB (a list of n page numbers, written to our buffer) */
-static u8 pmap[NTASK][13];              /* the physical pages of a program (the logical pages 2 .. 14) */
+static u8 pmap[NTASK][NUP];             /* the physical pages of a program (the logical pages PG0 ..) */
 static u8 pmn[NTASK];
 
 static int mm_alloc4(u8 n, u8 *list)    /* 0 = good, -1 = no memory */
@@ -191,8 +190,8 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
     u16 size, body, extra, n, off, base, hi, v[3], rem;
     int pg;
     u8 st, h, hin, hout, pages, i, tid = 0, created = 0;
-#ifdef FM11_MMU
-    u8 n4, pl[13];
+#ifdef MK_MMU
+    u8 n4, pl[NUP];
 #endif
 
 #ifdef MK09_V2
@@ -238,8 +237,8 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
     }
     pages = (u8)((TPA_SIZE - rem + 255) >> 8);
 
-#ifdef FM11_MMU
-    n4 = (u8)((pages + 15) >> 4);
+#ifdef MK_MMU
+    n4 = (u8)((pages + (1 << PGSH) - 1) >> PGSH);
     pg = mm_alloc4(n4, pl);
     if (pg < 0 && !is_shell && shell_tid && who == shell_tid) {     /* the shell steps aside */
         mk_tkill(shell_tid, 0);
@@ -250,9 +249,9 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
     }
     if (pg < 0) { st = E_NOMEM; goto out; }
     base = UBASE;
-    for (i = 0; i < 16; i++) tc.map[i] = 0;
-    tc.map[1] = 1;
-    for (i = 0; i < n4; i++) tc.map[2 + i] = pl[i];
+    for (i = 0; i < NMAP; i++) tc.map[i] = 0;
+    for (i = 1; i < PG0; i++) tc.map[i] = i;                   /* (the pages of the kernel are the same in every map) */
+    for (i = 0; i < n4; i++) tc.map[PG0 + i] = pl[i];
 #else
     pg = mm_alloc(pages, is_shell);
     if (pg < 0 && !is_shell && shell_tid && who == shell_tid) {     /* the shell steps aside */
@@ -273,7 +272,7 @@ static u8 start_program(u8 who, u8 is_shell, u8 *tidp)
     tc.arg = hi - ARGMAX;
     tc.prio = PRIO_USER;
     st = mk_tcreate(&tc, &tid);
-#ifdef FM11_MMU
+#ifdef MK_MMU
     if (st) { mm_free4(pl, n4); goto out; }
     created = 1;
     for (i = 0; i < n4; i++) pmap[tid][i] = pl[i];
@@ -312,7 +311,7 @@ out:
     if (st) {
         if (created) {
             mk_tkill(tid, 255);
-#ifdef FM11_MMU
+#ifdef MK_MMU
             mm_free4(pmap[tid], pmn[tid]);
 #else
             mm_free(regp[tid], regn[tid]);
@@ -371,7 +370,7 @@ static void collect(void)
     u8 t, c, w;
     while (!mk_treap(&t, &c)) {
         fsc(FS_CLOSEALL, t, 0);
-#ifdef FM11_MMU
+#ifdef MK_MMU
         if (regn[t]) { mm_free4(pmap[t], pmn[t]); regn[t] = 0; }
 #else
         if (regn[t]) { mm_free(regp[t], regn[t]); regn[t] = 0; }

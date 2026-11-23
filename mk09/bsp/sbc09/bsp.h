@@ -51,5 +51,8 @@ void bsp_power_off(void);
 /* for the servers */
 void bsp_rtc_read(u8 *tm);       /* tm[0..5] = year-1900, month, day, hour, min, sec */
 void bsp_now_fat(u16 *date, u16 *time);   /* the clock in the FAT format */
+#ifdef MMU_COCO
+void bsp_set_clock(u16 ym, u16 dh, u16 ms);   /* set the clock: year (since 1980):month, day:hour, minute:second (FS_STIME) */
+#endif
 
 #endif

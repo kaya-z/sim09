@@ -29,7 +29,7 @@
 #define CHUNK       48
 
 /* The ring: the kernel (the receive interrupt) is the writer of head, this server the writer of tail; mk_rxreg() tells the kernel where it is. */
-#ifdef FM11_MMU
+#ifdef MK_MMU
 struct rxring { u8 h, t; u8 b[INQ]; };
 #define rxr (*(struct rxring *)(K_DATA + K_DSZ - 0x90))   /* in the data of the kernel (the keyboard interrupt of the kernel fills it, in any map) */
 #else

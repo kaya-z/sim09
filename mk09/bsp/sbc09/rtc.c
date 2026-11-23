@@ -11,6 +11,20 @@ void bsp_rtc_read(u8 *tm)
         tm[i] = RTC_REG(1 + i);
 }
 
+#ifdef MMU_COCO
+/* set the clock: the registers $31-$36 (year-1900, month, day, hour, minute, second), then the command $05 (a = year since 1980: the FAT year + 80) */
+void bsp_set_clock(u16 ym, u16 dh, u16 ms)
+{
+    RTC_REG(1) = (u8)((ym >> 8) + 80);
+    RTC_REG(2) = (u8)ym;
+    RTC_REG(3) = (u8)(dh >> 8);
+    RTC_REG(4) = (u8)dh;
+    RTC_REG(5) = (u8)(ms >> 8);
+    RTC_REG(6) = (u8)ms;
+    TIMER_REG = 0x05;
+}
+#endif
+
 /* the time in FAT format: date = (year-1980) << 9 | month << 5 | day, time = hour << 11 | minute << 5 | second / 2 */
 void bsp_now_fat(u16 *date, u16 *time)
 {
