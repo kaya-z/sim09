@@ -49,7 +49,7 @@ typedef struct diter {
 typedef struct fh {
     u8  used;                       /* 0 free, 1 file, 2 directory */
     u8  owner;
-#ifdef BOARD_FM11
+#ifdef FS_MULTI
     u8  drv;                        /* the drive of the volume (0 = the system drive) */
 #endif
     u8  flags;
@@ -107,7 +107,7 @@ static u16 rootsecs;
 static u16 nclusters;               /* data clusters; cluster numbers are 2 .. nclusters+1 */
 static u16 free_hint;
 
-#ifdef BOARD_FM11
+#ifdef FS_MULTI
 /* more than one volume (the FM-11: drive 0 and the floppy disks 1-4): the variables above describe the volume of the drive fs_drive, the
  * others are kept in vsave and swapped in by fs_select().  The cache has no dirty blocks (every change is written at once), so it is only
  * emptied at a switch.  Paths of drive 0 are relative to the current directory; "N:/path" names the root of the drive N (N = 1..4). */
@@ -642,7 +642,7 @@ static u8 resolve(const char *path, res_t *r)
 /* ------------------------------------------------------------------ */
 /* mount                                                               */
 /* ------------------------------------------------------------------ */
-#ifdef BOARD_FM11
+#ifdef FS_MULTI
 static u8 mount_cur(void)
 #else
 u8 fs_mount(void)
@@ -702,7 +702,7 @@ u8 fs_mount(void)
     thi -= tot < data_blk;                                      /* the blocks of the data, (thi, tot), in clusters */
     tot -= data_blk;
     for (i = 0; i < spcshift; i++) { tot = (tot >> 1) | (thi << 15); thi >>= 1; }
-#ifdef BOARD_FM11
+#ifdef FS_MULTI
     if (thi || tot < 16 || tot >= 65525) return E_FORMAT;       /* (the 2HD floppy: a FAT16 layout with fewer than 4085 clusters, readable by MK09 only) */
 #else
     if (thi || tot < 4085 || tot >= 65525) return E_FORMAT;     /* not FAT16 */
@@ -716,7 +716,7 @@ u8 fs_mount(void)
     return E_OK;
 }
 
-#ifdef BOARD_FM11
+#ifdef FS_MULTI
 u8 fs_mount_drive(u8 d)
 {
     u8 st = fs_select(d);
@@ -1199,7 +1199,7 @@ u8 fs_rename(const char *from, const char *to)
     res_t a, c;
     u8 st, e[32];
     cbuf_t *b;
-#ifdef BOARD_FM11
+#ifdef FS_MULTI
     u8 d2 = (to[0] >= '0' && to[0] <= '4' && to[1] == ':') ? (u8)(to[0] - '0') : 0;
 
     from = pathdrv(from, pbuf, &st);
@@ -1284,7 +1284,7 @@ u8 fs_chdir(const char *path)
     res_t r;
     char np[MAXPATH];
     u8 st;
-#ifdef BOARD_FM11
+#ifdef FS_MULTI
     if (path[0] >= '0' && path[0] <= '4' && path[1] == ':') return E_NOSYS;     /* (the current directory is the one of drive 0) */
     fs_select(0);
 #endif
@@ -1306,7 +1306,7 @@ u8 fs_chdir(const char *path)
 u8 fs_getcwd(char *buf, u16 n)
 {
     u16 l = (u16)strlen(cwd_path) + 1;
-#ifdef BOARD_FM11
+#ifdef FS_MULTI
     fs_select(0);
 #endif
     if (l > n) return E_INVAL;
@@ -1314,7 +1314,7 @@ u8 fs_getcwd(char *buf, u16 n)
     return E_OK;
 }
 
-#ifdef BOARD_FM11
+#ifdef FS_MULTI
 u8 fs_statfs(u8 drive, u8 *spcp, u16 *clusters, u16 *freec)
 #else
 u8 fs_statfs(u8 *spcp, u16 *clusters, u16 *freec)
@@ -1322,7 +1322,7 @@ u8 fs_statfs(u8 *spcp, u16 *clusters, u16 *freec)
 {
     u16 cl, n = 0, blk, i, last;
     cbuf_t *b;
-#ifdef BOARD_FM11
+#ifdef FS_MULTI
     u8 st = fs_select(drive);
     if (st) return st;
 #endif

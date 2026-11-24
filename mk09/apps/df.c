@@ -3,6 +3,7 @@
 /* df - space of the file system */
 #include "types.h"
 #include "mklib.h"
+#include "mk09.h"
 
 static u16 amount(unsigned long kb, const char **unit)       /* KB, or MB when it is 64MB or more (the volume has up to 2GB) */
 {
@@ -17,7 +18,7 @@ int main(int argc, char **argv)
     u16 total, freec, f, t;
     const char *fu, *tu;
     int r;
-#ifdef BOARD_FM11
+#ifdef FS_MULTI
     u8 drive = 0;
     if (argc > 1 && argv[1][0] >= '0' && argv[1][0] <= '4') drive = (u8)(argv[1][0] - '0');      /* df 1: the floppy disk (FM-11) */
     r = statfs_drv(drive, &spc, &total, &freec);

@@ -20,7 +20,13 @@
 
 #define NSEC        26
 #define TRACKLEN    10416
+#ifdef MMU_COCO
+#define TOTBLK      1536                /* the RAM disk of the sbc09 (drive 1): 768KB (the physical blocks $A0-$FF of 8KB) */
+#define MAXDRV      1
+#else
 #define TOTBLK      1989                /* blocks of the disk */
+#define MAXDRV      4
+#endif
 #define PARTBLK     1                   /* the volume starts at block 1 (block 0: the MBR) */
 #define VOLBLK      (TOTBLK - PARTBLK)
 #define SPC         2
@@ -28,7 +34,7 @@
 #define ROOTENT     512
 #define ROOTBLK     (ROOTENT * 32 / 512)
 
-#ifndef FM11_MMU
+#if !defined(FM11_MMU) && !defined(MMU_COCO)
 static u8 trk[TRACKLEN];                /* (Level 2: the disk server builds the track image itself) */
 #endif
 static u8 blk[BLKSIZE];
@@ -40,7 +46,7 @@ static u16 fill(u8 *p, u8 v, u16 n)
     return n;
 }
 
-#ifndef FM11_MMU
+#if !defined(FM11_MMU) && !defined(MMU_COCO)
 /* the image of one track: the standard IBM MFM format, 26 sectors of 256 bytes, interleave 1.  The positions of the C and H bytes
  * of the 26 address marks are kept for the next tracks */
 static u16 idpos[NSEC];
@@ -110,16 +116,17 @@ int main(int argc, char **argv)
     if (argc <= ai || argc > ai + 2) { puts("usage: format [-y] drive [label]     (drive 1-4: the floppy disk; drive 0 is the system disk)"); return 1; }
     drive = (u8)atoi_(argv[ai]);
     if (argc > ai + 1) label = argv[ai + 1];
-    if (drive == 0 || drive > 4) { puts("format: the drive must be 1-4 (the drive 0 is the system disk)"); return 1; }
+    if (drive == 0 || drive > MAXDRV) { puts("format: the drive must be 1-4 (the drive 0 is the system disk)"); return 1; }
     if (!yes) {
         printf("format: all data on drive %u will be lost.  Continue (y/n)? ", drive);
         fflush();
         if (gets_(ans, sizeof(ans)) < 0 || (ans[0] != 'y' && ans[0] != 'Y')) { puts("format: cancelled"); return 1; }
     }
 
-#ifndef FM11_MMU
+#if !defined(FM11_MMU) && !defined(MMU_COCO)
     build_track();
 #endif
+#ifndef MMU_COCO                        /* (the RAM disk has no tracks) */
     for (t = 0; t < 77; t++) {
         for (sd = 0; sd < 2; sd++) {
 #ifdef FM11_MMU
@@ -133,6 +140,7 @@ int main(int argc, char **argv)
         if (t % 10 == 0) { printf("\rformatting: track %u of 77 ", t); fflush(); }
     }
     printf("\rformatting: track 77 of 77 \n");
+#endif
 
     /* the volume: sectors per cluster 2 (of blocks), 2 FATs, 512 root entries */
     spb = SPC;

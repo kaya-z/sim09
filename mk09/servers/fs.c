@@ -21,7 +21,7 @@ u8 fsx_disk(u8 write, u16 bhi, u16 blo, u8 *buf)
     if (fs_part_hi > 0x7F || bhi > 0x7F || hi > 0x7F) return E_IO;      /* beyond the block numbers of the disk server (23 bits: 4GB) */
     m.op = write ? DISK_WRITE : DISK_READ;
     m.a = lo;
-#ifdef BOARD_FM11
+#ifdef FS_MULTI
     m.d = hi | ((u16)fs_drive << 8);
 #else
     m.d = hi;                                   /* drive 0 */
@@ -195,7 +195,7 @@ int main(void)
             fs_closeall((u8)m.a);
             r.op = E_OK;
             break;
-#ifdef BOARD_FM11
+#ifdef FS_MULTI
         case FS_MOUNT:                                      /* a = drive, b = 0 mount, 1 umount, 2 is it mounted? */
 #ifdef MK09_V2
             if (m.b < 2 && fs_uid != 0) { r.op = E_PERM; break; }          /* mount and umount: root only */
@@ -207,7 +207,7 @@ int main(void)
             break;
 #endif
         case FS_STATFS:
-#ifdef BOARD_FM11
+#ifdef FS_MULTI
             r.op = fs_statfs((u8)m.a, &spc, &clusters, &freec);
 #else
             r.op = fs_statfs(&spc, &clusters, &freec);

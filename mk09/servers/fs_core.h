@@ -16,6 +16,7 @@
 
 #include "types.h"
 #include "proto.h"
+#include "mk09.h"
 
 /* read (write = 0) or write one 512 byte block (the number bhi:blo is relative to the start of the
  * volume: add fs_part_hi:fs_part_lo); returns E_OK or E_IO */
@@ -56,7 +57,7 @@ void fs_cwd_set(u16 cl, const char *path);
 u8   fs_chmod(const char *path, u16 mode);
 u8   fs_chuser(const char *path, u16 uid, u16 gid);
 #endif
-#ifdef BOARD_FM11                  /* more than one volume: the floppy disks 1-4 */
+#ifdef FS_MULTI                  /* more than one volume: the floppy disks 1-4 */
 u8   fs_statfs(u8 drive, u8 *spc, u16 *clusters, u16 *freec);
 u8   fs_mount_drive(u8 d);         /* mount the volume of the drive d (0-4) */
 u8   fs_umount(u8 d);              /* drives 1-4; E_BUSY while a file of it is open */

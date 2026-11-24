@@ -17,10 +17,10 @@ static u16 freem[16];                   /* free pages: bit n of freem[k] = the p
 static u8 total;
 static u16 npages;                      /* its pages (the product by a shift: 32 * 8 does not go into a byte) */
 #ifdef MMU_COCO
-/* the sbc09 with the MMU: the pages are the blocks of 8KB; the physical blocks 8 .. $FF (2MB machine, 1.9MB) are for the programs, except $3F (the fixed
+/* the sbc09 with the MMU: the pages are the blocks of 8KB; the physical blocks 8 .. $9F (1.2MB) are for the programs, except $3F (the fixed
  * page, physical $7E000); the blocks 0-7 are the system.  The machine has 2MB (the RTL always; sim09 -2 by default): no memprobe */
 #define POOL_LO 8
-#define POOL_HI 0xFF
+#define POOL_HI 0x9F                    /* ($A0-$FF, 768KB, are the RAM disk of the disk server: drive 1) */
 #else
 static u8 ngrp;                         /* the RAM of the machine in steps of 128KB (32 pages): the kernel has tried it at the start (memprobe) */
 #define MEMGRP  (*(volatile u8 *)(K_DATA + K_DSZ - 0x91))

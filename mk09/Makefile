@@ -216,6 +216,9 @@ APPS      := sh as cpp cc1 cg cc pas0 pas1 pmsg pc ls cat echo stty cp mv rm mkd
 ifeq ($(BOARD),fm11)
 APPS      += format mount umount
 endif
+ifneq ($(COCO),)
+APPS      += format mount umount
+endif
 ifeq ($(BOOTDEV),2hd)
 APPS      := sh as cpp cc1 cg cc pas0 pas1 pmsg pc ls cat echo stty cp mv rm mkdir date df ps hd wc more grep kill mem reboot basic time dhry format mount umount
 SKKJISYO  :=

@@ -116,9 +116,15 @@ check('su: wrong password' in out and 'uid=0(root) gid=0(root)' in out.split('su
 out, rc = run(ROOT + sh('passwd user')[:1] + ['expect "New password: "', 'send "nu\\r"', 'expect "Again: "', 'send "nu\\r"', 'expect "/> "', 'send "exit\\r"']
               + login('user', 'nu') + ['expect "/home/user> "'] + sh('id') + OFF)
 check('password changed' in out and 'uid=100(user)' in out.split('password changed')[1], 'passwd: root sets the password of user, user logs in with it', out[-900:])
+# ---- the RAM disk (the drive 1: the physical blocks $A0-$FF): format, mount, files, df, a second file system beside the system disk
+out, rc = run(ROOT + sh('mount 1', 'format -y 1 RAM', 'mount 1', 'df 1', 'cp /etc/rc.sh 1:/rc.sh', 'mkdir 1:/d', 'cp /bin/ls.mx 1:/d/ls.mx', 'ls 1:/d', 'cat 1:/rc.sh') + OFF)
+check('format: drive 1 done' in out, 'format 1: the RAM disk is formatted (FAT16, MBR)', out[-1200:])
+check(re.search(r'1: 748 clusters of 1024 bytes', out) is not None and 'the files of the drive 1' in out, 'mount 1: the volume of the RAM disk is mounted (748 KB)', out[-1200:])
+check('ls.mx' in out.split('ls 1:/d')[-1] and 'cluster 1024 bytes, 748 clusters' in out and 'stty utf8' in out, 'files and a directory are written to the RAM disk, df 1 sees it', out[-1200:])
+
 # ---- 3d: the other programs and the memory
 out, rc = run(ROOT + sh('mem', 'pc pas/hanoi.pas', 'pas/hanoi 3', 'fstest', 'faults', 'stk', 'echo hi | cat', 'spin &', 'ps', 'jwp -v') + ['send "reboot\\r"', 'expect "login: "'])
-check('MMU' in out and 'program area' in out and re.search(r'total\s+1976\.0 KB', out) is not None, 'mem shows the map of the machine with the MMU and the memory of the programs', out[-1500:])
+check('MMU' in out and 'program area' in out and re.search(r'total\s+1208\.0 KB', out) is not None, 'mem shows the map of the machine with the MMU and the memory of the programs', out[-1500:])
 check('pas/hanoi.mx:' in out and ' 15: disk 1 from B to C' in out, 'pc compiles Pascal and the program runs')
 check('fstest: ok' in out, 'fstest: the file system tests of the program pass')
 check('faults: stopped by the system (stack overflow)' in out and 'message outside my memory: 4' in out, 'faults: the kernel checks the memory of the program (the map)')

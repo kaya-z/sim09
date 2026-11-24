@@ -18,6 +18,34 @@
 
 static u8 buf[256];
 
+#if defined(MMU_COCO) && defined(MK09_V2)
+/* 2.0, the sbc09 with the MMU: the drive 1 is a RAM disk, the physical blocks RD_LO .. RD_HI (8KB each: 16 blocks of 512 bytes) above the pool of MM (mm2.c).
+ * The disk server reaches a block through the logical block 6 of the system map ($C000-$DFFF: whole 8KB; no server uses it (the servers end at $9B30), the kernel runs in the block 0 and in the
+ * fixed page; the block 7 has only $E000-$FDFF, the rest is the fixed page with the I/O): the register RD_MAP is set for the copy and put back to 6 (the system map is the identity) after it.  Nobody else changes the system map (an interrupt does not). */
+#define RD_LO   0xA0
+#define RD_HI   0xFF
+#define RD_MAP  (*(volatile u8 *)0xFFA6)
+#define RD_WIN  ((u8 *)0xC000)
+#define RD_SECT (((RD_HI - RD_LO + 1) << 5))        /* sectors of 256 bytes (32 per block of 8KB) */
+
+static u8 ram_io(u8 hi, u8 mid, u8 lo, u8 *p, u8 cmd)
+{
+    u16 s = ((u16)mid << 8) | lo;                               /* the sector of 256 bytes (the number has 24 bits: the high byte must be 0) */
+    u8 *w;
+    u8 i = 0;
+    if (hi || s >= RD_SECT) return E_IO;
+    w = RD_WIN + ((s & 31) << 8);
+    RD_MAP = RD_LO + (u8)(s >> 5);
+    if (cmd == DISK_WRITE_CMD) {
+        do w[i] = p[i]; while (++i);
+    } else {
+        do p[i] = w[i]; while (++i);
+    }
+    RD_MAP = 6;                                  /* (the system map is the identity) */
+    return E_OK;
+}
+#endif
+
 static u8 sector_io(u8 drive, u16 lba_lo, u8 lba_hi, u8 half, u8 *p, u8 cmd)
 {
     msg_t m;
@@ -26,6 +54,9 @@ static u8 sector_io(u8 drive, u16 lba_lo, u8 lba_hi, u8 half, u8 *p, u8 cmd)
     u8 lo = (u8)(lba_lo << 1) | half;
     u8 hi = (u8)(lba_hi << 1) | (u8)(lba_lo >> 15);
 
+#if defined(MMU_COCO) && defined(MK09_V2)
+    if (drive == 1) return ram_io(hi, (u8)((lba_lo >> 7) & 0xFF), lo, p, cmd);
+#endif
 #ifdef BOARD_FM11
     (void)m;
     (void)st;

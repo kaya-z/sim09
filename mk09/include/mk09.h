@@ -117,6 +117,10 @@ u8  mk_hook(u16 bits);                      /* get NFY_TICK etc. every tick   */
 u8  mk_rxregl(u8 line, void *buf);          /* 2.0: the same for the line 0 or 1 (the second terminal: the second ACIA of the sbc09) */
 u8  mk_rxreg(void *buf);                    /* { u8 head, tail; u8 buf[RX_RING]; }: buf = the bytes, head and tail are the two bytes before them: the kernel puts the console characters in (and notifies NFY_RX); it turns the receive interrupt on, again after a full ring */
 u16 mk_rxget(u8 *buf, u16 n);               /* up to n console characters that the receive interrupt collected: the number */
+/* several volumes in the FS server (the drives 0-4, the names "N:/path"): the floppy disks of the FM-11; the RAM disk (drive 1) of the sbc09 with the MMU */
+#if defined(BOARD_FM11) || (defined(MMU_COCO) && defined(MK09_V2))
+#define FS_MULTI    1
+#endif
 #ifdef MK_MMU
 /* the pages of the address space of a program: the FM-11 Level 2 has 16 pages of 4KB (the pages 0 and 1 are the kernel, the programs have $2000-$EFFF), the sbc09 with
  * the MMU 8 pages of 8KB (the page 0 is the kernel, the programs have $2000-$FDFF) */
