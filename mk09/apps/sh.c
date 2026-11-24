@@ -41,6 +41,12 @@ static void err(const char *what, int e)
         puts(": not found");
         return;
     }
+#ifdef MK09_V2
+    if (e == -E_PERM) {                             /* 2.0: no right to run it (the x of the file or a directory on the way, or the program is for root only) */
+        puts(": not allowed");
+        return;
+    }
+#endif
     putstr(": error ");
     utoa_((u16)-e, n, 10);
     puts(n);

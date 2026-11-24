@@ -57,7 +57,7 @@ for L in $LEVELS; do
         check "not allowed" "L2 users: user 100 cannot read the directory of root (700)"
         run $HD -h0 0x7F 9000 "chmod 4755 /bin/id.mx|runas 100 10 id|chmod 700 /bin/id.mx|runas 100 10 id|"
         check "uid=0(root) gid=10(10)" "L2 users: a setuid root file runs as root"
-        check "runas: error 1" "L2 users: a file of root with 700 cannot be run by another user (E_PERM, said by the shell)"
+        check "runas: not allowed" "L2 users: a file of root with 700 cannot be run by another user (said by the shell as not allowed)"
         # 2.0: login, passwords, su, passwd, ls -l (the typing is slow: a login and a hash take about a second)
         LG=""
         run $HD -h0 0x7F 2500 "root|wrong|"

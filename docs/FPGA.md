@@ -46,7 +46,7 @@ openFPGALoader -b tangnano9k -f fpga/tn9k/build/fuzix/impl/pnr/sbc09_fuzix.fs   
 | `v09` | `os9/v09.rom` (32KB) | `$8000-$FFFF` | 参考実装のモニタ (FIRQ のタイマ) |
 
 ビルドした日時が時計の初期値になります (電池がないので、電源を入れるたびにその日時から数え始めます)。
-ビルド済みのビットストリーム (`fuzix`、`os9`、`os9boot` は HDMI つき、`fuzix_nohdmi` は HDMI なし。2026-10-15 のビルド、67.5MHz) は `fpga/tn9k/images/` にあります。
+ビルド済みのビットストリーム (`fuzix`、`os9`、`os9boot` は HDMI つき、`fuzix_nohdmi` は HDMI なし。2026-11-24 のビルド (2 つ目の ACIA を含む)、67.5MHz) は `fpga/tn9k/images/` にあります。
 
 ```sh
 gzip -dc fpga/tn9k/images/sbc09_fuzix.fs.gz > /tmp/sbc09_fuzix.fs && openFPGALoader -b tangnano9k /tmp/sbc09_fuzix.fs

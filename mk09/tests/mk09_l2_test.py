@@ -134,6 +134,11 @@ check(fsck.returncode == 0, 'fsck.fat: the volume is right after all these runs'
 out, rc = run(ROOT + ['send "jwp /tmp/j.txt\\r"', 'expect "jwp"', 'sleep 400', 'send "\\x0a"', 'sleep 400', 'send "Kanji"', 'sleep 400', 'send " "', 'sleep 3000', 'send "\\x13"', 'sleep 1000'] + OFF)
 check('\u25bc\u6f22\u5b57' in out, 'jwp: the default dictionary /skk/skk.dic is found (SKK: Kanji + Space gives the candidate)', out[-300:])
 
+# ---- cc makes a program that can be run whatever its name is (the x of the new file); a user is told "not allowed" when a program is not his to run
+out, rc = run(ROOT + sh('cc /c/hello.c -o /tmp/hello', 'ls -l /tmp/hello', '/tmp/hello a b') + ['send "exit\\r"'] + login('user', 'nu') + ['expect "/home/user> "'] + sh('runas 0 0 id', 'reboot', prompt='/home/user> ') + OFF)
+check(re.search(r'-rwxr-xr-x\s+root\s+root\s+hello', out) is not None and 'hello from C, 3 argument(s)' in out, 'cc -o prog: the program has the x permission and runs', out[-700:])
+check('runas: not allowed' in out and 'reboot: not allowed' in out, 'a user who runs a program of root only is told "not allowed" (not "error 1")', out[-500:])
+
 # ---- stage 5: two terminals at the same time (the second ACIA; sim09 -net 1=listen:PORT,raw is the second terminal, a socket of this test)
 import socket, time
 out, rc = run(ROOT + ['send "echo 1 > /etc/ttys\\r"', 'expect "/> "', 'send "cat /etc/ttys\\r"', 'expect "/> "'] + OFF)

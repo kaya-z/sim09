@@ -549,6 +549,7 @@ BASIC は 1.3 で作り直しました (YSD9000 の MK09 で先に改良され�
 | 2.0.0pre017 | 2.0.0pre008 | **最初のログインでパスワードを変えさせる**: `/etc/shadow` の 4 つ目の欄が `1` の行は「変更が必要」の目印 (`tools/mkusers.py` が、出荷イメージの `root` と `user` につける。`--no-expire` / `make FIRSTPW=0` で外す)。`login` が、パスワードが合ったあとでシェルの前に、新しいパスワードを 2 回聞き (空と名前と同じものは受け付けず、3 回まで)、`pwset` (ライブラリ。`passwd` と共通) で `shadow` を書き直す。テストは、目印のないイメージ (`make testimg` の `mk09_t.img`、`mk09_2hd_t.img`) を使う。出荷イメージの最初のログインは、`mk09_l2_test.py` の 2 項目 |
 | 2.0.0pre018 | 2.0.0pre008 | **ロゴと版の表示は、起動のときに出る** (1.x と同じ。ログインの前): ライブラリの `banner()` (`lib/mk_banner.c`) を `login` が最初のプロンプトの前に出す。2.0 のシェルは出さない (1.x のシェルは今までどおり) |
 | 2.0.0pre019 | 2.0.0pre008 | **`ps` に端末とユーザを出す**: PM の新しい要求 `PM_TASKINFO` (10: a = tid → a = 線、b = ユーザ、c = PM が動かすプログラムか)、ライブラリ `taskuser`。`ps` の列は `TID STATE PRIO TTY USER REGION SP CPU` (サーバと idle は `-` と `system`) |
+| 2.0.0pre020 | 2.0.0pre008 | **FM-11 担当の指摘 2 件**: `cc -o` の出力ファイルに実行ビットが付かなかった (`as` が `FO_EXEC` で開く)、シェルが `E_PERM` を `error 1` と出していた (`not allowed` と出す) |
 
 ## 17. MK09 の上の開発環境
 

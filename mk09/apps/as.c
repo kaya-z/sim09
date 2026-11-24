@@ -1484,6 +1484,8 @@ int main(int argc, char **argv)
 #else
 #ifdef OS9
             fout = open(out, FO_WRITE | FO_CREATE | FO_TRUNC | (os9mode ? FO_EXEC : 0));
+#elif defined(MK09_V2)
+            fout = open(out, FO_WRITE | FO_CREATE | FO_TRUNC | FO_EXEC);     /* 2.0: the program that is made can be run, whatever its name (cc x.c -o prog) */
 #else
             fout = open(out, FO_WRITE | FO_CREATE | FO_TRUNC);
 #endif
