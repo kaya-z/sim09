@@ -889,6 +889,10 @@ u8 fs_sync(void)
 static u8 seek_cluster(fh_t *f, u8 grow)
 {
     u16 nx;
+#ifdef MK09_V2
+    u16 c0;
+    u8 st = E_OK;
+#endif
 
     if (f->first == 0) {
         if (!grow) return E_EOF;
@@ -909,6 +913,23 @@ static u8 seek_cluster(fh_t *f, u8 grow)
         f->u.c.cidx = 0;
         if (f->u.c.contig == 0) f->u.c.contig = 1;
     }
+#ifdef MK09_V2
+    c0 = f->u.c.contig;
+    while (f->u.c.cidx < f->pcl) {
+        nx = fat_get(f->u.c.curcl);
+        if (!cl_ok(nx)) {
+            if (!grow) { st = E_EOF; break; }
+            nx = alloc_cluster(f->u.c.curcl);
+            if (!nx) { st = E_NOSPC; break; }
+        }
+        if (nx == f->u.c.curcl + 1 && f->u.c.cidx + 1 == f->u.c.contig) f->u.c.contig++;
+        f->u.c.curcl = nx;
+        f->u.c.cidx++;
+    }
+    if (f->u.c.contig != c0) cc_put(f->first, f->u.c.contig);       /* 2.0: once after the walk, not at every cluster */
+    return st;
+}
+#else
     while (f->u.c.cidx < f->pcl) {
         nx = fat_get(f->u.c.curcl);
         if (!cl_ok(nx)) {
@@ -925,6 +946,7 @@ static u8 seek_cluster(fh_t *f, u8 grow)
     }
     return E_OK;
 }
+#endif
 
 /* the position is advanced by n bytes inside the block */
 static void advance(fh_t *f, u16 n)
