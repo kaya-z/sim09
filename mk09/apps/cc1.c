@@ -11,7 +11,7 @@
  */
 #include "ccio.h"
 
-#define TOOL_VERSION "1.7"          /* the version of this program: changed when it changes (-v) */
+#define TOOL_VERSION "1.8"          /* the version of this program: changed when it changes (-v) */
 
 #define NTAG    24
 /* the sizes of the tables: small on MK09 (the whole program must fit in the transient area), big on the PC (the library is compiled there) */
@@ -1652,6 +1652,12 @@ static void condition(u16 lf)
     }
     if (tok == '=' || (tok >= T_ADDEQ && tok <= T_SHREQ)) assign_tail();
     else if (tok == '?') err("?: at the top of a condition needs parentheses");
+    while (tok == ',') {                    /* a comma expression: the value of the last one is the condition (for (;d = 0, g = c * 2;) ...) */
+        rv();
+        ins0("drop");
+        next();
+        parse_assign();
+    }
     truth();
     insl("jz", lf);
 }

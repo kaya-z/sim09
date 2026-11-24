@@ -18,7 +18,7 @@
  */
 #include "ccio.h"
 
-#define TOOL_VERSION "1.11"          /* the version of this program: changed when it changes (-v) */
+#define TOOL_VERSION "1.12"          /* the version of this program: changed when it changes (-v) */
 
 #define VS      40
 #define NAMEM   18
@@ -523,6 +523,7 @@ static void binop_helper(const char *op)
     } else {
         if (a.k != K_D) { free_d(); load_d((u8)(nvs - 2)); }
         if (b.k == K_UADDR) ins_idx("leax", b.v, "u");
+        else if (b.k == K_POST) load_x((u8)(nvs - 1));          /* d /= g-- : the old value of g in X (g is changed) */
         else { operand(&b, ob); ins("ldx", ob); }
     }
     hn[0] = '_'; hn[1] = '_';

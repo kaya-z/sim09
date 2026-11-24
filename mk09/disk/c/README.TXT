@@ -12,6 +12,7 @@ C samples for the C compiler of MK09 (cc, see the manual 5.3)
   list.c     struct, pointers, malloc, a sorted linked list
   sort.c     function pointers: qsort; rand
   float.c    floating point: sqrt, pi, printf %f %e %g
+  pi800.c    800 digits of pi in a few lines (K&R style: main without a type, comma expressions in for)
 
 A program of one source file: the compiler needs a while (a minute or so in the simulator) and memory (Level 2 of the FM-11, or the sbc09 board).
 Use only the headers that you need: the table of names of a source file is small (about 130).
