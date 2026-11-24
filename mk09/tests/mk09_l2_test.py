@@ -118,7 +118,7 @@ out, rc = run(ROOT + sh('passwd user')[:1] + ['expect "New password: "', 'send "
 check('password changed' in out and 'uid=100(user)' in out.split('password changed')[1], 'passwd: root sets the password of user, user logs in with it', out[-900:])
 # ---- 3d: the other programs and the memory
 out, rc = run(ROOT + sh('mem', 'pc pas/hanoi.pas', 'pas/hanoi 3', 'fstest', 'faults', 'stk', 'echo hi | cat', 'spin &', 'ps', 'jwp -v') + ['send "reboot\\r"', 'expect "login: "'])
-check('MMU' in out and 'program area' in out and re.search(r'total\s+440\.0 KB', out) is not None, 'mem shows the map of the machine with the MMU and the memory of the programs', out[-1500:])
+check('MMU' in out and 'program area' in out and re.search(r'total\s+1976\.0 KB', out) is not None, 'mem shows the map of the machine with the MMU and the memory of the programs', out[-1500:])
 check('pas/hanoi.mx:' in out and ' 15: disk 1 from B to C' in out, 'pc compiles Pascal and the program runs')
 check('fstest: ok' in out, 'fstest: the file system tests of the program pass')
 check('faults: stopped by the system (stack overflow)' in out and 'message outside my memory: 4' in out, 'faults: the kernel checks the memory of the program (the map)')
