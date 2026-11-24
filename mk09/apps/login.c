@@ -16,6 +16,7 @@ int main(int argc, char **argv)
     u16 len;
     int r;
     (void)argc; (void)argv;
+    banner();                                                           /* the logo and the version, as the shell showed them in 1.x (before the first prompt) */
     for (;;) {
         putstr("\nMK09 login: ");
         fflush();

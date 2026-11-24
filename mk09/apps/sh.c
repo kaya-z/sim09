@@ -304,6 +304,7 @@ int main(int argc, char **argv)
     int r;
 
     if (!(argc > 1 && !strcmp(argv[1], "-r"))) {
+#ifndef MK09_V2                                          /* (2.0: login shows the logo before the prompt) */
         puts("\n"
              " __  __ _  __  ___   ___\n"
              "|  \\/  | |/ / / _ \\ / _ \\\n"
@@ -323,6 +324,7 @@ int main(int argc, char **argv)
         putstr("\n");
         puts(" TTY + DISK + FS(FAT16) + PM  /  type help\n"
              " (c) 2026 YUKARI Semiconductor Devices\n");
+#endif
         do_source(PN_RC_SH);
     }
     for (;;) {

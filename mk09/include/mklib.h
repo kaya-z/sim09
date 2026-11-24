@@ -60,6 +60,7 @@ int  spawn(const char *block, u16 len, u16 in_h, u16 out_h);  /* "prog\0arg\0...
 int  spawn_bg(const char *block, u16 len, u16 in_h, u16 out_h);  /* the same, but returns the task id at once */
 int  exec(const char *block, u16 len);                        /* this program is replaced by the one in block (does not return unless it fails) */
 #ifdef MK09_V2
+void banner(void);                                             /* 2.0: the logo, the version and the memory of the system (login shows it before the prompt) */
 int  getuser(u8 *uid, u8 *gid);                                 /* 2.0: the user and the group of this program */
 int  setuser(u8 uid, u8 gid);                                   /* change the user of this program (root only) */
 int  chmod(const char *path, u16 mode);                         /* the permissions (9 bits + 01000 setuid); the owner or root */
