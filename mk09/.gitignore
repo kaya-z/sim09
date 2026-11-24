@@ -2,3 +2,6 @@ build/
 build_*/
 __pycache__/
 *.pyc
+
+# scratch builds of tools/v1guard.sh
+.v1guard-*/

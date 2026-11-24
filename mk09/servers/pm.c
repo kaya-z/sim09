@@ -634,6 +634,14 @@ int main(void)
             fs_user(m.src, (u8)m.a, (u8)m.b, 0xFF);
             reply(m.src, E_OK, 0);
             break;
+        case PM_TASKINFO:                               /* for ps: the terminal and the user of a task */
+            c = m.src;
+            i = (u8)m.a;
+            m.a = m.b = m.c = 0;
+            if (i < NTASK) { m.a = t_line[i]; m.b = t_uid[i]; m.c = (i >= TID_USER0 && regn[i]) ? 1 : 0; }
+            m.op = E_OK;
+            mk_reply(c, &m);
+            break;
         case PM_GETUSER:
             c = m.src;
             m.a = t_uid[c];

@@ -22,6 +22,21 @@ int getuser(u8 *uid, u8 *gid)
     return 0;
 }
 
+/* the terminal and the user of a task (PM); *run: 1 for a program that PM runs (not a server) */
+int taskuser(u8 tid, u8 *line, u8 *uid, u8 *run)
+{
+    msg_t m;
+    int r;
+    m.op = PM_TASKINFO;
+    m.a = tid;
+    r = mk_rpc(TID_PM, &m, 0);
+    if (r) return r;
+    *line = (u8)m.a;
+    *uid = (u8)m.b;
+    *run = (u8)m.c;
+    return 0;
+}
+
 /* change the user of this program (root only; then start the shell or a program with exec) */
 int setuser(u8 uid, u8 gid)
 {

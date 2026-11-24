@@ -60,6 +60,7 @@ int  spawn(const char *block, u16 len, u16 in_h, u16 out_h);  /* "prog\0arg\0...
 int  spawn_bg(const char *block, u16 len, u16 in_h, u16 out_h);  /* the same, but returns the task id at once */
 int  exec(const char *block, u16 len);                        /* this program is replaced by the one in block (does not return unless it fails) */
 #ifdef MK09_V2
+int  taskuser(u8 tid, u8 *line, u8 *uid, u8 *run);               /* 2.0: the terminal (line) and the user of a task, and whether PM runs it (ps) */
 void banner(void);                                             /* 2.0: the logo, the version and the memory of the system (login shows it before the prompt) */
 int  getuser(u8 *uid, u8 *gid);                                 /* 2.0: the user and the group of this program */
 int  setuser(u8 uid, u8 gid);                                   /* change the user of this program (root only) */
