@@ -443,18 +443,20 @@ void exit(int code)
 #endif
 }
 
-/* printf: %d %u %x %c %s %%, a width, - and 0 */
+/* printf: %d %u %x %c %s %%, a width, - and 0, a precision (the least number of digits: %.4d), l for long */
 static void (*__out)(int c);
 static char *__sp;
 
 static void __putsp(int c) { *__sp++ = c; }
 
-static void __putnum(unsigned v, unsigned base, int width, int zero, int left, int neg)
+static void __putnum(unsigned v, unsigned base, int width, int zero, int left, int neg, int prec)
 {
-    char t[8];
+    char t[24];
     int n = 0, i;
+    if (prec >= 0) zero = 0;                                          /* (a precision: the digits are at least prec, the field is filled with blanks) */
     if (neg && zero && !left) { __out('-'); width--; neg = 0; }       /* (the sign comes before the zeros) */
     do { t[n++] = "0123456789abcdef"[v % base]; v /= base; } while (v);
+    while (n < prec && n < 18) t[n++] = '0';
     if (neg) t[n++] = '-';
     if (!left) for (i = n; i < width; i++) __out(zero ? '0' : ' ');
     i = n;
@@ -462,11 +464,12 @@ static void __putnum(unsigned v, unsigned base, int width, int zero, int left, i
     if (left) for (; i < width; i++) __out(' ');
 }
 
-static void __putlong(unsigned hi, unsigned lo, unsigned base, int width, int zero, int left, int neg)
+static void __putlong(unsigned hi, unsigned lo, unsigned base, int width, int zero, int left, int neg, int prec)
 {
-    char t[12];
+    char t[24];
     int n = 0, i;
     unsigned r, qh, ql;
+    if (prec >= 0) zero = 0;
     if (neg && zero && !left) { __out('-'); width--; neg = 0; }
     while (hi | lo) {                  /* (hi:lo) / base, base <= 16 */
         qh = hi / base;
@@ -483,6 +486,7 @@ static void __putlong(unsigned hi, unsigned lo, unsigned base, int width, int ze
         t[n++] = "0123456789abcdef"[r];
     }
     if (!n) t[n++] = '0';
+    while (n < prec && n < 18) t[n++] = '0';
     if (neg) t[n++] = '-';
     if (!left) for (i = n; i < width; i++) __out(zero ? '0' : ' ');
     i = n;
@@ -525,12 +529,12 @@ static void __fmt(char *fmt, int *ap)
             lo = *ap++;
             n = 0;
             if (c == 'd' && (hi & 0x8000)) { lo = ~lo + 1; hi = ~hi + (lo == 0); n = 1; }
-            __putlong(hi, lo, c == 'x' ? 16 : 10, width, zero, left, n);
+            __putlong(hi, lo, c == 'x' ? 16 : 10, width, zero, left, n, prec);
         } else if (c == 'd') {
             n = *ap++;
-            if (n < 0) __putnum(-n, 10, width, zero, left, 1); else __putnum(n, 10, width, zero, left, 0);
-        } else if (c == 'u') __putnum(*ap++, 10, width, zero, left, 0);
-        else if (c == 'x') __putnum(*ap++, 16, width, zero, left, 0);
+            if (n < 0) __putnum(-n, 10, width, zero, left, 1, prec); else __putnum(n, 10, width, zero, left, 0, prec);
+        } else if (c == 'u') __putnum(*ap++, 10, width, zero, left, 0, prec);
+        else if (c == 'x') __putnum(*ap++, 16, width, zero, left, 0, prec);
         else if (c == 'c') __out(*ap++);
         else if (c == 's') {
             s = (char *)*ap++;

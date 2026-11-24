@@ -12,7 +12,7 @@ t() {   # name, arguments of the program, expected text.  Two sessions on the sa
     cp $IMG $W/d.img; : > $W/t.txt
     "$FM11" --headless 60000 $W/s.ppm -h0 $W/d.img --dipsw 0x7F --keyat 3000 --keygap 14 --keys "cc /C/$1.C -o /$1.MX|" --text $W/t.txt --mute 2>/dev/null
     : > $W/t.txt
-    "$FM11" --headless 7000 $W/s.ppm -h0 $W/d.img --dipsw 0x7F --keyat 3000 --keygap 14 --keys "/$1.MX $2|" --text $W/t.txt --mute 2>/dev/null
+    "$FM11" --headless ${4:-7000} $W/s.ppm -h0 $W/d.img --dipsw 0x7F --keyat 3000 --keygap 14 --keys "/$1.MX $2|" --text $W/t.txt --mute 2>/dev/null
     grep -q "$3" $W/t.txt && echo "ok   : $1.c" || { echo "FAIL : $1.c  (expected: $3)"; tail -6 $W/t.txt; fail=1; }
 }
 t hello "a b" "hello from C, 3"
@@ -24,4 +24,5 @@ t strings "" "reversed: "
 t list "" "orange"
 t sort "" "down"
 t float "" "pi is about"
+t pi800 "" "3141592653589793238462643383279502884197" 260000      # 800 digits of pi (it runs 6 minutes in the simulator, the output comes at the end): long, %.4ld, a comma expression as the condition of for, d /= g--
 [ $fail = 0 ] && echo "C samples: PASS" || { echo "C samples: FAIL"; exit 1; }
