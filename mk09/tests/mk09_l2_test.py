@@ -117,11 +117,22 @@ out, rc = run(ROOT + sh('passwd user')[:1] + ['expect "New password: "', 'send "
               + login('user', 'nu') + ['expect "/home/user> "'] + sh('id') + OFF)
 check('password changed' in out and 'uid=100(user)' in out.split('password changed')[1], 'passwd: root sets the password of user, user logs in with it', out[-900:])
 # ---- the RAM disk (the drive 1: the physical blocks $A0-$FF): format, mount, files, df, a second file system beside the system disk
-out, rc = run(ROOT + sh('mount 1', 'format -y 1 RAM', 'mount 1', 'df 1', 'cp /etc/rc.sh 1:/rc.sh', 'mkdir 1:/d', 'cp /bin/ls.mx 1:/d/ls.mx', 'ls 1:/d', 'cat 1:/rc.sh') + OFF)
-check('format: drive 1 done' in out, 'format 1: the RAM disk is formatted (FAT16, MBR)', out[-1200:])
+out, rc = run(ROOT + sh('df 1', 'umount 1', 'format -y 1 RAM', 'mount 1', 'df 1', 'cp /etc/rc.sh 1:/rc.sh', 'mkdir 1:/d', 'cp /bin/ls.mx 1:/d/ls.mx', 'ls 1:/d', 'cat 1:/rc.sh') + OFF)
+check('format: drive 1 done' in out and out.count('748 clusters') >= 3, 'the RAM disk is formatted and mounted by the login at the start (df 1), and by hand (umount, format, mount)', out[-1200:])
 check(re.search(r'1: 748 clusters of 1024 bytes', out) is not None and 'the files of the drive 1' in out, 'mount 1: the volume of the RAM disk is mounted (748 KB)', out[-1200:])
 check('ls.mx' in out.split('ls 1:/d')[-1] and 'cluster 1024 bytes, 748 clusters' in out and 'stty utf8' in out, 'files and a directory are written to the RAM disk, df 1 sees it', out[-1200:])
 
+# ---- cc and the RAM disk (rc.sh formats and mounts the drive 1 at the start): the temporary files are on 1:/ ; without the RAM disk, or when the command line
+# of the stages would be too long, they are in the current directory as before
+LONG = '/tmp/abcdefgh.c'
+out, rc = run(ROOT + sh('df 1', 'cc -V /c/hello.c', 'ls 1:/', 'cp /c/hello.c ' + LONG, 'cc -V ' + LONG + '', 'umount 1', 'cc -V /c/hello.c', '/c/hello a b') + OFF)
+check(re.search(r'cpp /c/hello\.c -o 1:/\w\.I', out) is not None and 'rm -t 1:/' in out and out.count('hello.mx: ') >= 2, 'cc: the temporary files are on the RAM disk (rm -t removes them)', out[-1800:])
+ls1 = out.split('ls 1:/')[1].split('cp /c/hello.c')[0] if 'ls 1:/' in out else 'x'
+check('.I' not in ls1 and '.ir' not in ls1 and '.A' not in ls1, 'cc: the RAM disk is empty after the compile', ls1)
+check(re.search(r'cpp ' + re.escape(LONG) + r' -o _\.I', out) is not None, 'cc: a command line that is too long for the RAM names falls back to the current directory', out[-1800:])
+check(re.search(r'cpp /c/hello\.c -o _\.I', out) is not None and 'hello from C, 3 argument(s)' in out, 'cc: without the RAM disk (umount 1) the files are in the current directory and the program runs', out[-1200:])
+out, rc = run(login('user', 'nu') + ['expect "/home/user> "'] + sh('cc -V /c/hello.c -o /tmp/uh', '/tmp/uh q', 'ls 1:/', prompt='/home/user> ') + OFF)
+check('-o 1:/' in out and 'hello from C, 2 argument(s)' in out, 'cc: a user (not root) compiles through the RAM disk too', out[-1200:])
 # ---- 3d: the other programs and the memory
 out, rc = run(ROOT + sh('mem', 'pc pas/hanoi.pas', 'pas/hanoi 3', 'fstest', 'faults', 'stk', 'echo hi | cat', 'spin &', 'ps', 'jwp -v') + ['send "reboot\\r"', 'expect "login: "'])
 check('MMU' in out and 'program area' in out and re.search(r'total\s+1208\.0 KB', out) is not None, 'mem shows the map of the machine with the MMU and the memory of the programs', out[-1500:])

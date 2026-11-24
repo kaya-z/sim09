@@ -6,8 +6,16 @@
 #include "mkstr.h"
 #include "pwd.h"
 #include "pathnames.h"
+#ifdef MK_MMU
+#include "mk09.h"
+#endif
 
+#if defined(MMU_COCO) && defined(MK09_V2)
+#define RAMDISK 1                   /* the sbc09 with the MMU: the RAM disk (drive 1) is formatted and mounted by the first login (the terminal 0), see cc */
+#define TOOL_VERSION "1.2"
+#else
 #define TOOL_VERSION "1.1"
+#endif
 
 int main(int argc, char **argv)
 {
@@ -17,6 +25,20 @@ int main(int argc, char **argv)
     int r;
     (void)argc; (void)argv;
     banner();                                                           /* the logo and the version, as the shell showed them in 1.x (before the first prompt) */
+#ifdef RAMDISK
+    {
+        u8 line = 0, uid, run;
+        if (taskuser(mk_self(), &line, &uid, &run) == 0 && line == 0 && fsmounted(1) != 1) {   /* (after a reset the RAM is empty: a new file system) */
+            strcpy(blk, "/bin/format.mx");                          /* (the block: the program and its arguments, each ended by 0, and one more 0) */
+            len = (u16)strlen(blk) + 1;
+            strcpy(blk + len, "-y"); len += 3;
+            strcpy(blk + len, "1"); len += 2;
+            strcpy(blk + len, "RAM"); len += 4;
+            blk[len++] = 0;
+            if (spawn(blk, len, NOHANDLE, NOHANDLE) == 0) fsmount(1);
+        }
+    }
+#endif
     for (;;) {
         putstr("\nMK09 login: ");
         fflush();

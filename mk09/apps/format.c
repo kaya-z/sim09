@@ -196,6 +196,7 @@ int main(int argc, char **argv)
     for (b = 0; b < ROOTBLK; b++)
         if ((r = wblk(drive, root + b, 1)) < 0) goto err;
 
+#ifndef MMU_COCO                        /* (the RAM disk has no surface to check) */
     printf("verifying...");             /* every block of the disk is read: all the sectors of all the tracks */
     fflush();
     ncl_bad = 0;
@@ -203,6 +204,7 @@ int main(int argc, char **argv)
         if (wblk(drive, b, 0) < 0) ncl_bad++;
     if (ncl_bad) { printf("\nformat: %u blocks cannot be read\n", ncl_bad); return 1; }
     putchar('\n');
+#endif
     if ((r = wblk(drive, PARTBLK, 0)) < 0) goto err;            /* read back */
     if (blk[510] != 0x55 || blk[511] != 0xAA || blk[13] != spb) { puts("format: verify failed (boot sector)"); return 1; }
     if ((r = wblk(drive, fat1, 0)) < 0) goto err;

@@ -584,6 +584,9 @@ static u8 resolve(const char *path, res_t *r)
     if (norm_path(path, np)) return E_NAME;
     p = np;
     cur = 0;
+#ifdef FS_MULTI
+    if (fs_drive) { pg = 1; pm = 0x1FF; }                 /* the root of a volume of another drive (the RAM disk): rwxrwxrwx, root's */
+#endif
 #endif
     if (*p == '/') cur = 0;
     for (;;) {

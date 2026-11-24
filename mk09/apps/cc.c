@@ -15,11 +15,49 @@
  * A command line is at most about 120 characters.
  */
 #include "ccio.h"
+#if defined(MMU_COCO) && defined(MK09_V2)
+#include "mk09.h"
+#define RAMTMP 1                    /* 2.0, the sbc09 with the MMU: the temporary files go to the RAM disk when there is one */
+#endif
 
-#define TOOL_VERSION "1.2"          /* the version of this program: changed when it changes (-v) */
+#ifndef RAMTMP
+#define fI "_.I"
+#define fR "_.ir"
+#define fA "_.A"
+#endif
+#ifdef RAMTMP
+#define TOOL_VERSION "1.3"
+#else
+#define TOOL_VERSION "1.2"
+#endif          /* the version of this program: changed when it changes (-v) */
 
 #ifdef CC_HOST
 #define putstr(s) fputs(s, stdout)
+#endif
+
+#ifdef RAMTMP
+/* the directory of the temporary files: "1:/N" (N = the task of this compiler, one hex digit: two compilers at the same time do not meet) when the RAM disk is mounted and a file can
+ * be made in it with 128KB free; otherwise 0 (the names are relative: the files are in the current directory, as before) */
+static char tbase[16];
+static const char *ramtmp(void)
+{
+    u8 spc;
+    u16 total, freec;
+    static const char hex[] = "0123456789abcdef";
+    int fd, i;
+    if (fsmounted(1) != 1 || statfs_drv(1, &spc, &total, &freec) < 0 || (unsigned long)freec * spc < 256UL) return 0;
+    strcpy(tbase, "1:/");
+    i = strlen(tbase);
+    tbase[i] = hex[mk_self() & 15];
+    tbase[i + 1] = 0;
+    strcat(tbase, ".I");
+    fd = open(tbase, FO_WRITE | FO_CREATE | FO_TRUNC);
+    if (fd < 0) return 0;
+    close(fd);
+    unlink(tbase);
+    tbase[strlen(tbase) - 2] = 0;
+    return tbase;
+}
 #endif
 
 int main(int argc, char **argv)
@@ -30,6 +68,11 @@ int main(int argc, char **argv)
     char *av[40];
     char outn[64];
     u16 len;
+#ifdef RAMTMP
+    char *fI = "_.I", *fR = "_.ir", *fA = "_.A";       /* the temporary files */
+    char tI[20], tR[20], tA[20];
+    const char *tb;
+#endif
 
     for (i = 1; i < argc; i++) {
         char *a = argv[i];
@@ -56,6 +99,17 @@ int main(int argc, char **argv)
 #endif
         out = outn;
     }
+#ifdef RAMTMP
+    tb = ramtmp();
+again:
+    if (tb) {
+        strcpy(tI, tb); strcat(tI, ".I");
+        strcpy(tR, tb); strcat(tR, ".ir");
+        strcpy(tA, tb); strcat(tA, ".A");
+        fI = tI; fR = tR; fA = tA;
+    } else { fI = "_.I"; fR = "_.ir"; fA = "_.A"; }
+    n = 0;
+#endif
     av[n++] = "cc";
     av[n++] = ";";
     av[n++] = "cpp";
@@ -63,17 +117,17 @@ int main(int argc, char **argv)
     if (iflag) av[n++] = (char *)iflag;
     av[n++] = (char *)src;
     av[n++] = "-o";
-    av[n++] = "_.I";
+    av[n++] = fI;
     av[n++] = ";";
     av[n++] = "cc1";
-    av[n++] = "_.I";
+    av[n++] = fI;
     av[n++] = ";";
     av[n++] = "cg";
     av[n++] = "-pp";
-    av[n++] = "_.ir";
+    av[n++] = fR;
     if (!stop_s) av[n++] = "-L";
     av[n++] = "-o";
-    av[n++] = stop_s ? (char *)out : "_.A";
+    av[n++] = stop_s ? (char *)out : fA;
     if (!stop_s) {
         av[n++] = ";";
         av[n++] = "as";
@@ -82,7 +136,7 @@ int main(int argc, char **argv)
 #endif
         av[n++] = "-o";
         av[n++] = (char *)out;
-        av[n++] = "_.A";
+        av[n++] = fA;
     }
     if (!keep) {
         av[n++] = ";";
@@ -91,10 +145,22 @@ int main(int argc, char **argv)
 #else
         av[n++] = "rm";
 #endif
-        av[n++] = "_.I";
-        av[n++] = "_.ir";
-        if (!stop_s) av[n++] = "_.A";
+#ifdef RAMTMP
+        if (tb) { av[n++] = "-t"; av[n++] = (char *)tb; } else
+#endif
+        {
+        av[n++] = fI;
+        av[n++] = fR;
+        if (!stop_s) av[n++] = fA;
+        }
     }
+#ifdef RAMTMP
+    if (tb) {                       /* (the command line of the stages has 124 bytes: with the long names of the RAM disk it may not fit: then the relative names, as before) */
+        u16 tot = 5 + 3 + 1 + 1 + (u16)strlen(av[2]);
+        for (i = 3; i < n; i++) tot += (u16)strlen(av[i]) + 1;
+        if (tot > ARGMAX - SB_ARGS) { tb = 0; goto again; }
+    }
+#endif
     if (verbose) {
         for (i = 2; i < n; i++) { putstr(av[i]); putstr(av[i][0] == ';' ? "\n" : " "); }
         puts("");
