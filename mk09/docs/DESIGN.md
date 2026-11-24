@@ -551,6 +551,7 @@ BASIC は 1.3 で作り直しました (YSD9000 の MK09 で先に改良され�
 | 2.0.0pre019 | 2.0.0pre008 | **`ps` に端末とユーザを出す**: PM の新しい要求 `PM_TASKINFO` (10: a = tid → a = 線、b = ユーザ、c = PM が動かすプログラムか)、ライブラリ `taskuser`。`ps` の列は `TID STATE PRIO TTY USER REGION SP CPU` (サーバと idle は `-` と `system`) |
 | 2.0.0pre020 | 2.0.0pre008 | **FM-11 担当の指摘 2 件**: `cc -o` の出力ファイルに実行ビットが付かなかった (`as` が `FO_EXEC` で開く)、シェルが `E_PERM` を `error 1` と出していた (`not allowed` と出す) |
 | 2.0.0pre021 | 2.0.0pre008 | **sbc09 MMU 版の MM が 2MB 全体を使う**: プールが物理ブロック 8-$3E (440KB) から 8-$FF ($3F を除く、1976KB) になった (`mem` の total が 1976.0 KB)。FM-11 とは無関係 (`MMU_COCO` のみ) |
+| 2.0.0pre022 | 2.0.0pre008 | **FM-11 担当の 1.48 を取り込む**: C サンプル `pi800.c` (800 桁の円周率)、cc1 1.8 (if/while/for の条件にカンマ式)、cg 1.12 (`d /= g--` の壊れた命令の修正)、`printf` の精度 (`%.4d`、`%.4ld`)。`tests/v1.sha256` は sbc09 の `mk09.img` だけ更新 (中身のファイルが変わったため) |
 
 ## 17. MK09 の上の開発環境
 
