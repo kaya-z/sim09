@@ -133,6 +133,14 @@ check(re.search(r'cpp ' + re.escape(LONG) + r' -o _\.I', out) is not None, 'cc: 
 check(re.search(r'cpp /c/hello\.c -o _\.I', out) is not None and 'hello from C, 3 argument(s)' in out, 'cc: without the RAM disk (umount 1) the files are in the current directory and the program runs', out[-1200:])
 out, rc = run(login('user', 'nu') + ['expect "/home/user> "'] + sh('cc -V /c/hello.c -o /tmp/uh', '/tmp/uh q', 'ls 1:/', prompt='/home/user> ') + OFF)
 check('-o 1:/' in out and 'hello from C, 2 argument(s)' in out, 'cc: a user (not root) compiles through the RAM disk too', out[-1200:])
+# ---- BASIC of Level 2: a bigger program (8000 bytes: 400 lines do not fit the 2200 bytes of the 64KB build) and bigger arrays (800 elements: three DIMs of 250)
+bl = []
+for n in range(1, 401):
+    bl += ['send "%d X=%d\\r"' % (n * 5, n), 'expect "Ok"']
+bl += ['send "2010 PRINT X\\r"', 'expect "Ok"', 'send "DIM A(250)\\r"', 'expect "Ok"', 'send "DIM B(250)\\r"', 'expect "Ok"', 'send "DIM C(250)\\r"', 'expect "Ok"', 'send "C(250)=77\\r"', 'expect "Ok"', 'send "PRINT C(250)\\r"', 'expect "Ok"', 'send "RUN\\r"', 'expect "Ok"', 'send "SYSTEM\\r"', 'expect "/> "']
+out, rc = run(ROOT + ['send "basic\\r"', 'expect "Ok"'] + bl + OFF)
+check(' 77' in out and ' 400' in out and 'Out of memory' not in out, 'BASIC: a program of 400 lines and three arrays of 251 elements fit (the program is 8000 bytes, the arrays 800 elements; one dimension is 255 at most)', out[-700:])
+
 # ---- 3d: the other programs and the memory
 out, rc = run(ROOT + sh('mem', 'pc pas/hanoi.pas', 'pas/hanoi 3', 'fstest', 'faults', 'stk', 'echo hi | cat', 'spin &', 'ps', 'jwp -v') + ['send "reboot\\r"', 'expect "login: "'])
 check('MMU' in out and 'program area' in out and re.search(r'total\s+1208\.0 KB', out) is not None, 'mem shows the map of the machine with the MMU and the memory of the programs', out[-1500:])

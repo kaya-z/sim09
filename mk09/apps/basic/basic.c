@@ -27,7 +27,12 @@
 #define SFP_ASM
 #include "sfpm.h"
 
-#define BASIC_VERSION "1.3"     /* 1.3: ^C breaks a running program (Break in n, back to Ok); 1.0: the interpreter of the text; 1.1: the internal form (tokens, compiled expressions), as in the YSD9000 port; 1.2: faster FOR / NEXT / IF (step1, the ELSE and line number caches, fused compares), as in the YSD9000 port */
+#ifdef MK09_V2
+#define BASIC_VERSION "1.4"     /* (2.0, Level 2: the program and the arrays are bigger, see the Makefile) */
+#else
+#define BASIC_VERSION "1.3"
+#endif
+/* 1.3: ^C breaks a running program (Break in n, back to Ok); 1.0: the interpreter of the text; 1.1: the internal form (tokens, compiled expressions), as in the YSD9000 port; 1.2: faster FOR / NEXT / IF (step1, the ELSE and line number caches, fused compares), as in the YSD9000 port */
 #ifndef PGM
 #define PGM     2200           /* (7000 on the YSD9000, where a program has up to 56 KB; here 41 KB are for the program, the variables, the stack and the code) */
 #endif

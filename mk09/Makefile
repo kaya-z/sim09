@@ -108,6 +108,11 @@ STACK_basic = 1100
 endif
 endif
 
+# 2.0 (Level 2: the programs have 52-56KB): a bigger program (8000 bytes) and more array elements (800) than the 1.x defaults, which fit the 41KB of the 64KB builds
+ifeq ($(V2),1)
+$(B)/basic.o: CFLAGS += -DPGM=8000 -DAPOOL=800
+endif
+
 # BASIC without SIN COS TAN ATN EXP LOG SQR and non-integer powers (about 3.5 KB of code): room for a bigger program and bigger arrays
 #   make BASIC_NOMATH=1
 ifdef BASIC_NOMATH
